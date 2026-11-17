@@ -1,0 +1,17 @@
+[package]
+name = "engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+ort.workspace = true
+realfft.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+hound.workspace = true
+
+[lints]
+workspace = true

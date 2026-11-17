@@ -1,3 +1,5 @@
 .DS_Store
 /target/
 .scratch/
+/models/
+/crates/engine/tests/fixtures/*.wav

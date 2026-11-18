@@ -485,11 +485,12 @@ fn double_tap_starts_hands_free_and_the_next_tap_pastes() {
 
     let t1 = t0 + Duration::from_secs(6);
     press(&mut c, t1);
-
-    assert!(!c.microphone().is_capturing());
-    assert_eq!(c.platform().pastes(), ["สวัสดีครับ"]);
+    assert!(c.microphone().is_capturing());
+    assert!(c.platform().pastes().is_empty());
 
     release(&mut c, t1 + ms(60));
+    assert!(!c.microphone().is_capturing());
+    assert_eq!(c.platform().pastes(), ["สวัสดีครับ"]);
     assert_eq!(c.microphone().start_count(), 1);
     assert_eq!(c.platform().pastes().len(), 1);
 }
@@ -746,7 +747,7 @@ fn cancelling_plays_the_stop_sound() {
 }
 
 #[test]
-fn no_sound_plays_when_the_utterance_cannot_start() {
+fn the_start_sound_plays_before_the_microphone_opens() {
     let mut engine = FakeEngine::new(Vec::<String>::new(), "x");
     engine.load().unwrap();
     let mut c = Controller::new(
@@ -758,7 +759,60 @@ fn no_sound_plays_when_the_utterance_cannot_start() {
 
     hold(&mut c, Instant::now());
 
+    assert_eq!(c.platform().sounds(), [Sound::Start]);
+    assert_eq!(c.microphone().start_count(), 0);
+}
+
+#[test]
+fn no_sound_plays_when_a_permission_is_missing() {
+    let mut engine = FakeEngine::new(Vec::<String>::new(), "x");
+    engine.load().unwrap();
+    let platform = FakePlatform::new().with_permission(
+        platform::Permission::Microphone,
+        platform::PermissionStatus::Denied,
+    );
+    let mut c = Controller::new(platform, engine, FakeMicrophone::new(), config());
+
+    hold(&mut c, Instant::now());
+
     assert!(c.platform().sounds().is_empty());
+}
+
+#[test]
+fn a_shortcut_while_ending_hands_free_keeps_the_utterance_running() {
+    let mut c = controller("ต่อ");
+    let t0 = Instant::now();
+
+    tap(&mut c, t0);
+    tap(&mut c, t0 + ms(200));
+    let t1 = t0 + Duration::from_secs(3);
+    press(&mut c, t1);
+    combined(&mut c, t1 + ms(30));
+    release(&mut c, t1 + ms(90));
+
+    assert!(c.microphone().is_capturing());
+    assert!(c.platform().pastes().is_empty());
+
+    tap(&mut c, t1 + Duration::from_secs(2));
+
+    assert!(!c.microphone().is_capturing());
+    assert_eq!(c.platform().pastes(), ["ต่อ"]);
+}
+
+#[test]
+fn escape_while_ending_hands_free_cancels() {
+    let mut c = controller("x");
+    let t0 = Instant::now();
+
+    tap(&mut c, t0);
+    tap(&mut c, t0 + ms(200));
+    let t1 = t0 + Duration::from_secs(3);
+    press(&mut c, t1);
+    escape(&mut c, t1 + ms(30));
+    release(&mut c, t1 + ms(90));
+
+    assert!(!c.microphone().is_capturing());
+    assert!(c.platform().pastes().is_empty());
 }
 
 #[test]
@@ -824,9 +878,71 @@ fn a_new_utterance_cannot_start_while_the_previous_one_is_transcribing() {
         Input::Tick(t1 + Duration::from_secs(5)),
     ]);
 
+    assert_eq!(c.platform().pastes(), ["วางแล้ว"]);
+    assert_eq!(
+        c.platform().statuses(),
+        [
+            Status::Listening,
+            Status::Transcribing,
+            Status::Ready,
+            Status::Listening
+        ]
+    );
+}
+
+#[test]
+fn a_key_still_held_after_transcription_starts_push_to_talk() {
+    let t0 = Instant::now();
+    let t1 = t0 + Duration::from_secs(1);
+    let c = run_script(vec![
+        trigger(TriggerEvent::pressed(t0)),
+        Input::Tick(t0 + HOLD),
+        trigger(TriggerEvent::released(t1)),
+        trigger(TriggerEvent::pressed(t1 + ms(50))),
+        Input::Tick(t1 + Duration::from_secs(5)),
+    ]);
+
+    assert_eq!(c.microphone().start_count(), 2);
+    assert!(c.microphone().is_capturing());
+    assert_eq!(c.platform().pastes(), ["วางแล้ว"]);
+    assert_eq!(
+        c.platform().sounds(),
+        [Sound::Start, Sound::Stop, Sound::Start]
+    );
+}
+
+#[test]
+fn a_tap_during_transcription_is_ignored() {
+    let t0 = Instant::now();
+    let t1 = t0 + Duration::from_secs(1);
+    let c = run_script(vec![
+        trigger(TriggerEvent::pressed(t0)),
+        Input::Tick(t0 + HOLD),
+        trigger(TriggerEvent::released(t1)),
+        trigger(TriggerEvent::pressed(t1 + ms(50))),
+        trigger(TriggerEvent::released(t1 + ms(100))),
+        Input::Tick(t1 + Duration::from_secs(5)),
+    ]);
+
     assert_eq!(c.microphone().start_count(), 1);
     assert!(!c.microphone().is_capturing());
     assert_eq!(c.platform().pastes(), ["วางแล้ว"]);
+}
+
+#[test]
+fn a_shortcut_during_transcription_does_not_start_push_to_talk() {
+    let t0 = Instant::now();
+    let t1 = t0 + Duration::from_secs(1);
+    let c = run_script(vec![
+        trigger(TriggerEvent::pressed(t0)),
+        Input::Tick(t0 + HOLD),
+        trigger(TriggerEvent::released(t1)),
+        trigger(TriggerEvent::pressed(t1 + ms(50))),
+        trigger(TriggerEvent::combined(t1 + ms(80))),
+        Input::Tick(t1 + Duration::from_secs(5)),
+    ]);
+
+    assert_eq!(c.microphone().start_count(), 1);
 }
 
 #[test]

@@ -59,6 +59,7 @@ enum State {
     Idle,
     Pending { since: Instant, second_tap: bool },
     Listening { hands_free: bool },
+    EndingHandsFree,
 }
 
 pub struct Controller<P, E, M> {
@@ -131,7 +132,7 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
     pub fn next_deadline(&self) -> Option<Instant> {
         let pending = match self.state {
             State::Pending { since, .. } => Some(since + self.config.hold_threshold),
-            State::Idle | State::Listening { .. } => None,
+            State::Idle | State::Listening { .. } | State::EndingHandsFree => None,
         };
         let polling = self.watch.as_ref().map(|watch| watch.next_poll);
         [pending, self.hide_at, polling].into_iter().flatten().min()
@@ -179,7 +180,7 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
     fn dispatch(&mut self, input: Input, queued: Option<&Receiver<Input>>) -> Vec<Input> {
         match input {
             Input::Trigger(event) => match event.state {
-                TriggerState::Pressed => return self.on_pressed(event.at, queued),
+                TriggerState::Pressed => self.on_pressed(event.at),
                 TriggerState::Released => return self.on_released(event.at, queued),
                 TriggerState::Combined => self.on_combined(),
                 TriggerState::Escape => self.on_escape(),
@@ -191,7 +192,7 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
         Vec::new()
     }
 
-    fn on_pressed(&mut self, at: Instant, queued: Option<&Receiver<Input>>) -> Vec<Input> {
+    fn on_pressed(&mut self, at: Instant) {
         match self.state {
             State::Idle => {
                 let second_tap = self.last_tap.take().is_some_and(|tap| {
@@ -201,10 +202,11 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
                     since: at,
                     second_tap,
                 };
-                Vec::new()
             }
-            State::Listening { hands_free: true } => self.finish(queued),
-            State::Pending { .. } | State::Listening { hands_free: false } => Vec::new(),
+            State::Listening { hands_free: true } => self.state = State::EndingHandsFree,
+            State::Pending { .. }
+            | State::Listening { hands_free: false }
+            | State::EndingHandsFree => {}
         }
     }
 
@@ -220,7 +222,7 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
                 }
                 Vec::new()
             }
-            State::Listening { hands_free: false } => self.finish(queued),
+            State::Listening { hands_free: false } | State::EndingHandsFree => self.finish(queued),
         }
     }
 
@@ -229,6 +231,7 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
         match self.state {
             State::Pending { .. } => self.state = State::Idle,
             State::Listening { hands_free: false } => self.cancel(),
+            State::EndingHandsFree => self.state = State::Listening { hands_free: true },
             State::Idle | State::Listening { hands_free: true } => {}
         }
     }
@@ -237,7 +240,7 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
         self.last_tap = None;
         match self.state {
             State::Pending { .. } => self.state = State::Idle,
-            State::Listening { .. } => self.cancel(),
+            State::Listening { .. } | State::EndingHandsFree => self.cancel(),
             State::Idle => {}
         }
     }
@@ -332,7 +335,7 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
     }
 
     fn on_audio(&mut self, samples: &[f32]) {
-        if !matches!(self.state, State::Listening { .. }) {
+        if !matches!(self.state, State::Listening { .. } | State::EndingHandsFree) {
             return;
         }
         match self.engine.push_audio(samples) {
@@ -377,6 +380,7 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
             self.fail(PillError::TranscriptionFailed);
             return;
         }
+        self.play(Sound::Start);
         if let Err(error) = self.microphone.start() {
             tracing::error!(%error, "cannot start the microphone");
             self.engine.cancel_utterance();
@@ -386,7 +390,6 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
         self.state = State::Listening { hands_free };
         self.hide_at = None;
         self.shown_partial = None;
-        self.play(Sound::Start);
         self.platform.show_status(Status::Listening);
         self.platform.show_pill(PillState::Listening);
     }
@@ -414,8 +417,27 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
         let cancelled = waiting.iter().any(
             |input| matches!(input, Input::Trigger(event) if event.state == TriggerState::Escape),
         );
+        let held = waiting
+            .iter()
+            .filter_map(|input| match input {
+                Input::Trigger(event) => Some(event.state),
+                _ => None,
+            })
+            .rfind(|state| {
+                matches!(
+                    state,
+                    TriggerState::Pressed | TriggerState::Released | TriggerState::Combined
+                )
+            })
+            == Some(TriggerState::Pressed);
         waiting.retain(|input| matches!(input, Input::Tick(_) | Input::Permission(_)));
         self.last_tap = None;
+        if held && !cancelled {
+            self.state = State::Pending {
+                since: Instant::now(),
+                second_tap: false,
+            };
+        }
         if cancelled {
             tracing::info!("Utterance cancelled while transcribing");
             self.platform.show_status(Status::Ready);

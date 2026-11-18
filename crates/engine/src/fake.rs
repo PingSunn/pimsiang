@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::sync::mpsc::{self, Receiver, Sender};
 
-use crate::{Engine, EngineError, UtteranceOptions};
+use crate::{Engine, EngineError, ModelFiles, UtteranceOptions};
 
 pub struct FakeEngine {
     partials: Vec<String>,
@@ -16,6 +16,7 @@ pub struct FakeEngine {
     load_fails: bool,
     load_gate: Option<Receiver<()>>,
     settled: usize,
+    switched: Vec<ModelFiles>,
 }
 
 pub struct LoadGate(Sender<()>);
@@ -44,6 +45,7 @@ impl FakeEngine {
             load_fails: false,
             load_gate: None,
             settled: 0,
+            switched: Vec::new(),
         }
     }
 
@@ -79,6 +81,10 @@ impl FakeEngine {
         self.pushed_samples
     }
 
+    pub fn switched_to(&self) -> &[ModelFiles] {
+        &self.switched
+    }
+
     pub fn load_count(&self) -> usize {
         self.load_count
     }
@@ -106,6 +112,11 @@ impl Engine for FakeEngine {
 
     fn is_loaded(&self) -> bool {
         self.loaded
+    }
+
+    fn switch_model(&mut self, files: ModelFiles) {
+        self.unload();
+        self.switched.push(files);
     }
 
     fn start_utterance(&mut self, options: UtteranceOptions) -> Result<(), EngineError> {

@@ -146,6 +146,10 @@ impl Recognizer for OnnxRecognizer {
         self.model = None;
     }
 
+    fn use_files(&mut self, files: &ModelFiles) {
+        self.files = files.clone();
+    }
+
     fn is_loaded(&self) -> bool {
         self.model.is_some()
     }

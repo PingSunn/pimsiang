@@ -4,7 +4,7 @@ use ort::environment::Environment;
 use ort::session::Session;
 use ort::value::Tensor;
 
-use crate::EngineError;
+use crate::{EngineError, ModelFiles};
 
 pub const WINDOW_SAMPLES: usize = 512;
 const CONTEXT_SAMPLES: usize = 64;
@@ -15,6 +15,7 @@ pub trait SpeechDetector {
     fn load(&mut self) -> Result<(), EngineError>;
     fn unload(&mut self);
     fn is_loaded(&self) -> bool;
+    fn use_files(&mut self, _files: &ModelFiles) {}
     fn reset(&mut self);
     fn speech_probability(&mut self, window: &[f32]) -> Result<f32, EngineError>;
 }
@@ -84,6 +85,10 @@ impl SpeechDetector for SileroVad {
 
     fn is_loaded(&self) -> bool {
         self.model.is_some()
+    }
+
+    fn use_files(&mut self, files: &ModelFiles) {
+        self.path = files.vad();
     }
 
     fn reset(&mut self) {

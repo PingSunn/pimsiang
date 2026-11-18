@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 
 use crate::vad::{AlwaysSpeech, SpeechDetector, WINDOW_SAMPLES};
-use crate::{Engine, EngineError, Recognizer, UtteranceOptions};
+use crate::{Engine, EngineError, ModelFiles, Recognizer, UtteranceOptions};
 
 pub const PARTIAL_INTERVAL_SAMPLES: usize = 8_000;
 pub const MIN_SILENCE_SAMPLES: usize = 8_000;
@@ -207,6 +207,12 @@ impl<R: Recognizer, D: SpeechDetector> Engine for StreamingEngine<R, D> {
 
     fn is_loaded(&self) -> bool {
         self.recognizer.is_loaded() && self.detector.is_loaded()
+    }
+
+    fn switch_model(&mut self, files: ModelFiles) {
+        self.unload();
+        self.recognizer.use_files(&files);
+        self.detector.use_files(&files);
     }
 
     fn start_utterance(&mut self, options: UtteranceOptions) -> Result<(), EngineError> {

@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use audio::{Microphone, MicrophoneChoice, Opened};
-use engine::{Engine, EngineError, LanguageMode, UtteranceOptions};
+use engine::{Engine, EngineError, LanguageMode, ModelFiles, UtteranceOptions};
 use platform::{
     Focus, MicrophoneEntry, MicrophoneMenu, PartialText, Permission, PermissionReport,
     PermissionStatus, PillError, PillNotice, PillState, Platform, Sound, Status, TriggerEvent,
@@ -64,6 +64,7 @@ pub enum Input {
     MicrophoneLost,
     ModelReady,
     ModelLoaded,
+    SwitchModel(ModelFiles),
     PasteText(String),
     NoTranscript,
     Preferences(Preferences),
@@ -126,6 +127,7 @@ pub struct Controller<P, E, M> {
     microphone_lost_while_loading: bool,
     now: Instant,
     idle_since: Option<Instant>,
+    pending_switch: Option<ModelFiles>,
 }
 
 impl<P: Platform, E: Engine + Send + 'static, M: Microphone> Controller<P, E, M> {
@@ -156,6 +158,7 @@ impl<P: Platform, E: Engine + Send + 'static, M: Microphone> Controller<P, E, M>
             microphone_lost_while_loading: false,
             now,
             idle_since: loaded.then_some(now),
+            pending_switch: None,
         }
     }
 
@@ -289,6 +292,28 @@ impl<P: Platform, E: Engine + Send + 'static, M: Microphone> Controller<P, E, M>
     }
 
     fn dispatch(&mut self, input: Input, queued: Option<&Receiver<Input>>) -> Vec<Input> {
+        let waiting = self.dispatch_input(input, queued);
+        self.apply_pending_switch();
+        waiting
+    }
+
+    fn apply_pending_switch(&mut self) {
+        if !matches!(self.state, State::Idle) || self.loading.is_some() {
+            return;
+        }
+        let Some(files) = self.pending_switch.take() else {
+            return;
+        };
+        let was_loaded = self.with_engine(|engine| engine.is_loaded());
+        tracing::info!(dir = %files.dir.display(), "switching the Model");
+        self.with_engine(|engine| engine.switch_model(files));
+        self.idle_since = None;
+        if was_loaded {
+            self.preload_model();
+        }
+    }
+
+    fn dispatch_input(&mut self, input: Input, queued: Option<&Receiver<Input>>) -> Vec<Input> {
         match &input {
             Input::Trigger(event) => self.now = self.now.max(event.at),
             Input::Tick(now) => self.now = self.now.max(*now),
@@ -321,6 +346,7 @@ impl<P: Platform, E: Engine + Send + 'static, M: Microphone> Controller<P, E, M>
                 self.preload_model();
             }
             Input::ModelLoaded => return self.on_model_loaded_input(queued),
+            Input::SwitchModel(files) => self.pending_switch = Some(files),
             Input::PasteText(text) => self.paste_again(&text),
             Input::NoTranscript => self.show_notice(PillNotice::NoTranscriptYet),
             Input::Preferences(preferences) => self.apply_preferences(preferences),

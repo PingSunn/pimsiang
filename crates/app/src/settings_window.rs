@@ -78,6 +78,10 @@ impl SettingsWindow {
         self.surface.focus();
     }
 
+    pub fn popup_open(&self) -> bool {
+        self.surface.popup_open()
+    }
+
     pub fn show_model(&mut self, model: ModelChip) {
         if self.model != model {
             self.model = model;

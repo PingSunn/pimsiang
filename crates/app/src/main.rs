@@ -105,6 +105,27 @@ mod macos {
         Fatal(String),
     }
 
+    trait ManagedWindow {
+        fn id(&self) -> WindowId;
+        fn focus(&self);
+    }
+
+    macro_rules! managed_window {
+        ($($window:ty),*) => {$(
+            impl ManagedWindow for $window {
+                fn id(&self) -> WindowId {
+                    <$window>::id(self)
+                }
+
+                fn focus(&self) {
+                    <$window>::focus(self)
+                }
+            }
+        )*};
+    }
+
+    managed_window!(OnboardingWindow, SettingsWindow, HistoryWindow);
+
     #[derive(Clone, Copy, PartialEq, Eq)]
     enum WindowKind {
         Setup,
@@ -156,32 +177,28 @@ mod macos {
             }
         }
 
-        fn is_open(&self, kind: WindowKind) -> bool {
+        fn window(&self, kind: WindowKind) -> Option<&dyn ManagedWindow> {
             match kind {
-                WindowKind::Setup => self.setup.is_some(),
-                WindowKind::Settings => self.settings_window.is_some(),
-                WindowKind::History => self.history_window.is_some(),
+                WindowKind::Setup => self.setup.as_ref().map(|w| w as &dyn ManagedWindow),
+                WindowKind::Settings => self
+                    .settings_window
+                    .as_ref()
+                    .map(|w| w as &dyn ManagedWindow),
+                WindowKind::History => self
+                    .history_window
+                    .as_ref()
+                    .map(|w| w as &dyn ManagedWindow),
             }
         }
 
+        fn is_open(&self, kind: WindowKind) -> bool {
+            self.window(kind).is_some()
+        }
+
         fn kind_of(&self, id: WindowId) -> Option<WindowKind> {
-            if self.setup.as_ref().is_some_and(|window| window.id() == id) {
-                Some(WindowKind::Setup)
-            } else if self
-                .settings_window
-                .as_ref()
-                .is_some_and(|window| window.id() == id)
-            {
-                Some(WindowKind::Settings)
-            } else if self
-                .history_window
-                .as_ref()
-                .is_some_and(|window| window.id() == id)
-            {
-                Some(WindowKind::History)
-            } else {
-                None
-            }
+            [WindowKind::Setup, WindowKind::Settings, WindowKind::History]
+                .into_iter()
+                .find(|kind| self.window(*kind).is_some_and(|window| window.id() == id))
         }
 
         fn close_window(&mut self, kind: WindowKind) {
@@ -198,13 +215,26 @@ mod macos {
             }
         }
 
+        fn settings_popup_open(&self) -> bool {
+            self.settings_window
+                .as_ref()
+                .is_some_and(|window| window.popup_open())
+        }
+
+        fn setup_needed(&self) -> bool {
+            self.report.is_some_and(|report| !report.all_granted())
+                || self.model != ModelStatus::Ready
+        }
+
         fn on_app_menu(&mut self, event_loop: &ActiveEventLoop, action: AppMenuAction) {
             let key_window = self.key_window.filter(|kind| self.is_open(*kind));
             match action {
                 AppMenuAction::Settings => self.open_settings(event_loop),
                 AppMenuAction::Quit => event_loop.exit(),
                 AppMenuAction::CloseWindow => {
-                    if let Some(kind) = key_window {
+                    if let Some(kind) = key_window
+                        && !(kind == WindowKind::Settings && self.settings_popup_open())
+                    {
                         self.close_window(kind);
                     }
                 }
@@ -222,22 +252,8 @@ mod macos {
             self.recent_window = Some(kind);
             self.sync_dock();
             dock::activate();
-            match kind {
-                WindowKind::Setup => {
-                    if let Some(window) = &self.setup {
-                        window.focus();
-                    }
-                }
-                WindowKind::Settings => {
-                    if let Some(window) = &self.settings_window {
-                        window.focus();
-                    }
-                }
-                WindowKind::History => {
-                    if let Some(window) = &self.history_window {
-                        window.focus();
-                    }
-                }
+            if let Some(window) = self.window(kind) {
+                window.focus();
             }
         }
 
@@ -248,6 +264,7 @@ mod macos {
                 .find(|kind| self.is_open(*kind));
             match recent.or(open) {
                 Some(kind) => self.raise(kind),
+                None if self.setup_needed() => self.open_setup(event_loop),
                 None => self.open_settings(event_loop),
             }
         }
@@ -410,11 +427,10 @@ mod macos {
             }
             let dock_changed = changed.show_in_dock != self.preferences.show_in_dock;
             self.preferences = changed;
-            if dock_changed {
-                self.sync_dock();
-                if let Some(kind) = self.recent_window.filter(|kind| self.is_open(*kind)) {
-                    self.raise(kind);
-                }
+            if dock_changed
+                && let Some(kind) = self.recent_window.filter(|kind| self.is_open(*kind))
+            {
+                self.raise(kind);
             }
             if let Some(menu_bar) = &self.menu_bar
                 && let Err(error) = menu_bar.show_trigger_key(changed.trigger_key)

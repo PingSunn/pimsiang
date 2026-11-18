@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
@@ -24,6 +25,7 @@ pub struct Surface {
     context: egui::Context,
     input: egui_winit::State,
     painter: Painter,
+    refocus: Cell<bool>,
 }
 
 impl Surface {
@@ -73,6 +75,7 @@ impl Surface {
             context,
             input,
             painter,
+            refocus: Cell::new(false),
         })
     }
 
@@ -83,6 +86,7 @@ impl Surface {
     pub fn focus(&self) {
         if self.window.is_minimized() == Some(true) {
             self.window.set_minimized(false);
+            self.refocus.set(true);
         }
         self.window.focus_window();
     }
@@ -108,7 +112,14 @@ impl Surface {
         self.window.request_redraw();
     }
 
+    pub fn popup_open(&self) -> bool {
+        egui::Popup::is_any_open(&self.context)
+    }
+
     pub fn forward(&mut self, event: &WindowEvent) {
+        if matches!(event, WindowEvent::Occluded(false)) && self.refocus.take() {
+            self.window.focus_window();
+        }
         let response = self.input.on_window_event(&self.window, event);
         if response.repaint {
             self.window.request_redraw();

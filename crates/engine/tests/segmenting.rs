@@ -375,9 +375,9 @@ fn spans(text: &str) -> Vec<(usize, usize)> {
 
 fn continuous_speech_with_dips(window: usize) -> f32 {
     match window {
-        300 => 0.0,
-        430 => 0.3,
-        440 => 0.2,
+        200 => 0.0,
+        290 => 0.3,
+        300 => 0.2,
         _ => 0.9,
     }
 }
@@ -386,10 +386,10 @@ fn continuous_speech_with_dips(window: usize) -> f32 {
 fn a_segment_reaching_the_cap_is_cut_at_the_lowest_probability_window_near_its_end() {
     let (mut engine, _) = scripted_engine(continuous_speech_with_dips);
 
-    stream(&mut engine, &indexed_audio(480));
+    stream(&mut engine, &indexed_audio(330));
     let text = engine.finish_utterance().unwrap();
 
-    let cut = 440 * WINDOW_SAMPLES + WINDOW_SAMPLES / 2;
+    let cut = 300 * WINDOW_SAMPLES + WINDOW_SAMPLES / 2;
     assert_eq!(spans(&text)[0], (0, cut));
 }
 
@@ -419,14 +419,14 @@ fn forced_cuts_lose_and_duplicate_no_audio() {
 #[test]
 fn a_forced_cut_joins_without_a_space_but_a_silence_close_joins_with_one() {
     let (mut engine, _) = scripted_engine(|window| {
-        if (600..660).contains(&window) {
+        if (500..560).contains(&window) {
             0.0
         } else {
             0.9
         }
     });
 
-    stream(&mut engine, &indexed_audio(1_000));
+    stream(&mut engine, &indexed_audio(800));
     let text = engine.finish_utterance().unwrap();
 
     let phrases: Vec<&str> = text.split(' ').collect();
@@ -436,7 +436,7 @@ fn a_forced_cut_joins_without_a_space_but_a_silence_close_joins_with_one() {
 }
 
 fn pause_spanning_the_cap(window: usize) -> f32 {
-    if (460..500).contains(&window) {
+    if (300..340).contains(&window) {
         0.0
     } else {
         0.9
@@ -523,4 +523,61 @@ fn partial_text_decodes_at_most_one_capped_segment_per_tick() {
         );
     }
     engine.finish_utterance().unwrap();
+}
+
+#[test]
+fn a_segment_is_capped_at_ten_seconds() {
+    let (mut engine, _) = scripted_engine(|_| 0.9);
+
+    stream(&mut engine, &indexed_audio(330));
+    let text = engine.finish_utterance().unwrap();
+
+    assert_eq!(MAX_SEGMENT_SAMPLES, 10 * SECOND);
+    let first = spans(&text)[0];
+    assert!(first.1 <= MAX_SEGMENT_SAMPLES + WINDOW_SAMPLES, "{text}");
+    assert!(
+        first.1 > MAX_SEGMENT_SAMPLES - SECOND * 3 / 2 - WINDOW_SAMPLES,
+        "{text}"
+    );
+}
+
+#[test]
+fn partial_decodes_slow_down_once_the_open_segment_passes_five_seconds() {
+    let (mut engine, calls) = scripted_engine(|_| 0.9);
+    let audio = indexed_audio(310);
+    let mut decodes_by_second = Vec::new();
+
+    for (index, chunk) in audio.chunks(1_600).enumerate() {
+        engine.push_audio(chunk).unwrap();
+        if (index + 1) % 10 == 0 {
+            decodes_by_second.push(calls.lengths().len());
+        }
+    }
+
+    assert_eq!(decodes_by_second[4], 10, "{decodes_by_second:?}");
+    assert_eq!(
+        decodes_by_second[8] - decodes_by_second[4],
+        4,
+        "{decodes_by_second:?}"
+    );
+}
+
+#[test]
+fn the_fast_partial_cadence_returns_after_a_forced_cut() {
+    let (mut engine, calls) = scripted_engine(|_| 0.9);
+    let audio = indexed_audio(330);
+    let mut after_cut = 0;
+
+    for chunk in audio.chunks(1_600) {
+        engine.push_audio(chunk).unwrap();
+        if calls.lengths().iter().any(|&n| n > 9 * SECOND) && after_cut == 0 {
+            after_cut = calls.lengths().len();
+        }
+    }
+
+    assert!(after_cut > 0);
+    assert!(
+        calls.lengths().len() > after_cut,
+        "no Partial after the cut"
+    );
 }

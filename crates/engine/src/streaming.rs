@@ -6,7 +6,9 @@ use crate::{Engine, EngineError, Recognizer, UtteranceOptions};
 pub const PARTIAL_INTERVAL_SAMPLES: usize = 8_000;
 pub const MIN_SILENCE_SAMPLES: usize = 8_000;
 pub const SPEECH_PAD_SAMPLES: usize = 4_800;
-pub const MAX_SEGMENT_SAMPLES: usize = 240_000;
+pub const MAX_SEGMENT_SAMPLES: usize = 160_000;
+const LONG_SEGMENT_SAMPLES: usize = 80_000;
+const LONG_PARTIAL_INTERVAL_SAMPLES: usize = 16_000;
 const CUT_SEARCH_SAMPLES: usize = 24_000;
 const CUT_SEARCH_WINDOWS: usize = CUT_SEARCH_SAMPLES / WINDOW_SAMPLES + 1;
 const SPEECH_THRESHOLD: f32 = 0.5;
@@ -84,6 +86,14 @@ impl OpenUtterance {
             }
         }
         Ok(false)
+    }
+
+    fn partial_interval(&self) -> usize {
+        if self.audio.len() > LONG_SEGMENT_SAMPLES {
+            LONG_PARTIAL_INTERVAL_SAMPLES
+        } else {
+            PARTIAL_INTERVAL_SAMPLES
+        }
     }
 
     fn segment_end(&self) -> usize {
@@ -237,7 +247,7 @@ impl<R: Recognizer, D: SpeechDetector> StreamingEngine<R, D> {
         }
         if partials
             && utterance.in_speech
-            && (closed || utterance.since_partial >= PARTIAL_INTERVAL_SAMPLES)
+            && (closed || utterance.since_partial >= utterance.partial_interval())
         {
             utterance.since_partial = 0;
             let open = self

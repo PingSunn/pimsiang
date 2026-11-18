@@ -8,6 +8,7 @@ use engine::{Engine, LanguageMode, UtteranceOptions};
 use platform::fake::FakePlatform;
 use platform::{PillError, PillNotice, PillState, Sound, Status, TriggerEvent, TriggerKey};
 
+const IDLE: Duration = Duration::from_secs(600);
 const HOLD: Duration = Duration::from_millis(200);
 const TAP_WINDOW: Duration = Duration::from_millis(300);
 const LINGER: Duration = Duration::from_millis(400);
@@ -24,6 +25,8 @@ fn config() -> Config {
         sounds: true,
         clipboard_restore: true,
         trigger_key: TriggerKey::RightOption,
+        unload_when_idle: false,
+        idle_after: IDLE,
     }
 }
 
@@ -161,6 +164,7 @@ fn model_is_loaded_when_an_utterance_starts() {
     let t0 = Instant::now();
 
     hold(&mut c, t0);
+    c.handle(Input::ModelLoaded);
     release(&mut c, t0 + Duration::from_secs(1));
 
     assert_eq!(c.engine().load_count(), 1);
@@ -380,12 +384,16 @@ fn model_that_cannot_load_is_shown_in_the_pill() {
     let mut c = Controller::new(FakePlatform::new(), engine, FakeMicrophone::new(), config());
 
     hold(&mut c, Instant::now());
+    c.handle(Input::ModelLoaded);
 
     assert_eq!(
         c.platform().pills(),
-        [PillState::Error(PillError::ModelNotLoaded)]
+        [
+            PillState::LoadingModel,
+            PillState::Error(PillError::ModelNotLoaded)
+        ]
     );
-    assert_eq!(c.microphone().start_count(), 0);
+    assert!(!c.microphone().is_capturing());
 }
 
 #[test]

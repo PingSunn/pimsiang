@@ -1,9 +1,10 @@
 use std::collections::VecDeque;
-use std::sync::mpsc::{Receiver, RecvTimeoutError};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use audio::{Microphone, MicrophoneChoice, Opened};
-use engine::{Engine, LanguageMode, UtteranceOptions};
+use engine::{Engine, EngineError, LanguageMode, UtteranceOptions};
 use platform::{
     Focus, MicrophoneEntry, MicrophoneMenu, Permission, PermissionReport, PermissionStatus,
     PillError, PillNotice, PillState, Platform, Sound, Status, TriggerEvent, TriggerKey,
@@ -24,7 +25,11 @@ pub struct Config {
     pub sounds: bool,
     pub clipboard_restore: bool,
     pub trigger_key: TriggerKey,
+    pub unload_when_idle: bool,
+    pub idle_after: Duration,
 }
+
+pub const IDLE_UNLOAD_AFTER: Duration = Duration::from_secs(600);
 
 impl Default for Config {
     fn default() -> Self {
@@ -38,6 +43,8 @@ impl Default for Config {
             sounds: true,
             clipboard_restore: true,
             trigger_key: TriggerKey::default(),
+            unload_when_idle: true,
+            idle_after: IDLE_UNLOAD_AFTER,
         }
     }
 }
@@ -56,6 +63,7 @@ pub enum Input {
     Microphone(MicrophoneChoice),
     MicrophoneLost,
     ModelReady,
+    ModelLoaded,
     PasteText(String),
     NoTranscript,
     Preferences(Preferences),
@@ -83,11 +91,17 @@ enum State {
         hands_free: bool,
     },
     EndingHandsFree,
+    LoadingModel {
+        hands_free: bool,
+        ending: bool,
+    },
 }
+
+type Wake = Arc<dyn Fn() + Send + Sync>;
 
 pub struct Controller<P, E, M> {
     platform: P,
-    engine: E,
+    engine: Arc<Mutex<E>>,
     microphone: M,
     config: Config,
     state: State,
@@ -103,13 +117,20 @@ pub struct Controller<P, E, M> {
     prompted: Vec<Permission>,
     model_ready: bool,
     history: Option<HistorySink>,
+    loading: Option<Receiver<Result<(), EngineError>>>,
+    buffered: Vec<f32>,
+    wake: Option<Wake>,
+    now: Instant,
+    idle_since: Option<Instant>,
 }
 
-impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
+impl<P: Platform, E: Engine + Send + 'static, M: Microphone> Controller<P, E, M> {
     pub fn new(platform: P, engine: E, microphone: M, config: Config) -> Self {
+        let now = Instant::now();
+        let loaded = engine.is_loaded();
         Self {
             platform,
-            engine,
+            engine: Arc::new(Mutex::new(engine)),
             microphone,
             config,
             state: State::Idle,
@@ -125,7 +146,17 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
             prompted: Vec::new(),
             model_ready: true,
             history: None,
+            loading: None,
+            buffered: Vec::new(),
+            wake: None,
+            now,
+            idle_since: loaded.then_some(now),
         }
+    }
+
+    pub fn on_model_loaded(mut self, wake: impl Fn() + Send + Sync + 'static) -> Self {
+        self.wake = Some(Arc::new(wake));
+        self
     }
 
     pub fn record_history(mut self, sink: impl FnMut(&str, Kind) + Send + 'static) -> Self {
@@ -157,10 +188,16 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
         if !self.model_ready {
             return;
         }
-        if let Err(error) = self.engine.load() {
+        if let Err(error) = self.with_engine(|engine| engine.load()) {
             tracing::error!(%error, "cannot load the Model");
             self.fail(PillError::ModelNotLoaded);
+            return;
         }
+        self.idle_since = Some(self.now);
+    }
+
+    fn with_engine<R>(&self, f: impl FnOnce(&mut E) -> R) -> R {
+        f(&mut self.engine.lock().unwrap_or_else(PoisonError::into_inner))
     }
 
     pub fn platform(&self) -> &P {
@@ -171,8 +208,8 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
         &mut self.platform
     }
 
-    pub fn engine(&self) -> &E {
-        &self.engine
+    pub fn engine(&self) -> MutexGuard<'_, E> {
+        self.engine.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     pub fn microphone(&self) -> &M {
@@ -186,11 +223,15 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
     pub fn next_deadline(&self) -> Option<Instant> {
         let pending = match self.state {
             State::Pending { since, .. } => Some(since + self.config.hold_threshold),
-            State::Idle | State::Listening { .. } | State::EndingHandsFree => None,
+            State::Idle
+            | State::Listening { .. }
+            | State::EndingHandsFree
+            | State::LoadingModel { .. } => None,
         };
+        let unloading = self.idle_deadline();
         let polling = self.watch.as_ref().map(|watch| watch.next_poll);
         let notice = self.notice_until.filter(|_| self.held_partial.is_some());
-        [pending, self.hide_at, polling, notice]
+        [pending, self.hide_at, polling, notice, unloading]
             .into_iter()
             .flatten()
             .min()
@@ -236,6 +277,11 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
     }
 
     fn dispatch(&mut self, input: Input, queued: Option<&Receiver<Input>>) -> Vec<Input> {
+        match &input {
+            Input::Trigger(event) => self.now = self.now.max(event.at),
+            Input::Tick(now) => self.now = self.now.max(*now),
+            _ => {}
+        }
         match input {
             Input::Trigger(event) => match event.state {
                 TriggerState::Pressed => self.on_pressed(event.at, event.shift),
@@ -257,6 +303,7 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
                 self.model_ready = true;
                 self.preload_model();
             }
+            Input::ModelLoaded => return self.on_model_loaded_input(queued),
             Input::PasteText(text) => self.paste_again(&text),
             Input::NoTranscript => self.show_notice(PillNotice::NoTranscriptYet),
             Input::Preferences(preferences) => self.apply_preferences(preferences),
@@ -268,6 +315,10 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
         self.config.language = preferences.language;
         self.config.sounds = preferences.sounds;
         self.config.clipboard_restore = preferences.clipboard_restore;
+        self.config.unload_when_idle = preferences.unload_when_idle;
+        if preferences.unload_when_idle && self.idle_since.is_none() {
+            self.arm_idle();
+        }
         if preferences.trigger_key != self.config.trigger_key {
             self.config.trigger_key = preferences.trigger_key;
             self.platform.set_trigger_key(preferences.trigger_key);
@@ -287,7 +338,11 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
                 };
             }
             State::Listening { hands_free: true } => self.state = State::EndingHandsFree,
-            State::Pending { .. }
+            State::LoadingModel {
+                hands_free: true, ..
+            } => self.end_loading_capture(),
+            State::LoadingModel { .. }
+            | State::Pending { .. }
             | State::Listening { hands_free: false }
             | State::EndingHandsFree => {}
         }
@@ -295,7 +350,17 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
 
     fn on_released(&mut self, at: Instant, queued: Option<&Receiver<Input>>) -> Vec<Input> {
         match self.state {
-            State::Idle | State::Listening { hands_free: true } => Vec::new(),
+            State::Idle
+            | State::Listening { hands_free: true }
+            | State::LoadingModel {
+                hands_free: true, ..
+            } => Vec::new(),
+            State::LoadingModel {
+                hands_free: false, ..
+            } => {
+                self.end_loading_capture();
+                Vec::new()
+            }
             State::Pending {
                 second_tap, shift, ..
             } => {
@@ -316,8 +381,15 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
         match self.state {
             State::Pending { .. } => self.state = State::Idle,
             State::Listening { hands_free: false } => self.cancel(),
+            State::LoadingModel {
+                hands_free: false, ..
+            } => self.cancel(),
             State::EndingHandsFree => self.state = State::Listening { hands_free: true },
-            State::Idle | State::Listening { hands_free: true } => {}
+            State::Idle
+            | State::Listening { hands_free: true }
+            | State::LoadingModel {
+                hands_free: true, ..
+            } => {}
         }
     }
 
@@ -325,7 +397,9 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
         self.last_tap = None;
         match self.state {
             State::Pending { .. } => self.state = State::Idle,
-            State::Listening { .. } | State::EndingHandsFree => self.cancel(),
+            State::Listening { .. } | State::EndingHandsFree | State::LoadingModel { .. } => {
+                self.cancel()
+            }
             State::Idle => {}
         }
     }
@@ -334,7 +408,12 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
         self.microphone.stop();
         self.held_partial = None;
         self.notice_until = None;
-        self.engine.cancel_utterance();
+        if matches!(self.state, State::LoadingModel { .. }) {
+            self.buffered.clear();
+        } else {
+            self.with_engine(|engine| engine.cancel_utterance());
+            self.idle_since = Some(self.now);
+        }
         self.play(Sound::Stop);
         self.state = State::Idle;
         self.hide_at = None;
@@ -349,6 +428,11 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
     }
 
     fn on_microphone_lost(&mut self) -> Vec<Input> {
+        if let State::LoadingModel { .. } = self.state {
+            tracing::warn!("the microphone stream ended while the Model was loading");
+            self.end_loading_capture();
+            return Vec::new();
+        }
         if !matches!(self.state, State::Listening { .. } | State::EndingHandsFree) {
             return Vec::new();
         }
@@ -378,6 +462,7 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
             self.state = State::Idle;
             self.begin(false, shift);
         }
+        self.unload_if_idle(now);
         if let Some(watch) = &self.watch
             && now >= watch.next_poll
         {
@@ -464,10 +549,14 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
     }
 
     fn on_audio(&mut self, samples: &[f32]) {
+        if matches!(self.state, State::LoadingModel { .. }) {
+            self.buffered.extend_from_slice(samples);
+            return;
+        }
         if !matches!(self.state, State::Listening { .. } | State::EndingHandsFree) {
             return;
         }
-        match self.engine.push_audio(samples) {
+        match self.with_engine(|engine| engine.push_audio(samples)) {
             Ok(Some(text)) => self.show_partial(text),
             Ok(None) => {}
             Err(error) => tracing::warn!(%error, "decoding failed while listening"),
@@ -505,17 +594,14 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
             self.fail(PillError::ModelNotReady);
             return;
         }
-        if !self.engine.is_loaded()
-            && let Err(error) = self.engine.load()
-        {
-            tracing::error!(%error, "cannot load the Model");
-            self.fail(PillError::ModelNotLoaded);
+        if self.loading.is_some() || !self.with_engine(|engine| engine.is_loaded()) {
+            self.begin_loading(hands_free, quick_note);
             return;
         }
         let options = UtteranceOptions {
             language: self.config.language,
         };
-        if let Err(error) = self.engine.start_utterance(options) {
+        if let Err(error) = self.with_engine(|engine| engine.start_utterance(options)) {
             tracing::error!(%error, "cannot start an Utterance");
             self.fail(PillError::TranscriptionFailed);
             return;
@@ -525,7 +611,7 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
             Ok(opened) => opened,
             Err(error) => {
                 tracing::error!(%error, "cannot start the microphone");
-                self.engine.cancel_utterance();
+                self.with_engine(|engine| engine.cancel_utterance());
                 self.fail(PillError::MicrophoneUnavailable);
                 return;
             }
@@ -545,6 +631,135 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
         }
     }
 
+    fn begin_loading(&mut self, hands_free: bool, quick_note: bool) {
+        if self.loading.is_none() && !self.spawn_load() {
+            self.fail(PillError::ModelNotLoaded);
+            return;
+        }
+        self.play(Sound::Start);
+        if let Err(error) = self.microphone.start() {
+            tracing::error!(%error, "cannot start the microphone");
+            self.fail(PillError::MicrophoneUnavailable);
+            return;
+        }
+        self.state = State::LoadingModel {
+            hands_free,
+            ending: false,
+        };
+        self.quick_note = quick_note;
+        self.buffered.clear();
+        self.hide_at = None;
+        self.shown_partial = None;
+        self.held_partial = None;
+        self.notice_until = None;
+        self.platform.show_status(Status::Listening);
+        self.platform.show_pill(PillState::LoadingModel);
+    }
+
+    fn spawn_load(&mut self) -> bool {
+        let (done, result) = mpsc::channel();
+        let engine = Arc::clone(&self.engine);
+        let wake = self.wake.clone();
+        let spawned = std::thread::Builder::new()
+            .name("model-load".to_owned())
+            .spawn(move || {
+                let loaded = engine.lock().unwrap_or_else(PoisonError::into_inner).load();
+                let _ = done.send(loaded);
+                if let Some(wake) = wake {
+                    wake();
+                }
+            });
+        match spawned {
+            Ok(_) => {
+                self.loading = Some(result);
+                true
+            }
+            Err(error) => {
+                tracing::error!(%error, "cannot start loading the Model");
+                false
+            }
+        }
+    }
+
+    fn end_loading_capture(&mut self) {
+        self.microphone.stop();
+        if let State::LoadingModel { ending, .. } = &mut self.state {
+            *ending = true;
+        }
+    }
+
+    fn on_model_loaded_input(&mut self, queued: Option<&Receiver<Input>>) -> Vec<Input> {
+        let Some(result) = self.loading.take() else {
+            return Vec::new();
+        };
+        let result = result
+            .recv()
+            .unwrap_or_else(|_| Err(EngineError::Model("the loading thread stopped".to_owned())));
+        let State::LoadingModel { hands_free, ending } = self.state else {
+            if let Err(error) = result {
+                tracing::error!(%error, "cannot load the Model");
+            } else {
+                self.idle_since = Some(self.now);
+            }
+            return Vec::new();
+        };
+        if let Err(error) = result {
+            tracing::error!(%error, "cannot load the Model");
+            return self.abandon_loading(PillError::ModelNotLoaded);
+        }
+        let options = UtteranceOptions {
+            language: self.config.language,
+        };
+        if let Err(error) = self.with_engine(|engine| engine.start_utterance(options)) {
+            tracing::error!(%error, "cannot start an Utterance");
+            return self.abandon_loading(PillError::TranscriptionFailed);
+        }
+        let buffered = std::mem::take(&mut self.buffered);
+        self.state = State::Listening { hands_free };
+        self.platform.show_pill(PillState::Listening);
+        if ending {
+            if let Err(error) = self.with_engine(|engine| engine.push_tail(&buffered)) {
+                tracing::warn!(%error, "decoding failed while draining the buffered audio");
+            }
+            return self.end(queued, None);
+        }
+        self.on_audio(&buffered);
+        Vec::new()
+    }
+
+    fn abandon_loading(&mut self, error: PillError) -> Vec<Input> {
+        self.microphone.stop();
+        self.buffered.clear();
+        self.state = State::Idle;
+        self.platform.show_status(Status::Ready);
+        self.fail(error);
+        Vec::new()
+    }
+
+    fn idle_deadline(&self) -> Option<Instant> {
+        if !self.config.unload_when_idle
+            || !matches!(self.state, State::Idle)
+            || self.loading.is_some()
+        {
+            return None;
+        }
+        self.idle_since.map(|since| since + self.config.idle_after)
+    }
+
+    fn arm_idle(&mut self) {
+        if self.loading.is_none() && self.with_engine(|engine| engine.is_loaded()) {
+            self.idle_since = Some(self.now);
+        }
+    }
+
+    fn unload_if_idle(&mut self, now: Instant) {
+        if self.idle_deadline().is_some_and(|deadline| now >= deadline) {
+            self.with_engine(|engine| engine.unload());
+            self.idle_since = None;
+            tracing::info!("unloaded the Model after being idle");
+        }
+    }
+
     fn finish(&mut self, queued: Option<&Receiver<Input>>) -> Vec<Input> {
         self.end(queued, None)
     }
@@ -559,7 +774,7 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
             let (tail, other) = coalesce(Vec::new(), queued);
             waiting.extend(other);
             if !tail.is_empty()
-                && let Err(error) = self.engine.push_tail(&tail)
+                && let Err(error) = self.with_engine(|engine| engine.push_tail(&tail))
             {
                 tracing::warn!(%error, "decoding failed while draining the last audio");
             }
@@ -567,7 +782,8 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
         self.state = State::Idle;
         self.platform.show_status(Status::Transcribing);
         self.platform.show_pill(PillState::Transcribing);
-        let result = self.engine.finish_utterance();
+        let result = self.with_engine(|engine| engine.finish_utterance());
+        self.idle_since = Some(self.now);
         if let Some(queued) = queued {
             waiting.extend(std::iter::from_fn(|| queued.try_recv().ok()));
         }

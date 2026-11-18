@@ -739,7 +739,8 @@ mod macos {
 
         let trigger_tx = tx.clone();
         let audio_tx = tx.clone();
-        let lost_tx = tx;
+        let lost_tx = tx.clone();
+        let loaded_tx = tx;
         let microphone = MicCapture::new(Arc::new(move |samples| {
             let _ = audio_tx.send(Input::Audio(samples));
         }))
@@ -756,6 +757,9 @@ mod macos {
                 ..Config::default()
             },
         )
+        .on_model_loaded(move || {
+            let _ = loaded_tx.send(Input::ModelLoaded);
+        })
         .watch_permissions(PERMISSION_POLL, move || {
             let trigger_tx = trigger_tx.clone();
             Box::new(move |event| {

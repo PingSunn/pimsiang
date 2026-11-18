@@ -19,6 +19,7 @@ type TestController = Controller<FakePlatform, FakeEngine, FakeMicrophone>;
 fn config() -> Config {
     Config {
         hold_threshold: HOLD,
+        unload_when_idle: false,
         ..Config::default()
     }
 }

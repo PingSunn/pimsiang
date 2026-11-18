@@ -10,6 +10,7 @@ use platform::fake::FakePlatform;
 use platform::{PillNotice, PillState, TriggerEvent, TriggerKey};
 use store::{History, HistoryService, Kind};
 
+const IDLE: Duration = Duration::from_secs(600);
 const HOLD: Duration = Duration::from_millis(200);
 
 fn config() -> Config {
@@ -23,6 +24,8 @@ fn config() -> Config {
         sounds: true,
         clipboard_restore: true,
         trigger_key: TriggerKey::RightOption,
+        unload_when_idle: true,
+        idle_after: IDLE,
     }
 }
 

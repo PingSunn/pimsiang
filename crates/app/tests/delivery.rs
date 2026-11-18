@@ -9,6 +9,7 @@ use platform::fake::FakePlatform;
 use platform::{Focus, PillError, PillNotice, PillState, TriggerEvent, TriggerKey};
 use store::Kind;
 
+const IDLE: Duration = Duration::from_secs(600);
 const HOLD: Duration = Duration::from_millis(200);
 const NOTICE_LINGER: Duration = Duration::from_millis(1500);
 const ERROR_LINGER: Duration = Duration::from_secs(3);
@@ -24,6 +25,8 @@ fn config() -> Config {
         sounds: true,
         clipboard_restore: true,
         trigger_key: TriggerKey::RightOption,
+        unload_when_idle: true,
+        idle_after: IDLE,
     }
 }
 

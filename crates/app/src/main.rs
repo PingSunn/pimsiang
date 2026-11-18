@@ -18,6 +18,7 @@ mod macos {
 
     use anyhow::{Context, Result};
     use app::controller::{Config, Controller, Input, PermissionCommand};
+    use app::history_view;
     use app::i18n::Language;
     use app::model_download::{self, Manifest, ModelStatus};
     use app::onboarding;
@@ -29,12 +30,14 @@ mod macos {
     use objc2::MainThreadMarker;
     use platform::{MicrophoneMenu, PermissionReport, PillState, Sound, Status};
     use platform_macos::{MacPlatform, PillPanel, play_sound};
-    use store::{Entry, HistoryService, Kind, Settings};
+    use store::{Entry, HistoryService, Settings};
     use tray_icon::menu::MenuEvent;
     use winit::application::ApplicationHandler;
     use winit::event::{StartCause, WindowEvent};
     use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
-    use winit::platform::macos::{ActivationPolicy, EventLoopBuilderExtMacOS};
+    use winit::platform::macos::{
+        ActivationPolicy, ActiveEventLoopExtMacOS, EventLoopBuilderExtMacOS,
+    };
     use winit::window::WindowId;
 
     use crate::history_window::{HistoryWindow, Outcome as HistoryOutcome};
@@ -57,6 +60,7 @@ mod macos {
 
     const PERMISSION_POLL: Duration = Duration::from_secs(1);
     const SETUP_CLOSE_DELAY: Duration = Duration::from_millis(1_500);
+    const HANDOVER: Duration = Duration::from_millis(250);
 
     enum UserEvent {
         Status(Status),
@@ -67,6 +71,7 @@ mod macos {
         Update(Option<String>),
         Model(ModelStatus),
         HistoryEntries(Vec<Entry>),
+        HistoryChanged,
         Menu(MenuEvent),
         Fatal(String),
     }
@@ -132,16 +137,27 @@ mod macos {
             });
         }
 
-        fn paste_last(&self) {
+        fn paste_last(&self, event_loop: &ActiveEventLoop) {
             let Some(service) = &self.history else {
                 return;
+            };
+            let handover = if self.history_window.is_some() {
+                event_loop.hide_application();
+                Some(HANDOVER)
+            } else {
+                None
             };
             let inputs = self.inputs.clone();
             service.run(move |history| match history.latest() {
                 Ok(Some(entry)) => {
+                    if let Some(wait) = handover {
+                        std::thread::sleep(wait);
+                    }
                     let _ = inputs.send(Input::PasteText(entry.text));
                 }
-                Ok(None) => {}
+                Ok(None) => {
+                    let _ = inputs.send(Input::NoTranscript);
+                }
                 Err(error) => tracing::warn!(%error, "cannot read the last transcript"),
             });
         }
@@ -346,6 +362,7 @@ mod macos {
                     }
                 }
                 UserEvent::Model(status) => self.on_model(event_loop, status),
+                UserEvent::HistoryChanged => self.refresh_history(),
                 UserEvent::HistoryEntries(entries) => {
                     if let Some(window) = self.history_window.as_mut() {
                         window.set_entries(entries);
@@ -364,7 +381,7 @@ mod macos {
                         Some(MenuAction::Microphone(choice)) => self.choose_microphone(choice),
                         Some(MenuAction::SetupPermissions) => self.open_setup(event_loop),
                         Some(MenuAction::OpenHistory) => self.open_history(event_loop),
-                        Some(MenuAction::PasteLast) => self.paste_last(),
+                        Some(MenuAction::PasteLast) => self.paste_last(event_loop),
                         Some(MenuAction::CopyUpgradeCommand) => {
                             match copy_to_clipboard(update::UPGRADE_COMMAND) {
                                 Ok(()) => {
@@ -625,11 +642,11 @@ mod macos {
                 .dir
                 .file_name()
                 .map(|name| name.to_string_lossy().into_owned());
-            controller = controller.record_history(move |text: &str, kind: Kind| {
-                history.add(text.to_owned(), kind, model_id.clone(), |error| {
-                    tracing::warn!(%error, "cannot record the Final text in History");
-                });
-            });
+            let changed = proxy.clone();
+            controller =
+                controller.record_history(history_view::recorder(history, model_id, move || {
+                    let _ = changed.send_event(UserEvent::HistoryChanged);
+                }));
         }
         if let Some(path) = settings_path()
             && let Some(id) = Settings::load(&path).microphone

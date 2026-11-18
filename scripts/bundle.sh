@@ -43,17 +43,17 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
   <key>NSMicrophoneUsageDescription</key>
-  <string>PimSiang listens while you hold Right Option so it can type what you say. Audio never leaves this Mac.</string>
+  <string>PimSiang listens while you hold the Trigger key so it can type what you say. Audio never leaves this Mac.</string>
 </dict>
 </plist>
 PLIST
 
 cat > "$APP/Contents/Resources/en.lproj/InfoPlist.strings" <<'STRINGS'
-"NSMicrophoneUsageDescription" = "PimSiang listens while you hold Right Option so it can type what you say. Audio never leaves this Mac.";
+"NSMicrophoneUsageDescription" = "PimSiang listens while you hold the Trigger key so it can type what you say. Audio never leaves this Mac.";
 STRINGS
 
 cat > "$APP/Contents/Resources/th.lproj/InfoPlist.strings" <<'STRINGS'
-"NSMicrophoneUsageDescription" = "พิมพ์เสียงฟังเสียงของคุณขณะที่กด Option ขวาค้างไว้ เพื่อพิมพ์สิ่งที่คุณพูด เสียงไม่ออกจากเครื่อง Mac เครื่องนี้";
+"NSMicrophoneUsageDescription" = "พิมพ์เสียงฟังเสียงของคุณขณะที่กดปุ่ม Trigger ค้างไว้ เพื่อพิมพ์สิ่งที่คุณพูด เสียงไม่ออกจากเครื่อง Mac เครื่องนี้";
 STRINGS
 
 plutil -lint "$APP/Contents/Info.plist" > /dev/null

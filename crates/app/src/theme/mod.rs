@@ -1219,7 +1219,7 @@ fn keys_row(ui: &mut Ui, chosen: StripKey) {
         key(ui, x, width, Some(label), false);
         x += width + gap;
     }
-    let right_width: f32 = right.iter().map(|(_, width, _)| width + gap).sum::<f32>() + 30.0;
+    let right_width: f32 = right.iter().map(|(_, width, _)| width + gap).sum::<f32>() - gap;
     let mut x_right = rect.right() - right_width;
     let space = Rect::from_min_max(pos2(x, rect.top()), pos2(x_right - gap, rect.bottom()));
     ui.painter()
@@ -1234,7 +1234,6 @@ fn keys_row(ui: &mut Ui, chosen: StripKey) {
         );
         x_right += width + gap;
     }
-    key(ui, x_right, 30.0, None, false);
 }
 
 fn gesture_tiles(ui: &mut Ui, tiles: [(Option<Glyph>, &str, &str); 3]) {

@@ -149,7 +149,9 @@ fn open_stream(
     let i16_chunker = Arc::clone(&chunker);
     let on_error = move |error: cpal::Error| {
         tracing::warn!(%error, "microphone stream error");
-        if let Some(report) = &on_stream_error {
+        if error.kind() == cpal::ErrorKind::DeviceNotAvailable
+            && let Some(report) = &on_stream_error
+        {
             report();
         }
     };

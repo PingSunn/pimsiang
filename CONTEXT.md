@@ -51,8 +51,20 @@ _Avoid_: Log, archive
 ### Interface
 
 **Pill**:
-The small floating indicator at the top centre of the active screen that shows listening state and Partial text.
+The small floating indicator on the active screen that shows listening state and Partial text.
 _Avoid_: Hotbar, overlay, HUD, island
+
+**Pill placement**:
+Where the Pill appears: Notch (it comes out of the notch at the top centre, or sits below the menu bar when the screen has no notch) or Floating (it sits at the Pill position the user chose). Floating is the default.
+_Avoid_: Pill mode, anchor
+
+**Pill position**:
+The spot the user chose for a Floating Pill, remembered as a share of the screen so it lands in the same relative place on any screen.
+_Avoid_: Pill coordinates, offset
+
+**Placing**:
+The short mode in which a sample Pill can be dragged to choose the Pill position, ended with Done or Esc.
+_Avoid_: Edit mode, drag mode
 
 **Engine**:
 The part that turns audio into Partial and Final text; swappable behind one interface.

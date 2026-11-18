@@ -159,6 +159,7 @@ impl PillError {
 pub enum PillNotice {
     MicrophoneFellBack,
     MicrophoneLost,
+    NoTranscriptYet,
 }
 
 impl PillNotice {
@@ -166,6 +167,7 @@ impl PillNotice {
         match self {
             Self::MicrophoneFellBack => "Microphone not found, using the system default",
             Self::MicrophoneLost => "Microphone disconnected",
+            Self::NoTranscriptYet => "No transcript yet · ยังไม่มีข้อความ",
         }
     }
 }

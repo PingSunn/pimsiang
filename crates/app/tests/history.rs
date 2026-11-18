@@ -2,11 +2,12 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use app::controller::{Config, Controller, Input};
+use app::history_view;
 use audio::fake::FakeMicrophone;
 use engine::fake::FakeEngine;
 use engine::{Engine, LanguageMode};
-use platform::TriggerEvent;
 use platform::fake::FakePlatform;
+use platform::{PillNotice, PillState, TriggerEvent};
 use store::{History, HistoryService, Kind};
 
 const HOLD: Duration = Duration::from_millis(200);
@@ -185,4 +186,50 @@ fn every_history_string_has_a_thai_and_an_english_version() {
             assert_eq!(has_thai(text), language == Language::Thai, "{text}");
         }
     }
+}
+
+#[test]
+fn paste_last_with_an_empty_history_shows_a_notice_and_pastes_nothing() {
+    let (mut c, _recorded) = controller("x");
+    let now = Instant::now();
+
+    c.handle(Input::NoTranscript);
+
+    assert_eq!(
+        c.platform().pills().last(),
+        Some(&PillState::Notice(PillNotice::NoTranscriptYet))
+    );
+    assert!(c.platform().pastes().is_empty());
+
+    c.handle(Input::Tick(now + Duration::from_secs(4)));
+
+    assert_eq!(c.platform().pills().last(), Some(&PillState::Hidden));
+}
+
+#[test]
+fn the_no_transcript_notice_is_bilingual() {
+    let message = PillNotice::NoTranscriptYet.message();
+
+    assert!(message.contains("No transcript yet"));
+    assert!(message.contains("ยังไม่มี"));
+}
+
+#[test]
+fn the_recorder_stores_the_text_then_tells_the_window_to_reload() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("history.sqlite");
+    let service = Arc::new(HistoryService::spawn(&path).unwrap());
+    let (changed, wait) = std::sync::mpsc::channel();
+    let reader = path.clone();
+    let mut record = history_view::recorder(service, Some("int8".to_owned()), move || {
+        let found = History::open(&reader)
+            .unwrap()
+            .search("บันทึก", 0, 10)
+            .unwrap();
+        let _ = changed.send(found.len());
+    });
+
+    record("ข้อความที่บันทึก", Kind::Pasted);
+
+    assert_eq!(wait.recv_timeout(Duration::from_secs(5)).unwrap(), 1);
 }

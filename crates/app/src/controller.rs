@@ -50,6 +50,7 @@ pub enum Input {
     MicrophoneLost,
     ModelReady,
     PasteText(String),
+    NoTranscript,
 }
 
 type HistorySink = Box<dyn FnMut(&str, Kind) + Send>;
@@ -241,6 +242,7 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
                 self.preload_model();
             }
             Input::PasteText(text) => self.paste_again(&text),
+            Input::NoTranscript => self.show_notice(PillNotice::NoTranscriptYet),
         }
         Vec::new()
     }
@@ -612,6 +614,14 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
         if let Some(history) = &mut self.history {
             history(text, kind);
         }
+    }
+
+    fn show_notice(&mut self, notice: PillNotice) {
+        if !matches!(self.state, State::Idle) {
+            return;
+        }
+        self.hide_at = Some(Instant::now() + self.config.error_linger);
+        self.platform.show_pill(PillState::Notice(notice));
     }
 
     fn paste_again(&mut self, text: &str) {

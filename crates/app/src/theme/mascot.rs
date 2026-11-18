@@ -9,7 +9,7 @@ pub enum Pose {
     Waving,
     Oops,
     Searching,
-    HeadDefault,
+    AppIcon,
 }
 
 macro_rules! art {
@@ -31,7 +31,10 @@ impl Pose {
             Pose::Waving => art!("waving"),
             Pose::Oops => art!("oops"),
             Pose::Searching => art!("searching"),
-            Pose::HeadDefault => art!("head-default"),
+            Pose::AppIcon => (
+                include_bytes!("../../assets/icon.png").as_slice(),
+                include_bytes!("../../assets/icon.png").as_slice(),
+            ),
         };
         match theme {
             Theme::Light => light,
@@ -70,6 +73,14 @@ pub fn show(ui: &mut Ui, pose: Pose, size: f32) {
     if let Some(handle) = texture(ui, pose) {
         egui::Image::new(&handle)
             .fit_to_exact_size(Vec2::splat(size))
+            .paint_at(ui, rect);
+    }
+}
+
+pub fn paint(ui: &Ui, pose: Pose, rect: egui::Rect) {
+    if let Some(handle) = texture(ui, pose) {
+        egui::Image::new(&handle)
+            .fit_to_exact_size(rect.size())
             .paint_at(ui, rect);
     }
 }

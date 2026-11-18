@@ -28,6 +28,8 @@ mod macos {
     use app::controller::{Config, Controller, Input, PermissionCommand};
     use app::history_view;
     use app::i18n::Language;
+    use app::history_view::Page;
+    use app::model_chip::{ModelChip, model_chip};
     use app::model_download::{self, Manifest, ModelStatus};
     use app::onboarding;
     use app::preferences::Preferences;
@@ -40,7 +42,7 @@ mod macos {
     use platform::{MicrophoneMenu, PermissionReport, PillState, Sound, Status};
     use platform_macos::login_item::{self, LoginItem};
     use platform_macos::{MacPlatform, PillArt, PillPanel, copy_text, play_sound};
-    use store::{Entry, HistoryService, Settings};
+    use store::{HistoryService, Settings};
     use tray_icon::menu::MenuEvent;
     use winit::application::ApplicationHandler;
     use winit::event::{StartCause, WindowEvent};
@@ -82,7 +84,8 @@ mod macos {
         Microphones(MicrophoneMenu),
         Update(Option<String>),
         Model(ModelStatus),
-        HistoryEntries(Vec<Entry>),
+        HistoryEntries(Page),
+        ModelLoading(bool),
         HistoryChanged,
         Menu(MenuEvent),
         Fatal(String),
@@ -97,6 +100,7 @@ mod macos {
         language: Language,
         bundled: bool,
         model: ModelStatus,
+        model_loading: bool,
         model_dir: PathBuf,
         custom_model: Option<ModelFiles>,
         model_prompted: bool,
@@ -149,13 +153,25 @@ mod macos {
                 self.preferences,
                 self.bundled,
                 login_item::status(),
+                self.model_chip(),
             ) {
                 Ok(window) => self.settings_window = Some(window),
                 Err(error) => tracing::error!(%error, "cannot open the settings window"),
             }
         }
 
-        fn on_settings_window(&mut self, event: &WindowEvent) {
+        fn model_chip(&self) -> ModelChip {
+            model_chip(&self.model, self.model_loading)
+        }
+
+        fn refresh_model_chip(&mut self) {
+            let chip = self.model_chip();
+            if let Some(window) = self.settings_window.as_mut() {
+                window.show_model(chip);
+            }
+        }
+
+        fn on_settings_window(&mut self, event_loop: &ActiveEventLoop, event: &WindowEvent) {
             let Some(window) = self.settings_window.as_mut() else {
                 return;
             };
@@ -163,6 +179,7 @@ mod macos {
                 SettingsOutcome::Idle => {}
                 SettingsOutcome::Close => self.settings_window = None,
                 SettingsOutcome::OpenLoginItems => login_item::open_login_items_settings(),
+                SettingsOutcome::OpenHistory => self.open_history(event_loop),
                 SettingsOutcome::Changed(changed) => self.change_preferences(changed),
             }
         }
@@ -205,11 +222,20 @@ mod macos {
             let query = window.query().to_owned();
             let limit = window.limit();
             let proxy = self.proxy.clone();
-            service.run(move |history| match history.search(&query, 0, limit) {
-                Ok(entries) => {
-                    let _ = proxy.send_event(UserEvent::HistoryEntries(entries));
+            service.run(move |history| {
+                let page = history.search(&query, 0, limit).and_then(|entries| {
+                    Ok(Page {
+                        entries,
+                        matched: history.count(&query)?,
+                        total: history.total()?,
+                    })
+                });
+                match page {
+                    Ok(page) => {
+                        let _ = proxy.send_event(UserEvent::HistoryEntries(page));
+                    }
+                    Err(error) => tracing::warn!(%error, "cannot read History"),
                 }
-                Err(error) => tracing::warn!(%error, "cannot read History"),
             });
         }
 
@@ -331,6 +357,7 @@ mod macos {
             let failed = matches!(status, ModelStatus::Failed(_));
             let ready = status == ModelStatus::Ready;
             self.model = status;
+            self.refresh_model_chip();
             if !ready && (failed || !self.model_prompted) {
                 self.model_prompted = true;
                 self.open_setup(event_loop);
@@ -405,7 +432,7 @@ mod macos {
             }
         }
 
-        fn window_event(&mut self, _: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
+        fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
             if self
                 .history_window
                 .as_ref()
@@ -419,7 +446,7 @@ mod macos {
                 .as_ref()
                 .is_some_and(|window| window.id() == id)
             {
-                self.on_settings_window(&event);
+                self.on_settings_window(event_loop, &event);
                 return;
             }
             let view = self.setup_view();
@@ -475,10 +502,14 @@ mod macos {
                 }
                 UserEvent::Model(status) => self.on_model(event_loop, status),
                 UserEvent::HistoryChanged => self.refresh_history(),
-                UserEvent::HistoryEntries(entries) => {
+                UserEvent::HistoryEntries(page) => {
                     if let Some(window) = self.history_window.as_mut() {
-                        window.set_entries(entries);
+                        window.set_page(page);
                     }
+                }
+                UserEvent::ModelLoading(loading) => {
+                    self.model_loading = loading;
+                    self.refresh_model_chip();
                 }
                 UserEvent::Update(version) => {
                     if let Some(menu_bar) = &self.menu_bar
@@ -641,6 +672,7 @@ mod macos {
             language: Language::from_tags(&platform_macos::system_languages()),
             bundled,
             model: ModelStatus::Ready,
+            model_loading: false,
             model_dir: model.dir.clone(),
             custom_model,
             model_prompted: false,
@@ -768,8 +800,15 @@ mod macos {
             Box::new(move |status| {
                 let _ = status_proxy.send_event(UserEvent::Status(status));
             }),
-            Box::new(move |state| {
-                let _ = pill_proxy.send_event(UserEvent::Pill(state));
+            Box::new({
+                let loading = std::sync::atomic::AtomicBool::new(false);
+                move |state| {
+                    let now = matches!(state, PillState::LoadingModel);
+                    if loading.swap(now, std::sync::atomic::Ordering::Relaxed) != now {
+                        let _ = pill_proxy.send_event(UserEvent::ModelLoading(now));
+                    }
+                    let _ = pill_proxy.send_event(UserEvent::Pill(state));
+                }
             }),
             Box::new(move |report| {
                 let _ = permissions_proxy.send_event(UserEvent::Permissions(report));

@@ -29,21 +29,25 @@ pub struct ModelRow {
     pub fraction: Option<f32>,
     pub failed: bool,
     pub retry: Option<&'static str>,
+    pub done: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct View {
     pub title: &'static str,
     pub heading: &'static str,
-    pub intro: &'static str,
+    pub bubble: &'static str,
+    pub intro: String,
     pub note: &'static str,
-    pub model: Option<ModelRow>,
+    pub model: ModelRow,
     pub rows: Vec<Row>,
     pub done: bool,
     pub steps_done: usize,
     pub steps_total: usize,
     pub progress: String,
-    pub footer: String,
+    pub trigger_key: TriggerKey,
+    pub model_done: &'static str,
+    pub hint: &'static str,
 }
 
 pub fn is_bundled(executable: &Path) -> bool {
@@ -52,7 +56,7 @@ pub fn is_bundled(executable: &Path) -> bool {
         .any(|part| part.as_os_str().to_string_lossy().ends_with(".app"))
 }
 
-fn model_row(language: Language, status: &ModelStatus) -> Option<ModelRow> {
+fn model_row(language: Language, status: &ModelStatus) -> ModelRow {
     let row = |detail: String, fraction, failed, retry| ModelRow {
         title: language.model_title(),
         explain: language.model_explain(),
@@ -60,10 +64,14 @@ fn model_row(language: Language, status: &ModelStatus) -> Option<ModelRow> {
         fraction,
         failed,
         retry,
+        done: false,
     };
     match status {
-        ModelStatus::Ready => None,
-        ModelStatus::Downloading { done, total } => Some(row(
+        ModelStatus::Ready => ModelRow {
+            done: true,
+            ..row(String::new(), None, false, None)
+        },
+        ModelStatus::Downloading { done, total } => row(
             language.model_downloading(*done, *total),
             Some(if *total == 0 {
                 0.0
@@ -72,19 +80,14 @@ fn model_row(language: Language, status: &ModelStatus) -> Option<ModelRow> {
             }),
             false,
             None,
-        )),
-        ModelStatus::Verifying => Some(row(
-            language.model_verifying().to_owned(),
-            Some(1.0),
-            false,
-            None,
-        )),
-        ModelStatus::Failed(reason) => Some(row(
+        ),
+        ModelStatus::Verifying => row(language.model_verifying().to_owned(), Some(1.0), false, None),
+        ModelStatus::Failed(reason) => row(
             language.model_failed(reason),
             None,
             true,
             Some(language.model_retry()),
-        )),
+        ),
     }
 }
 
@@ -128,7 +131,8 @@ pub fn view(
     View {
         title: language.window_title(),
         heading: language.heading(),
-        intro: language.intro(),
+        bubble: language.setup_bubble(),
+        intro: language.intro_left(steps_total - steps_done),
         note: if bundled {
             ""
         } else {
@@ -140,10 +144,8 @@ pub fn view(
         steps_done,
         steps_total,
         progress: language.setup_progress(steps_done, steps_total),
-        footer: if done {
-            language.all_set(key)
-        } else {
-            String::new()
-        },
+        trigger_key: key,
+        hint: language.setup_hint(),
+        model_done: language.model_done_badge(),
     }
 }

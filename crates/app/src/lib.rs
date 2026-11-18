@@ -1,6 +1,7 @@
 pub mod controller;
 pub mod history_view;
 pub mod i18n;
+pub mod model_chip;
 pub mod model_download;
 pub mod onboarding;
 pub mod preferences;

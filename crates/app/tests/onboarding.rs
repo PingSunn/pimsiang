@@ -50,13 +50,15 @@ fn every_string_exists_in_both_languages() {
         let thai = language == Language::Thai;
         let rows = view(language, &report(DENIED, DENIED, UNKNOWN), false).rows;
         assert_eq!(rows.len(), 3);
-        let all_set = language.all_set(TriggerKey::RightOption);
+        let intro = language.intro_left(3);
+        let hint = language.setup_hint();
         let mut texts = vec![
             language.terminal_note(),
             language.window_title(),
             language.heading(),
-            language.intro(),
-            all_set.as_str(),
+            intro.as_str(),
+            hint,
+            language.setup_bubble(),
             language.menu_setup(),
             language.menu_all_granted(),
             language.menu_microphone(),
@@ -158,9 +160,9 @@ fn a_downloading_model_explains_the_size_and_shows_progress() {
             total: 1_000_000_000,
         },
     );
-    let row = v.model.unwrap();
+    let row = v.model;
     assert!(row.explain.contains("1 GB"));
-    assert!(row.detail.contains("250 / 1000 MB (25%)"));
+    assert_eq!(row.detail, "250 of 1,000 MB");
     assert_eq!(row.fraction, Some(0.25));
     assert!(!row.failed);
     assert!(row.retry.is_none());
@@ -174,7 +176,7 @@ fn a_failed_download_shows_the_reason_and_a_retry() {
             language,
             ModelStatus::Failed("the server answered 500".to_owned()),
         );
-        let row = v.model.unwrap();
+        let row = v.model;
         assert!(row.failed);
         assert!(row.detail.contains("the server answered 500"));
         assert!(!row.retry.unwrap().is_empty());
@@ -186,7 +188,7 @@ fn a_failed_download_shows_the_reason_and_a_retry() {
 fn onboarding_is_done_only_when_the_model_is_ready_too() {
     let ready = model_view(Language::English, ModelStatus::Ready);
     assert!(ready.done);
-    assert!(ready.model.is_none());
+    assert!(ready.model.done);
     assert!(!model_view(Language::English, ModelStatus::Verifying).done);
 }
 
@@ -231,7 +233,7 @@ fn the_texts_name_the_configured_trigger_key() {
             true,
             &ModelStatus::Ready,
         );
-        assert!(done.footer.contains("Right Control"));
+        assert_eq!(done.trigger_key, TriggerKey::RightControl);
     }
 }
 
@@ -246,9 +248,75 @@ fn progress_counts_the_model_and_every_granted_permission() {
         &ModelStatus::Downloading { done: 1, total: 4 },
     );
     assert_eq!((downloading.steps_done, downloading.steps_total), (1, 4));
-    assert_eq!(downloading.progress, "1 of 4 steps ready");
+    assert_eq!(downloading.progress, "1 of 4 ready");
 
     let ready = view(Language::Thai, &report(GRANTED, GRANTED, GRANTED), true);
     assert_eq!((ready.steps_done, ready.steps_total), (4, 4));
-    assert_eq!(ready.progress, "พร้อมแล้ว 4 จาก 4 ขั้นตอน");
+    assert_eq!(ready.progress, "พร้อมแล้ว 4 จาก 4");
+}
+
+#[test]
+fn the_intro_counts_the_steps_that_are_left() {
+    let none_left = view(Language::English, &report(GRANTED, GRANTED, GRANTED), true);
+    assert_eq!(none_left.intro, Language::English.intro_left(0));
+    let thai = model_view(
+        Language::Thai,
+        ModelStatus::Downloading { done: 1, total: 4 },
+    );
+    assert!(thai.intro.contains("อีก 1 ขั้นตอน"));
+    let all_open = view_with(
+        Language::English,
+        TriggerKey::RightOption,
+        &report(UNKNOWN, UNKNOWN, UNKNOWN),
+        true,
+        &ModelStatus::Verifying,
+    );
+    assert!(all_open.intro.starts_with("4 steps left"));
+}
+
+#[test]
+fn the_settings_chip_follows_the_model_state() {
+    use app::model_chip::{ModelChip, model_chip};
+    assert_eq!(model_chip(&ModelStatus::Ready, false), ModelChip::Ready);
+    assert_eq!(model_chip(&ModelStatus::Ready, true), ModelChip::Loading);
+    assert_eq!(
+        model_chip(
+            &ModelStatus::Downloading {
+                done: 412,
+                total: 1000
+            },
+            true
+        ),
+        ModelChip::Downloading { percent: 41 }
+    );
+    assert_eq!(
+        model_chip(&ModelStatus::Downloading { done: 0, total: 0 }, false),
+        ModelChip::Downloading { percent: 0 }
+    );
+    assert_eq!(model_chip(&ModelStatus::Verifying, false), ModelChip::Verifying);
+    assert_eq!(
+        model_chip(&ModelStatus::Failed("x".to_owned()), false),
+        ModelChip::Missing
+    );
+}
+
+#[test]
+fn every_chip_text_exists_in_both_languages() {
+    use app::model_chip::ModelChip;
+    for language in [Language::English, Language::Thai] {
+        for chip in [
+            ModelChip::Ready,
+            ModelChip::Loading,
+            ModelChip::Downloading { percent: 41 },
+            ModelChip::Verifying,
+            ModelChip::Missing,
+        ] {
+            let text = language.model_chip(chip);
+            assert_eq!(has_thai(&text), language == Language::Thai, "{text}");
+        }
+    }
+    assert_eq!(
+        Language::Thai.model_chip(ModelChip::Ready),
+        "พร้อมใช้ · โมเดล OpenThai"
+    );
 }

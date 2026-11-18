@@ -1,4 +1,6 @@
+use app::history_view::Page;
 use app::i18n::Language;
+use app::model_chip::ModelChip;
 use app::preferences::Preferences;
 use egui::{Id, Key, Modifiers, Role};
 use egui_kittest::Harness;
@@ -6,7 +8,7 @@ use egui_kittest::kittest::Queryable;
 use platform_macos::login_item::LoginItem;
 use store::{Entry, Kind};
 
-use crate::history_window::{self, Outcome};
+use crate::history_window::{self, Clock, Outcome};
 use crate::settings_window::{self, Actions, Inputs, Section};
 use crate::{egui_surface, theme};
 
@@ -19,6 +21,15 @@ struct HistoryFixture {
     closed: bool,
     refreshed: bool,
     entries: Vec<Entry>,
+    matched: usize,
+    total: usize,
+}
+
+fn clock() -> Clock {
+    Clock {
+        now: 1_763_450_000,
+        offset: chrono::FixedOffset::east_opt(7 * 3600).unwrap(),
+    }
 }
 
 fn entry(id: i64, text: &str) -> Entry {
@@ -33,7 +44,7 @@ fn entry(id: i64, text: &str) -> Entry {
 
 fn history(fixture: HistoryFixture) -> Harness<'static, HistoryFixture> {
     let mut harness = Harness::builder()
-        .with_size(egui::vec2(560.0, 640.0))
+        .with_size(egui::vec2(640.0, 720.0))
         .with_context_setup(|context| {
             context.set_fonts(egui_surface::fonts());
             theme::apply(context);
@@ -47,12 +58,18 @@ fn history(fixture: HistoryFixture) -> Harness<'static, HistoryFixture> {
                     confirming_clear: &mut fixture.confirming_clear,
                     copied: &mut fixture.copied,
                     focus_search: &mut fixture.focus_search,
+                    clock: clock(),
+                };
+                let page = Page {
+                    entries: fixture.entries.clone(),
+                    matched: fixture.matched,
+                    total: fixture.total,
                 };
                 history_window::show(
                     ui,
                     Language::English,
                     &mut state,
-                    &fixture.entries,
+                    &page,
                     true,
                     false,
                     &mut outcome,
@@ -79,6 +96,8 @@ fn fixture() -> HistoryFixture {
         closed: false,
         refreshed: false,
         entries: vec![entry(1, "hello"), entry(2, "world")],
+        matched: 2,
+        total: 7,
     }
 }
 
@@ -144,11 +163,12 @@ struct SettingsFixture {
     actions: Actions,
     login: LoginItem,
     bundled: bool,
+    model: ModelChip,
 }
 
 fn settings(fixture: SettingsFixture) -> Harness<'static, SettingsFixture> {
     let mut harness = Harness::builder()
-        .with_size(egui::vec2(720.0, 520.0))
+        .with_size(egui::vec2(780.0, 560.0))
         .with_context_setup(|context| {
             context.set_fonts(egui_surface::fonts());
             theme::apply(context);
@@ -160,6 +180,8 @@ fn settings(fixture: SettingsFixture) -> Harness<'static, SettingsFixture> {
                     bundled: fixture.bundled,
                     login: fixture.login,
                     error: None,
+                    model: fixture.model,
+                    version: "0.1",
                 };
                 settings_window::show(
                     ui,
@@ -182,13 +204,14 @@ fn settings_fixture() -> SettingsFixture {
         actions: Actions::default(),
         login: LoginItem::Disabled,
         bundled: true,
+        model: ModelChip::Ready,
     }
 }
 
 #[test]
 fn choosing_a_sidebar_section_switches_the_content() {
     let mut harness = settings(settings_fixture());
-    harness.get_by_label("Sounds & Clipboard").click();
+    harness.get_by_label("Clipboard & Sounds").click();
     harness.run();
     assert!(harness.state().section == Section::SoundsClipboard);
     harness.get_by_label("Trigger").click();
@@ -236,4 +259,56 @@ fn the_login_switch_is_disabled_outside_the_installed_app() {
         .click();
     harness.run();
     assert!(!harness.state().preferences.launch_at_login);
+}
+
+#[test]
+fn the_history_sidebar_item_opens_the_history_window_without_switching_section() {
+    let mut harness = settings(settings_fixture());
+    harness.get_by_label("History").click();
+    harness.run();
+    assert!(harness.state().actions.open_history);
+    assert!(harness.state().section == Section::General);
+}
+
+#[test]
+fn the_sidebar_chip_names_the_model_state() {
+    let mut fixture = settings_fixture();
+    fixture.model = ModelChip::Downloading { percent: 41 };
+    let harness = settings(fixture);
+    harness.get_by_label("Downloading the model · 41%");
+
+    let harness = settings(settings_fixture());
+    harness.get_by_label("Ready · model OpenThai");
+}
+
+#[test]
+fn history_groups_entries_under_day_headings_and_counts_them_in_the_footer() {
+    let harness = history(fixture());
+    harness.get_by_label("Today");
+    harness.get_by_label("7 entries");
+}
+
+#[test]
+fn a_search_footer_counts_matches_out_of_the_total() {
+    let harness = history(HistoryFixture {
+        query: "hel".to_owned(),
+        matched: 1,
+        entries: vec![entry(1, "hello")],
+        ..fixture()
+    });
+    harness.get_by_label("1 of 7 entries");
+}
+
+#[test]
+fn row_actions_are_reachable_from_the_keyboard() {
+    let mut harness = history(fixture());
+    harness.key_press(Key::Tab);
+    harness.run();
+    harness.key_press(Key::Tab);
+    harness.run();
+    assert!(
+        harness
+            .ctx
+            .memory(|memory| memory.focused().is_some())
+    );
 }

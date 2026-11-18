@@ -1,5 +1,6 @@
 use anyhow::Result;
 use app::i18n::Language;
+use app::model_chip::ModelChip;
 use app::preferences::Preferences;
 use engine::LanguageMode;
 use platform::TriggerKey;
@@ -12,15 +13,16 @@ use winit::window::WindowId;
 use crate::egui_surface::Surface;
 use crate::theme::{self, Icon, Variant};
 
-const WIDTH: f64 = 720.0;
-const HEIGHT: f64 = 520.0;
-const SIDEBAR_WIDTH: f32 = 208.0;
+const WIDTH: f64 = 780.0;
+const HEIGHT: f64 = 560.0;
+const SIDEBAR_WIDTH: f32 = 220.0;
 
 pub enum Outcome {
     Idle,
     Close,
     Changed(Preferences),
     OpenLoginItems,
+    OpenHistory,
 }
 
 pub struct SettingsWindow {
@@ -31,6 +33,7 @@ pub struct SettingsWindow {
     login: LoginItem,
     error: Option<String>,
     section: Section,
+    model: ModelChip,
 }
 
 impl SettingsWindow {
@@ -40,6 +43,7 @@ impl SettingsWindow {
         preferences: Preferences,
         bundled: bool,
         login: LoginItem,
+        model: ModelChip,
     ) -> Result<Self> {
         let surface = Surface::open(
             event_loop,
@@ -55,6 +59,7 @@ impl SettingsWindow {
             login,
             error: None,
             section: Section::General,
+            model,
         })
     }
 
@@ -64,6 +69,13 @@ impl SettingsWindow {
 
     pub fn focus(&self) {
         self.surface.focus();
+    }
+
+    pub fn show_model(&mut self, model: ModelChip) {
+        if self.model != model {
+            self.model = model;
+            self.surface.request_redraw();
+        }
     }
 
     pub fn show_result(
@@ -101,6 +113,8 @@ impl SettingsWindow {
             bundled: self.bundled,
             login: self.login,
             error: self.error.clone(),
+            model: self.model,
+            version: env!("CARGO_PKG_VERSION"),
         };
         let mut section = self.section;
         let mut actions = Actions::default();
@@ -112,6 +126,8 @@ impl SettingsWindow {
             Outcome::Close
         } else if actions.open_login_items {
             Outcome::OpenLoginItems
+        } else if actions.open_history {
+            Outcome::OpenHistory
         } else if preferences != before {
             self.preferences = preferences;
             Outcome::Changed(preferences)
@@ -130,17 +146,23 @@ pub(crate) enum Section {
     General,
     Trigger,
     SoundsClipboard,
+    History,
 }
 
 impl Section {
-    pub(crate) const ALL: [Section; 3] =
-        [Section::General, Section::Trigger, Section::SoundsClipboard];
+    pub(crate) const ALL: [Section; 4] = [
+        Section::General,
+        Section::Trigger,
+        Section::SoundsClipboard,
+        Section::History,
+    ];
 
     fn title(self, language: Language) -> &'static str {
         match self {
             Self::General => language.section_general(),
             Self::Trigger => language.section_trigger(),
             Self::SoundsClipboard => language.section_sounds_clipboard(),
+            Self::History => language.history_heading(),
         }
     }
 
@@ -148,7 +170,15 @@ impl Section {
         match self {
             Self::General => Icon::Sliders,
             Self::Trigger => Icon::Key,
-            Self::SoundsClipboard => Icon::Speaker,
+            Self::SoundsClipboard => Icon::Clipboard,
+            Self::History => Icon::Clock,
+        }
+    }
+
+    fn subtitle(self, language: Language) -> &'static str {
+        match self {
+            Self::Trigger => language.settings_trigger_key_help(),
+            _ => language.settings_applies_now(),
         }
     }
 }
@@ -158,11 +188,14 @@ pub(crate) struct Inputs {
     pub(crate) bundled: bool,
     pub(crate) login: LoginItem,
     pub(crate) error: Option<String>,
+    pub(crate) model: ModelChip,
+    pub(crate) version: &'static str,
 }
 
 #[derive(Default)]
 pub(crate) struct Actions {
     pub(crate) open_login_items: bool,
+    pub(crate) open_history: bool,
     pub(crate) close: bool,
 }
 
@@ -179,23 +212,32 @@ pub(crate) fn show(
     let nav = egui::Panel::left("settings-nav")
         .exact_size(SIDEBAR_WIDTH)
         .resizable(false)
-        .frame(egui::Frame::new().fill(colors.sidebar))
-        .show(ui, |ui| {
-            ui.spacing_mut().item_spacing.y = 0.0;
-            theme::header(ui, |_| {});
-            ui.add_space(theme::SPACE_4);
+        .frame(
             egui::Frame::new()
-                .inner_margin(egui::Margin::symmetric(theme::SPACE_3 as i8, 0))
-                .show(ui, |ui| {
-                    ui.spacing_mut().item_spacing.y = theme::SPACE_1;
-                    for item in Section::ALL {
-                        if theme::nav_item(ui, item.icon(), item.title(language), *section == item)
-                            .clicked()
-                        {
-                            *section = item;
-                        }
+                .fill(colors.sidebar)
+                .inner_margin(egui::Margin::symmetric(12, 14)),
+        )
+        .show(ui, |ui| {
+            ui.spacing_mut().item_spacing.y = 2.0;
+            ui.add_space(theme::SPACE_5);
+            egui::Frame::new()
+                .inner_margin(egui::Margin::symmetric(8, 0))
+                .show(ui, |ui| theme::sidebar_brand(ui, inputs.version));
+            ui.add_space(theme::SPACE_5);
+            for item in Section::ALL {
+                let selected = *section == item;
+                if theme::nav_item(ui, item.icon(), item.title(language), selected).clicked() {
+                    if item == Section::History {
+                        actions.open_history = true;
+                    } else {
+                        *section = item;
                     }
-                });
+                }
+            }
+            ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
+                let (tone, text) = chip(language, inputs.model);
+                theme::status_chip(ui, tone, &text);
+            });
         });
     let rect = nav.response.rect;
     ui.painter().vline(
@@ -210,13 +252,17 @@ pub(crate) fn show(
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     egui::Frame::new()
-                        .inner_margin(egui::Margin::symmetric(28, 28))
+                        .inner_margin(egui::Margin {
+                            left: 40,
+                            right: 40,
+                            top: 44,
+                            bottom: 28,
+                        })
                         .show(ui, |ui| {
-                            ui.spacing_mut().item_spacing.y = theme::SPACE_4;
-                            theme::title(ui, section.title(language));
-                            ui.add_space(-theme::SPACE_2);
-                            theme::description(ui, language.settings_applies_now());
-                            ui.add_space(theme::SPACE_1);
+                            ui.spacing_mut().item_spacing.y = 22.0;
+                            ui.vertical(|ui| {
+                                theme::page_title(ui, section.title(language), section.subtitle(language));
+                            });
                             if let Some(error) = &inputs.error {
                                 theme::banner(ui, colors.warning, |ui| {
                                     theme::warning(ui, error);
@@ -228,6 +274,7 @@ pub(crate) fn show(
                                 Section::SoundsClipboard => {
                                     sounds_clipboard(ui, language, preferences)
                                 }
+                                Section::History => {}
                             }
                         });
                 });
@@ -235,6 +282,17 @@ pub(crate) fn show(
     if !popup_open && (theme::escape_pressed(ui) || theme::close_pressed(ui)) {
         actions.close = true;
     }
+}
+
+fn chip(language: Language, model: ModelChip) -> (theme::ChipTone, String) {
+    let tone = match model {
+        ModelChip::Ready => theme::ChipTone::Ready,
+        ModelChip::Missing => theme::ChipTone::Missing,
+        ModelChip::Loading | ModelChip::Downloading { .. } | ModelChip::Verifying => {
+            theme::ChipTone::Busy
+        }
+    };
+    (tone, language.model_chip(model))
 }
 
 fn general(
@@ -247,45 +305,67 @@ fn general(
     let colors = theme::colors(ui);
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing.y = theme::SPACE_2;
-        theme::heading(ui, language.settings_language_mode());
-        theme::choice(
-            ui,
-            &mut preferences.language,
-            LanguageMode::ThMix,
-            language.settings_language_mix(),
-        );
-        theme::choice(
-            ui,
-            &mut preferences.language,
-            LanguageMode::ThTh,
-            language.settings_language_thai(),
-        );
+        theme::section_label(ui, language.settings_language_mode());
+        let gap = 10.0;
+        let width = (ui.available_width() - gap) / 2.0;
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = gap;
+            theme::language_card(
+                ui,
+                &mut preferences.language,
+                LanguageMode::ThMix,
+                language.settings_language_mix(),
+                &language.settings_language_mix_example(),
+                width,
+            );
+            theme::language_card(
+                ui,
+                &mut preferences.language,
+                LanguageMode::ThTh,
+                language.settings_language_thai(),
+                &language.settings_language_thai_example(),
+                width,
+            );
+        });
         theme::description(ui, language.settings_language_help());
     });
-    ui.add_space(theme::SPACE_1);
-    theme::group(ui, |ui| {
-        let login_help = (!inputs.bundled).then(|| language.settings_login_unbundled());
-        theme::setting_row(
-            ui,
-            language.settings_launch_at_login(),
-            login_help,
-            40.0,
-            |ui| {
-                theme::toggle(
-                    ui,
-                    &mut preferences.launch_at_login,
-                    inputs.bundled,
-                    language.settings_launch_at_login(),
-                );
-            },
-        );
-        theme::divider(ui);
-        theme::setting_row(ui, language.settings_unload_when_idle(), None, 40.0, |ui| {
-            theme::toggle(
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = theme::SPACE_2;
+        theme::section_label(ui, language.settings_system_group());
+        theme::group(ui, |ui| {
+            let login_help = if inputs.bundled {
+                language.settings_launch_at_login_help()
+            } else {
+                language.settings_login_unbundled()
+            };
+            theme::setting_row(
                 ui,
-                &mut preferences.unload_when_idle,
-                true,
+                language.settings_launch_at_login(),
+                Some(login_help),
+                40.0,
+                |ui| {
+                    theme::toggle(
+                        ui,
+                        &mut preferences.launch_at_login,
+                        inputs.bundled,
+                        language.settings_launch_at_login(),
+                    );
+                },
+            );
+            theme::divider(ui);
+            theme::setting_row(
+                ui,
                 language.settings_unload_when_idle(),
+                Some(language.settings_unload_when_idle_help()),
+                40.0,
+                |ui| {
+                    theme::toggle(
+                        ui,
+                        &mut preferences.unload_when_idle,
+                        true,
+                        language.settings_unload_when_idle(),
+                    );
+                },
             );
         });
     });
@@ -305,35 +385,56 @@ fn general(
     }
 }
 
+pub(crate) fn glyph_of(key: TriggerKey) -> theme::Glyph {
+    match key {
+        TriggerKey::RightOption => theme::Glyph::Option,
+        TriggerKey::RightCommand => theme::Glyph::Command,
+        TriggerKey::RightControl => theme::Glyph::Control,
+    }
+}
+
 fn trigger(ui: &mut egui::Ui, language: Language, preferences: &mut Preferences) {
-    theme::card(ui, |ui| {
-        ui.vertical_centered(|ui| {
-            ui.spacing_mut().item_spacing.y = theme::SPACE_3;
-            ui.add_space(theme::SPACE_2);
-            theme::keycap(ui, preferences.trigger_key.label());
-            ui.add_space(theme::SPACE_1);
-            ui.scope(|ui| {
-                ui.set_max_width(400.0);
-                theme::description(ui, language.settings_trigger_key_help());
-            });
-            ui.add_space(theme::SPACE_1);
-        });
-    });
-    theme::group(ui, |ui| {
-        theme::setting_row(ui, language.settings_trigger_key(), None, 200.0, |ui| {
-            let name = language.settings_trigger_key();
-            theme::select(
-                ui,
-                "trigger-key",
-                name,
-                preferences.trigger_key.label(),
-                |ui| {
-                    for key in TriggerKey::ALL {
-                        theme::option(ui, &mut preferences.trigger_key, key, key.label());
-                    }
-                },
-            );
-        });
+    let chosen = match preferences.trigger_key {
+        TriggerKey::RightOption => theme::StripKey::Option,
+        TriggerKey::RightCommand => theme::StripKey::Command,
+        TriggerKey::RightControl => theme::StripKey::Control,
+    };
+    let (hold, hold_text) = language.settings_gesture_hold();
+    let (tap, tap_text) = language.settings_gesture_double_tap();
+    let (note, note_text) = language.settings_gesture_note();
+    theme::keyboard_strip(
+        ui,
+        chosen,
+        [
+            (None, hold, hold_text),
+            (None, tap, tap_text),
+            (Some(theme::Glyph::Shift), note, note_text),
+        ],
+    );
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = theme::SPACE_2;
+        theme::section_label(ui, language.settings_trigger_use_key());
+        let options: Vec<(TriggerKey, Vec<theme::Part<'_>>)> = TriggerKey::ALL
+            .into_iter()
+            .map(|key| {
+                (
+                    key,
+                    vec![
+                        theme::Part::Text(key.label()),
+                        theme::Part::Glyph(glyph_of(key)),
+                    ],
+                )
+            })
+            .collect();
+        theme::segmented(ui, &mut preferences.trigger_key, &options);
+        let colors = theme::colors(ui);
+        let (before, key, after) = language.settings_trigger_esc();
+        theme::emphasised_line(
+            ui,
+            &[(before, false), (key, true), (after, false)],
+            theme::TEXT_XS,
+            colors.muted_foreground,
+        );
     });
 }
 

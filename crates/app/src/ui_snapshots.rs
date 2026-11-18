@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 
+use app::history_view::Page;
 use app::i18n::Language;
+use app::model_chip::ModelChip;
 use app::model_download::ModelStatus;
 use app::onboarding;
 use app::preferences::Preferences;
@@ -10,7 +12,7 @@ use platform::{PermissionReport, PermissionStatus, TriggerKey};
 use platform_macos::login_item::LoginItem;
 use store::{Entry, Kind};
 
-use crate::history_window::{self, Outcome as HistoryOutcome};
+use crate::history_window::{self, Clock, Outcome as HistoryOutcome};
 use crate::settings_window::{self, Actions, Inputs, Section};
 use crate::{egui_surface, onboarding_window, theme};
 
@@ -88,7 +90,7 @@ fn report(
 fn setup(name: &str, bundled: bool, report: PermissionReport, model: ModelStatus) {
     every_look(
         name,
-        vec2(540.0, 760.0),
+        vec2(560.0, 800.0),
         |ui, language| {
             let view =
                 onboarding::view(language, TriggerKey::RightOption, &report, bundled, &model);
@@ -125,16 +127,35 @@ fn setup_snapshots() {
     );
 }
 
-fn settings(name: &str, section: Section, bundled: bool, login: LoginItem, error: Option<&str>) {
+struct SettingsCase {
+    name: &'static str,
+    section: Section,
+    bundled: bool,
+    login: LoginItem,
+    error: Option<&'static str>,
+    model: ModelChip,
+}
+
+fn settings(case: SettingsCase) {
+    let SettingsCase {
+        name,
+        section,
+        bundled,
+        login,
+        error,
+        model,
+    } = case;
     every_look(
         name,
-        vec2(720.0, 520.0),
+        vec2(780.0, 560.0),
         |ui, language| {
             let inputs = Inputs {
                 language,
                 bundled,
                 login,
                 error: error.map(str::to_owned),
+                model,
+                version: "0.1",
             };
             let mut section = section;
             let mut preferences = Preferences {
@@ -156,78 +177,119 @@ fn settings(name: &str, section: Section, bundled: bool, login: LoginItem, error
 #[test]
 #[ignore = "renders offscreen on the GPU: cargo test -p app ui_snapshots -- --ignored"]
 fn settings_snapshots() {
-    settings(
+    let case = |name, section, login, error, model| SettingsCase {
+        name,
+        section,
+        bundled: true,
+        login,
+        error,
+        model,
+    };
+    settings(case(
         "settings-general",
         Section::General,
-        true,
         LoginItem::Disabled,
         None,
-    );
-    settings(
+        ModelChip::Ready,
+    ));
+    settings(case(
         "settings-general-approval",
         Section::General,
-        true,
         LoginItem::RequiresApproval,
         Some("Could not change the login item: not allowed"),
-    );
-    settings(
-        "settings-general-unbundled",
-        Section::General,
-        false,
-        LoginItem::Unavailable,
-        None,
-    );
-    settings(
+        ModelChip::Downloading { percent: 41 },
+    ));
+    settings(SettingsCase {
+        bundled: false,
+        ..case(
+            "settings-general-unbundled",
+            Section::General,
+            LoginItem::Unavailable,
+            None,
+            ModelChip::Loading,
+        )
+    });
+    settings(case(
         "settings-trigger",
         Section::Trigger,
-        true,
         LoginItem::Enabled,
         None,
-    );
-    settings(
+        ModelChip::Missing,
+    ));
+    settings(case(
         "settings-sounds",
         Section::SoundsClipboard,
-        true,
         LoginItem::Enabled,
         None,
-    );
+        ModelChip::Ready,
+    ));
+}
+
+const NOW: i64 = 1_763_468_640;
+
+fn clock() -> Clock {
+    Clock {
+        now: NOW,
+        offset: chrono::FixedOffset::east_opt(7 * 3600).expect("a valid offset"),
+    }
+}
+
+fn at(day: u32, hour: u32, minute: u32) -> i64 {
+    use chrono::TimeZone;
+    chrono::FixedOffset::east_opt(7 * 3600)
+        .expect("a valid offset")
+        .with_ymd_and_hms(2025, 11, day, hour, minute, 0)
+        .single()
+        .expect("a valid time")
+        .timestamp()
 }
 
 fn entries() -> Vec<Entry> {
-    let entry = |id, text: &str, kind| Entry {
+    let entry = |id, created, text: &str, kind| Entry {
         id,
         text: text.to_owned(),
-        created: 1_763_450_000 - id * 3_600,
+        created,
         kind,
         model_id: None,
     };
     vec![
         entry(
             1,
+            at(18, 13, 13),
             "ช่วยส่งรายงานประจำสัปดาห์ให้ทีมก่อนบ่ายสามโมงด้วยนะครับ",
             Kind::Pasted,
         ),
         entry(
             2,
-            "เตือนให้โทรหาคุณสมชายเรื่องใบเสนอราคา และอย่าลืมถามเรื่องกำหนดส่งงานผู้ใหญ่ด้วย",
+            at(18, 11, 42),
+            "ร่างรายงานไตรมาสสามให้เสร็จก่อนประชุมวันศุกร์ แล้วส่งให้พี่ปิ่นดูก่อน",
             Kind::Note,
         ),
         entry(
             3,
-            "ขอ deploy ขึ้น production หลังจาก review pull request เสร็จแล้ว ผู้รับผิดชอบคือพี่ปิ่น",
+            at(17, 17, 5),
+            "ขอ deploy ขึ้น production หลัง review pull request เสร็จ แนบรายงานผลเทสไว้ในการ์ดด้วย",
             Kind::Pasted,
         ),
-        entry(4, "Remember to renew the domain before Friday.", Kind::Note),
+        entry(
+            4,
+            at(17, 9, 31),
+            "ส่งรายงานค่าใช้จ่ายเดือนตุลาคมให้บัญชีภายในวันพุธ",
+            Kind::Pasted,
+        ),
         entry(
             5,
+            at(16, 15, 20),
             "สวัสดีครับ ผมอยากสอบถามเรื่องการเปลี่ยนแปลงตารางประชุมวันพฤหัสบดี ที่ผ่านมาติดภารกิจ",
             Kind::Pasted,
         ),
         entry(
             6,
+            at(3, 10, 2),
             "นี่คือข้อความทดสอบ ภาษาไทย ผสม English words เช่น meeting, deadline และ sprint review",
             Kind::Pasted,
         ),
+        entry(7, at(2, 8, 45), "Remember to renew the domain before Friday.", Kind::Note),
     ]
 }
 
@@ -235,6 +297,8 @@ struct HistoryCase {
     name: &'static str,
     query: &'static str,
     entries: Vec<Entry>,
+    matched: usize,
+    total: usize,
     confirming_clear: bool,
     unavailable: bool,
     size: Vec2,
@@ -247,6 +311,8 @@ fn history(case: HistoryCase) {
         name,
         query,
         entries,
+        matched,
+        total,
         confirming_clear,
         unavailable,
         size,
@@ -268,13 +334,19 @@ fn history(case: HistoryCase) {
                 confirming_clear: &mut confirming,
                 copied: &mut copied,
                 focus_search: &mut focus,
+                clock: clock(),
+            };
+            let page = Page {
+                entries: entries.clone(),
+                matched,
+                total,
             };
             let mut outcome = HistoryOutcome::Idle;
             history_window::show(
                 ui,
                 language,
                 &mut state,
-                &entries,
+                &page,
                 true,
                 unavailable,
                 &mut outcome,
@@ -292,11 +364,13 @@ fn history(case: HistoryCase) {
 #[test]
 #[ignore = "renders offscreen on the GPU: cargo test -p app ui_snapshots -- --ignored"]
 fn history_snapshots() {
-    let size = vec2(560.0, 640.0);
+    let size = vec2(640.0, 720.0);
     let base = || HistoryCase {
         name: "history-list",
         query: "",
         entries: entries(),
+        matched: 7,
+        total: 128,
         confirming_clear: false,
         unavailable: false,
         size,
@@ -306,14 +380,19 @@ fn history_snapshots() {
     history(base());
     history(HistoryCase {
         name: "history-hover",
-        hover: Some(pos2(280.0 + MARGIN, 250.0 + MARGIN)),
+        hover: Some(pos2(320.0 + MARGIN, 130.0 + MARGIN)),
         ..base()
     });
     history(HistoryCase {
         name: "history-search",
         query: "รายงาน",
-        entries: entries().into_iter().take(1).collect(),
+        entries: entries()
+            .into_iter()
+            .filter(|entry| entry.text.contains("รายงาน"))
+            .collect(),
+        matched: 4,
         focus: true,
+        hover: Some(pos2(320.0 + MARGIN, 170.0 + MARGIN)),
         ..base()
     });
     history(HistoryCase {
@@ -324,12 +403,15 @@ fn history_snapshots() {
     history(HistoryCase {
         name: "history-empty",
         entries: Vec::new(),
+        matched: 0,
+        total: 0,
         ..base()
     });
     history(HistoryCase {
         name: "history-no-match",
         query: "ไม่มีคำนี้",
         entries: Vec::new(),
+        matched: 0,
         ..base()
     });
     history(HistoryCase {
@@ -340,7 +422,7 @@ fn history_snapshots() {
     });
     history(HistoryCase {
         name: "history-small",
-        size: vec2(400.0, 480.0),
+        size: vec2(420.0, 520.0),
         ..base()
     });
 }

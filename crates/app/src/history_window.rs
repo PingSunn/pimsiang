@@ -1,6 +1,7 @@
 use anyhow::Result;
-use app::history_view::{PAGE_SIZE, format_created};
+use app::history_view::{self, PAGE_SIZE, Page};
 use app::i18n::Language;
+use chrono::FixedOffset;
 use store::{Entry, Kind};
 use winit::dpi::LogicalSize;
 use winit::event::WindowEvent;
@@ -24,7 +25,7 @@ pub struct HistoryWindow {
     language: Language,
     query: String,
     limit: usize,
-    entries: Vec<Entry>,
+    page: Page,
     loaded: bool,
     confirming_clear: bool,
     copied: Option<i64>,
@@ -41,7 +42,7 @@ impl HistoryWindow {
         let surface = Surface::open(
             event_loop,
             language.history_title(),
-            LogicalSize::new(560.0, 640.0),
+            LogicalSize::new(640.0, 720.0),
             true,
         )?;
         Ok(Self {
@@ -49,7 +50,11 @@ impl HistoryWindow {
             language,
             query: String::new(),
             limit: PAGE_SIZE,
-            entries: Vec::new(),
+            page: Page {
+                entries: Vec::new(),
+                matched: 0,
+                total: 0,
+            },
             loaded: false,
             confirming_clear: false,
             copied: None,
@@ -74,10 +79,10 @@ impl HistoryWindow {
         self.limit
     }
 
-    pub fn set_entries(&mut self, entries: Vec<Entry>) {
-        self.entries = entries;
+    pub fn set_page(&mut self, page: Page) {
+        self.page = page;
         self.loaded = true;
-        self.confirming_clear = self.confirming_clear && !self.entries.is_empty();
+        self.confirming_clear = self.confirming_clear && !self.page.entries.is_empty();
         self.surface.request_redraw();
     }
 
@@ -101,8 +106,9 @@ impl HistoryWindow {
             confirming_clear: &mut self.confirming_clear,
             copied: &mut self.copied,
             focus_search: &mut self.focus_search,
+            clock: Clock::now(),
         };
-        let entries = &self.entries;
+        let page = &self.page;
         let loaded = self.loaded;
         let unavailable = self.unavailable;
         let repaint_now = self.surface.frame(|ui| {
@@ -110,7 +116,7 @@ impl HistoryWindow {
                 ui,
                 language,
                 &mut state,
-                entries,
+                page,
                 loaded,
                 unavailable,
                 &mut outcome,
@@ -123,12 +129,32 @@ impl HistoryWindow {
     }
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct Clock {
+    pub(crate) now: i64,
+    pub(crate) offset: FixedOffset,
+}
+
+impl Clock {
+    fn now() -> Self {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_secs() as i64)
+            .unwrap_or(0);
+        Self {
+            now,
+            offset: history_view::local_offset(now),
+        }
+    }
+}
+
 pub(crate) struct State<'a> {
     pub(crate) query: &'a mut String,
     pub(crate) limit: &'a mut usize,
     pub(crate) confirming_clear: &'a mut bool,
     pub(crate) copied: &'a mut Option<i64>,
     pub(crate) focus_search: &'a mut bool,
+    pub(crate) clock: Clock,
 }
 
 const SEARCH_ID: &str = "history-search";
@@ -137,7 +163,7 @@ pub(crate) fn show(
     ui: &mut egui::Ui,
     language: Language,
     state: &mut State<'_>,
-    entries: &[Entry],
+    page: &Page,
     loaded: bool,
     unavailable: bool,
     outcome: &mut Outcome,
@@ -162,69 +188,110 @@ pub(crate) fn show(
         ui.memory_mut(|memory| memory.request_focus(search_id));
         *state.focus_search = false;
     }
-    egui::Panel::top("history-header")
-        .frame(egui::Frame::new().fill(colors.background))
+    let header = egui::Panel::top("history-header")
+        .frame(
+            egui::Frame::new()
+                .fill(colors.sidebar)
+                .inner_margin(egui::Margin {
+                    left: theme::SPACE_5 as i8,
+                    right: theme::SPACE_5 as i8,
+                    top: 14,
+                    bottom: 16,
+                }),
+        )
         .show_separator_line(false)
         .show(ui, |ui| {
-            ui.spacing_mut().item_spacing.y = 0.0;
-            theme::header(ui, |ui| {
-                ui.label(
-                    theme::medium(language.history_heading(), theme::TEXT_BASE)
-                        .color(colors.muted_foreground),
-                );
-            });
-            if unavailable {
-                return;
-            }
-            egui::Frame::new()
-                .inner_margin(egui::Margin::symmetric(
-                    theme::SPACE_5 as i8,
-                    theme::SPACE_3 as i8,
-                ))
-                .show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        let clear_width = 124.0;
-                        let width =
-                            ui.available_width() - clear_width - ui.spacing().item_spacing.x;
-                        let search = theme::text_input(
-                            ui,
-                            search_id,
-                            state.query,
-                            language.history_search_hint(),
-                            width,
-                        );
-                        if search.changed() {
-                            *state.limit = PAGE_SIZE;
-                            *state.confirming_clear = false;
-                            *state.copied = None;
-                            *outcome = Outcome::Refresh;
-                        }
-                        let can_clear = !entries.is_empty() && !*state.confirming_clear;
-                        theme::row_end(ui, |ui| {
-                            if theme::button_enabled(
-                                ui,
-                                Variant::Outline,
-                                can_clear,
-                                language.history_clear_all(),
-                            )
-                            .clicked()
-                            {
-                                *state.confirming_clear = true;
-                            }
-                        });
-                    });
+            ui.spacing_mut().item_spacing.y = 14.0;
+            ui.horizontal(|ui| {
+                theme::row_end(ui, |ui| {
+                    ui.label(
+                        egui::RichText::new(language.history_private())
+                            .size(theme::TEXT_XS)
+                            .color(colors.muted_foreground),
+                    );
                 });
-            if *state.confirming_clear {
-                egui::Frame::new()
-                    .inner_margin(egui::Margin {
-                        left: theme::SPACE_5 as i8,
-                        right: theme::SPACE_5 as i8,
-                        top: 0,
-                        bottom: theme::SPACE_3 as i8,
-                    })
-                    .show(ui, |ui| confirm_clear(ui, language, state, outcome));
+            });
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = theme::SPACE_3;
+                let mut title = egui::text::LayoutJob::simple_singleline(
+                    language.history_heading().to_owned(),
+                    egui::FontId::new(24.0, egui::FontFamily::Name(theme::DISPLAY_FAMILY.into())),
+                    colors.foreground,
+                );
+                title.sections[0].format.line_height = Some(31.0);
+                ui.label(title);
+                if unavailable {
+                    return;
+                }
+                let clear_label = language.history_clear_all();
+                let clear_width = theme::button_width(ui, clear_label) + theme::SPACE_2;
+                let width = ui.available_width() - clear_width - theme::SPACE_3;
+                let search = theme::text_input(
+                    ui,
+                    search_id,
+                    state.query,
+                    language.history_search_hint(),
+                    width,
+                );
+                if search.changed() {
+                    *state.limit = PAGE_SIZE;
+                    *state.confirming_clear = false;
+                    *state.copied = None;
+                    *outcome = Outcome::Refresh;
+                }
+                let can_clear = !page.entries.is_empty() && !*state.confirming_clear;
+                theme::row_end(ui, |ui| {
+                    if theme::button_sized(ui, Variant::Outline, can_clear, clear_label, 40.0, 12)
+                        .clicked()
+                    {
+                        *state.confirming_clear = true;
+                    }
+                });
+            });
+            if *state.confirming_clear && !unavailable {
+                confirm_clear(ui, language, state, outcome);
             }
         });
+    ui.painter().hline(
+        header.response.rect.x_range(),
+        header.response.rect.bottom() - 0.5,
+        egui::Stroke::new(1.0, colors.border),
+    );
+    if !unavailable {
+        let footer = egui::Panel::bottom("history-footer")
+            .frame(
+                egui::Frame::new()
+                    .fill(colors.background)
+                    .inner_margin(egui::Margin::symmetric(theme::SPACE_5 as i8, 12)),
+            )
+            .show_separator_line(false)
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    let text = if state.query.trim().is_empty() {
+                        language.history_footer_total(page.total)
+                    } else {
+                        language.history_footer_found(page.matched, page.total)
+                    };
+                    ui.label(
+                        egui::RichText::new(text)
+                            .size(theme::TEXT_XS)
+                            .color(colors.muted_foreground),
+                    );
+                    theme::row_end(ui, |ui| {
+                        ui.label(
+                            egui::RichText::new(language.history_footer_hint())
+                                .size(theme::TEXT_XS)
+                                .color(colors.muted_foreground),
+                        );
+                    });
+                });
+            });
+        ui.painter().hline(
+            footer.response.rect.x_range(),
+            footer.response.rect.top() + 0.5,
+            egui::Stroke::new(1.0, colors.border),
+        );
+    }
     egui::CentralPanel::default()
         .frame(egui::Frame::new().fill(colors.background))
         .show(ui, |ui| {
@@ -245,22 +312,38 @@ pub(crate) fn show(
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     egui::Frame::new()
-                        .inner_margin(egui::Margin::symmetric(
-                            theme::SPACE_5 as i8,
-                            theme::SPACE_1 as i8,
-                        ))
+                        .inner_margin(egui::Margin {
+                            left: theme::SPACE_5 as i8,
+                            right: theme::SPACE_5 as i8,
+                            top: 6,
+                            bottom: 20,
+                        })
                         .show(ui, |ui| {
-                            ui.spacing_mut().item_spacing.y = theme::SPACE_2;
-                            if loaded && entries.is_empty() {
+                            ui.spacing_mut().item_spacing.y = theme::SPACE_1;
+                            if loaded && page.entries.is_empty() {
                                 empty(ui, language, state.query.trim().is_empty());
                             }
-                            for entry in entries {
-                                ui.push_id(entry.id, |ui| {
-                                    show_entry(ui, language, state, entry, outcome)
-                                });
-                            }
-                            if entries.len() >= *state.limit {
+                            let groups = history_view::group_by_day(
+                                &page.entries,
+                                state.clock.now,
+                                state.clock.offset,
+                            );
+                            let year = history_view::year_of(state.clock.now, state.clock.offset);
+                            for (index, group) in groups.iter().enumerate() {
+                                ui.add_space(if index == 0 { 12.0 } else { 14.0 });
+                                ui.label(
+                                    theme::bold(&language.history_day(group.day, year), theme::TEXT_XS)
+                                        .color(colors.muted_foreground),
+                                );
                                 ui.add_space(theme::SPACE_1);
+                                for entry in group.entries {
+                                    ui.push_id(entry.id, |ui| {
+                                        show_entry(ui, language, state, entry, outcome)
+                                    });
+                                }
+                            }
+                            if page.entries.len() >= *state.limit && page.matched > page.entries.len() {
+                                ui.add_space(theme::SPACE_3);
                                 ui.vertical_centered(|ui| {
                                     if theme::button(
                                         ui,
@@ -274,7 +357,6 @@ pub(crate) fn show(
                                     }
                                 });
                             }
-                            ui.add_space(theme::SPACE_3);
                         });
                 });
         });
@@ -343,42 +425,76 @@ fn show_entry(
     outcome: &mut Outcome,
 ) {
     let colors = theme::colors(ui);
+    let id = ui.scope_id();
+    let copy_id = id.with("copy");
+    let delete_id = id.with("delete");
+    let rect_id = id.with("row");
+    let pointer = ui.input(|input| input.pointer.hover_pos());
+    let hovered = ui
+        .data(|data| data.get_temp::<egui::Rect>(rect_id))
+        .zip(pointer)
+        .is_some_and(|(rect, pointer)| rect.contains(pointer));
+    let focused = ui.memory(|memory| memory.has_focus(copy_id) || memory.has_focus(delete_id));
+    let active = hovered || focused;
     let background = ui.painter().add(egui::Shape::Noop);
     let radius = egui::CornerRadius::same(theme::RADIUS_LG);
+    let ranges = history_view::match_ranges(&entry.text, state.query);
     let frame = egui::Frame::new()
-        .inner_margin(egui::Margin::symmetric(
-            theme::SPACE_4 as i8,
-            theme::SPACE_3 as i8,
-        ))
+        .inner_margin(egui::Margin::symmetric(theme::SPACE_4 as i8, 12))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
-            ui.spacing_mut().item_spacing.y = theme::SPACE_2;
-            ui.label(egui::RichText::new(&entry.text).size(theme::TEXT_LG));
+            ui.spacing_mut().item_spacing.y = 6.0;
+            theme::highlighted(ui, &entry.text, &ranges, 15.0);
             ui.allocate_ui_with_layout(
-                egui::vec2(ui.available_width(), 28.0),
+                egui::vec2(ui.available_width(), 30.0),
                 egui::Layout::left_to_right(egui::Align::Center),
                 |ui| {
-                    ui.spacing_mut().item_spacing.x = theme::SPACE_2;
-                    theme::description(ui, &format_created(entry.created));
-                    let kind = match entry.kind {
-                        Kind::Pasted => Badge::Success,
-                        Kind::Note => Badge::Warning,
-                    };
-                    theme::badge(ui, kind, language.history_kind(entry.kind));
+                    ui.spacing_mut().item_spacing.x = 10.0;
+                    let muted = colors.muted_foreground;
+                    ui.label(
+                        egui::RichText::new(history_view::format_time(
+                            entry.created,
+                            state.clock.offset,
+                        ))
+                        .size(theme::TEXT_XS)
+                        .color(muted),
+                    );
+                    if entry.kind == Kind::Note {
+                        ui.label(egui::RichText::new("\u{b7}").size(theme::TEXT_XS).color(muted));
+                        theme::badge(ui, Badge::Note, language.history_kind(Kind::Note));
+                    }
                     theme::row_end(ui, |ui| {
-                        ui.spacing_mut().item_spacing.x = theme::SPACE_1;
-                        if theme::action(ui, Icon::Trash, language.history_delete(), Tone::Danger)
-                            .clicked()
+                        ui.spacing_mut().item_spacing.x = 6.0;
+                        if theme::row_action(
+                            ui,
+                            delete_id,
+                            Icon::Trash,
+                            None,
+                            language.history_delete(),
+                            Tone::Danger,
+                            active,
+                        )
+                        .clicked()
                         {
                             *outcome = Outcome::Delete(entry.id);
                         }
                         let copied = *state.copied == Some(entry.id);
-                        let (icon, label, tone) = if copied {
-                            (Icon::Check, language.history_copied(), Tone::Success)
+                        let (icon, label) = if copied {
+                            (Icon::Check, language.history_copied())
                         } else {
-                            (Icon::Copy, language.history_copy(), Tone::Neutral)
+                            (Icon::Copy, language.history_copy())
                         };
-                        if theme::action(ui, icon, label, tone).clicked() {
+                        if theme::row_action(
+                            ui,
+                            copy_id,
+                            icon,
+                            Some(label),
+                            language.history_copy(),
+                            Tone::Primary,
+                            active,
+                        )
+                        .clicked()
+                        {
                             *state.copied = Some(entry.id);
                             *outcome = Outcome::Copy(entry.text.clone());
                         }
@@ -387,17 +503,26 @@ fn show_entry(
             );
         });
     let rect = frame.response.rect;
-    let hovered = ui.rect_contains_pointer(rect);
-    let (fill, stroke) = if hovered {
-        (
-            colors.card_hover,
-            egui::Stroke::new(1.0, theme::tint(colors.accent, 0x80)),
-        )
-    } else {
-        (colors.card, egui::Stroke::new(1.0, colors.border))
-    };
-    ui.painter().set(
-        background,
-        egui::epaint::RectShape::new(rect, radius, fill, stroke, egui::StrokeKind::Inside),
-    );
+    ui.data_mut(|data| data.insert_temp(rect_id, rect));
+    if active {
+        ui.painter().set(
+            background,
+            egui::Shape::Vec(vec![
+                egui::epaint::RectShape::filled(
+                    rect.translate(egui::vec2(0.0, 2.0)),
+                    radius,
+                    colors.border,
+                )
+                .into(),
+                egui::epaint::RectShape::new(
+                    rect,
+                    radius,
+                    colors.card,
+                    egui::Stroke::new(1.0, colors.border),
+                    egui::StrokeKind::Inside,
+                )
+                .into(),
+            ]),
+        );
+    }
 }

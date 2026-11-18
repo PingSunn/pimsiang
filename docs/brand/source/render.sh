@@ -24,6 +24,7 @@ done
 for svg in "$brand"/pimsiang-wordmark.svg "$brand"/pimsiang-wordmark-dark.svg; do
   png "$svg" "$exports/$(basename "$svg" .svg)-1600.png" 1600
 done
+png "$brand/pimsiang-icon.svg" "$assets/icon.png" 144
 for state in "" -listening -transcribing -attention; do
   for size in 18 36 54; do
     png "$brand/pimsiang-menubar$state.svg" "$exports/pimsiang-menubar$state-$size.png" "$size"

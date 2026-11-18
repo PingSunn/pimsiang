@@ -1,6 +1,9 @@
 use std::path::{Path, PathBuf};
 
-use engine::{Engine, ModelFiles, OnnxEngine, Precision, UtteranceOptions, character_error_rate};
+use engine::{
+    Engine, MAX_SEGMENT_SAMPLES, ModelFiles, OnnxEngine, Precision, UtteranceOptions,
+    character_error_rate,
+};
 
 const CER_THRESHOLD: f64 = 0.10;
 
@@ -111,6 +114,26 @@ fn a_long_pause_in_the_middle_loses_no_words_after_it() {
     let final_text = engine.finish_utterance().unwrap();
 
     let expected = format!("{} {}", reference("meeting"), reference("food"));
+    let cer = character_error_rate(&expected, &final_text);
+    println!("CER {cer:.3} -> {final_text}");
+    assert!(cer <= CER_THRESHOLD, "CER {cer:.3} for `{final_text}`");
+}
+
+#[test]
+#[ignore = "needs the Model and Silero VAD on disk: set PIMSIANG_MODEL_DIR"]
+fn a_long_continuous_clip_stays_under_the_cer_threshold() {
+    let mut engine = loaded_engine();
+    let names = ["weather", "meeting", "food", "news", "greeting", "weather"];
+    let audio: Vec<f32> = names.iter().flat_map(|name| read_fixture(name)).collect();
+    assert!(audio.len() > 2 * MAX_SEGMENT_SAMPLES);
+
+    engine.start_utterance(UtteranceOptions::default()).unwrap();
+    for chunk in audio.chunks(1_600) {
+        engine.push_audio(chunk).unwrap();
+    }
+    let final_text = engine.finish_utterance().unwrap();
+
+    let expected: String = names.iter().map(|name| reference(name)).collect();
     let cer = character_error_rate(&expected, &final_text);
     println!("CER {cer:.3} -> {final_text}");
     assert!(cer <= CER_THRESHOLD, "CER {cer:.3} for `{final_text}`");

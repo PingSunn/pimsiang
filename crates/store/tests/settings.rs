@@ -264,3 +264,19 @@ fn changing_a_preference_keeps_the_microphone_and_the_update_state() {
     assert_eq!(saved.dismissed_update.as_deref(), Some("0.2.0"));
     assert_eq!(Settings::load(&path).language.as_deref(), Some("th-TH"));
 }
+
+#[test]
+fn saving_the_launch_at_login_choice_does_not_mark_the_login_item_decided() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("settings");
+
+    Settings::update(&path, |settings| settings.launch_at_login = Some(true)).unwrap();
+
+    assert!(!Settings::load(&path).login_item_decided());
+
+    Settings::update(&path, |settings| settings.login_item_decided = Some(true)).unwrap();
+
+    let loaded = Settings::load(&path);
+    assert!(loaded.login_item_decided());
+    assert_eq!(loaded.launch_at_login, Some(true));
+}

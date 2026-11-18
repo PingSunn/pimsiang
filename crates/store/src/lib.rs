@@ -21,7 +21,8 @@ const LANGUAGE_KEY: &str = "language=";
 const SOUNDS_KEY: &str = "sounds=";
 const CLIPBOARD_RESTORE_KEY: &str = "clipboard_restore=";
 const LAUNCH_AT_LOGIN_KEY: &str = "launch_at_login=";
-const KEYS: [&str; 9] = [
+const LOGIN_ITEM_DECIDED_KEY: &str = "login_item_decided=";
+const KEYS: [&str; 10] = [
     MICROPHONE_KEY,
     LAST_UPDATE_CHECK_KEY,
     AVAILABLE_UPDATE_KEY,
@@ -31,6 +32,7 @@ const KEYS: [&str; 9] = [
     SOUNDS_KEY,
     CLIPBOARD_RESTORE_KEY,
     LAUNCH_AT_LOGIN_KEY,
+    LOGIN_ITEM_DECIDED_KEY,
 ];
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -44,6 +46,7 @@ pub struct Settings {
     pub sounds: Option<bool>,
     pub clipboard_restore: Option<bool>,
     pub launch_at_login: Option<bool>,
+    pub login_item_decided: Option<bool>,
 }
 
 fn switch(text: &str, key: &str) -> Option<bool> {
@@ -87,6 +90,7 @@ impl Settings {
             sounds: switch(&text, SOUNDS_KEY),
             clipboard_restore: switch(&text, CLIPBOARD_RESTORE_KEY),
             launch_at_login: switch(&text, LAUNCH_AT_LOGIN_KEY),
+            login_item_decided: switch(&text, LOGIN_ITEM_DECIDED_KEY),
         }
     }
 
@@ -100,6 +104,10 @@ impl Settings {
 
     pub fn launch_at_login(&self) -> bool {
         self.launch_at_login.unwrap_or(true)
+    }
+
+    pub fn login_item_decided(&self) -> bool {
+        self.login_item_decided.unwrap_or(false)
     }
 
     pub fn save(&self, path: &Path) -> io::Result<()> {
@@ -152,6 +160,11 @@ impl Settings {
             &mut text,
             LAUNCH_AT_LOGIN_KEY,
             switch_text(self.launch_at_login),
+        );
+        push(
+            &mut text,
+            LOGIN_ITEM_DECIDED_KEY,
+            switch_text(self.login_item_decided),
         );
         let existing = std::fs::read_to_string(path).unwrap_or_default();
         for line in existing.lines().map(|line| line.trim_end_matches('\r')) {

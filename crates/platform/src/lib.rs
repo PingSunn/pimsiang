@@ -1,6 +1,7 @@
 pub mod clipboard;
 pub mod fake;
 pub mod focus;
+pub mod pill_layout;
 
 use std::time::Instant;
 
@@ -298,6 +299,7 @@ pub enum PlatformError {
 }
 
 pub use focus::Focus;
+pub use pill_layout::{PillPlacement, PillPosition};
 
 pub type TriggerSink = Box<dyn FnMut(TriggerEvent) + Send>;
 

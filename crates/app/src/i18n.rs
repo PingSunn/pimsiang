@@ -733,6 +733,73 @@ impl Language {
         )
     }
 
+    pub fn settings_pill_group(self) -> &'static str {
+        self.pick("Pill position", "ตำแหน่ง Pill")
+    }
+
+    pub fn settings_pill_notch(self) -> &'static str {
+        self.pick("Notch", "รอยบาก")
+    }
+
+    pub fn settings_pill_floating(self) -> &'static str {
+        self.pick("Floating", "ลอย")
+    }
+
+    pub fn settings_pill_position(self) -> &'static str {
+        self.pick("Position…", "จัดตำแหน่ง…")
+    }
+
+    pub fn settings_pill_done(self) -> &'static str {
+        self.pick("Done", "เสร็จ")
+    }
+
+    pub fn settings_pill_notch_help(self) -> &'static str {
+        self.pick(
+            "The Pill comes out of the notch at the top centre, or sits below the menu bar when the screen has no notch.",
+            th!("Pill"
+                | "โผล่ออกมา"
+                | "จากรอยบาก"
+                | "ตรงกลาง"
+                | "ด้านบน"
+                | "หรืออยู่"
+                | "ใต้แถบเมนู"
+                | "ถ้าจอ"
+                | "ไม่มีรอยบาก"),
+        )
+    }
+
+    pub fn settings_pill_floating_help(self) -> &'static str {
+        self.pick(
+            "The Pill floats where you put it, on the screen your pointer is on.",
+            th!("Pill"
+                | "ลอยอยู่"
+                | "ตรงที่"
+                | "คุณวางไว้"
+                | "บนจอ"
+                | "ที่เมาส์"
+                | "อยู่"),
+        )
+    }
+
+    pub fn settings_pill_placing_help(self) -> &'static str {
+        self.pick(
+            "Drag the sample Pill on screen, then press Done or Esc.",
+            th!("ลาก"
+                | "ตัวอย่าง Pill"
+                | "บนหน้าจอ"
+                | "แล้วกด"
+                | "เสร็จ"
+                | "หรือ Esc"),
+        )
+    }
+
+    pub fn pill_place_hint(self) -> &'static str {
+        self.pick(
+            "Drag it where you want it, then press Done / Esc",
+            "ลากไปวางตรงที่ต้องการ แล้วกด เสร็จ / Esc",
+        )
+    }
+
     pub fn settings_system_group(self) -> &'static str {
         self.pick("System", "ระบบ")
     }

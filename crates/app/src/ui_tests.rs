@@ -5,6 +5,7 @@ use app::preferences::Preferences;
 use egui::{Id, Key, Modifiers, Role};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
+use platform::PillPlacement;
 use platform_macos::login_item::LoginItem;
 use store::{Entry, Kind};
 
@@ -164,6 +165,7 @@ struct SettingsFixture {
     login: LoginItem,
     bundled: bool,
     model: ModelChip,
+    placing: bool,
 }
 
 fn settings(fixture: SettingsFixture) -> Harness<'static, SettingsFixture> {
@@ -182,6 +184,8 @@ fn settings(fixture: SettingsFixture) -> Harness<'static, SettingsFixture> {
                     error: None,
                     model: fixture.model,
                     version: "0.1",
+                    placing: fixture.placing,
+                    pill_preview: None,
                 };
                 settings_window::show(
                     ui,
@@ -205,6 +209,7 @@ fn settings_fixture() -> SettingsFixture {
         login: LoginItem::Disabled,
         bundled: true,
         model: ModelChip::Ready,
+        placing: false,
     }
 }
 
@@ -246,6 +251,63 @@ fn escape_and_command_w_close_the_settings_window() {
     harness.key_press_modifiers(Modifiers::COMMAND, Key::W);
     harness.step();
     assert!(harness.state().actions.close);
+}
+
+#[test]
+fn choosing_notch_or_floating_changes_the_saved_placement() {
+    let mut harness = settings(settings_fixture());
+    harness
+        .get_by_role_and_label(Role::RadioButton, "Notch")
+        .click();
+    harness.run();
+    assert_eq!(
+        harness.state().preferences.pill_placement,
+        PillPlacement::Notch
+    );
+    harness
+        .get_by_role_and_label(Role::RadioButton, "Floating")
+        .click();
+    harness.run();
+    assert_eq!(
+        harness.state().preferences.pill_placement,
+        PillPlacement::Floating
+    );
+}
+
+#[test]
+fn the_position_button_starts_placement_for_a_floating_pill() {
+    let mut harness = settings(settings_fixture());
+    harness.get_by_label("Position…").click();
+    harness.run();
+    assert!(harness.state().actions.place_pill);
+}
+
+#[test]
+fn the_position_button_is_disabled_for_the_notch() {
+    let mut fixture = settings_fixture();
+    fixture.preferences.pill_placement = PillPlacement::Notch;
+    let mut harness = settings(fixture);
+    harness.get_by_label("Position…").click();
+    harness.run();
+    assert!(!harness.state().actions.place_pill);
+}
+
+#[test]
+fn while_placing_done_ends_placement_and_escape_does_not_close_the_window() {
+    let mut fixture = settings_fixture();
+    fixture.placing = true;
+    let mut harness = settings(fixture);
+    harness.get_by_label("Done").click();
+    harness.run();
+    assert!(harness.state().actions.done_placement);
+
+    let mut fixture = settings_fixture();
+    fixture.placing = true;
+    let mut harness = settings(fixture);
+    harness.key_press(Key::Escape);
+    harness.step();
+    assert!(harness.state().actions.escape_placement);
+    assert!(!harness.state().actions.close);
 }
 
 #[test]

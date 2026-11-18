@@ -10,6 +10,7 @@ pub mod mascot;
 pub use icons::Icon;
 pub use keys::{Glyph, Part};
 pub use mascot::Pose;
+pub use platform::{PillPlacement, PillPosition};
 
 pub const RADIUS: u8 = 8;
 pub const RADIUS_LG: u8 = 14;
@@ -1331,4 +1332,98 @@ pub fn highlighted(
         job.append(&text[at..], 0.0, plain);
     }
     ui.label(job)
+}
+
+pub const THUMBNAIL_SIZE: Vec2 = Vec2::new(176.0, 110.0);
+
+pub fn pill_thumbnail(ui: &mut Ui, placement: PillPlacement, position: PillPosition) {
+    let colors = colors(ui);
+    let (screen, _) = ui.allocate_exact_size(THUMBNAIL_SIZE, Sense::hover());
+    let painter = ui.painter();
+    let radius = CornerRadius::same(8);
+    painter.rect_filled(screen, radius, colors.muted);
+    let bar_height = 8.0;
+    let bar = Rect::from_min_size(screen.min, vec2(screen.width(), bar_height));
+    painter.rect_filled(
+        bar,
+        CornerRadius {
+            nw: 8,
+            ne: 8,
+            sw: 0,
+            se: 0,
+        },
+        mix(colors.muted, colors.foreground, 0.12),
+    );
+    let ink = Color32::from_rgb(0x1c, 0x1a, 0x17);
+    let notch_width = 24.0;
+    let bottom_round = |radius: u8| CornerRadius {
+        nw: 0,
+        ne: 0,
+        sw: radius,
+        se: radius,
+    };
+    painter.rect_filled(
+        Rect::from_center_size(
+            pos2(screen.center().x, screen.top() + bar_height / 2.0),
+            vec2(notch_width, bar_height),
+        ),
+        bottom_round(3),
+        ink,
+    );
+    let pill_size = match placement {
+        PillPlacement::Notch => vec2(54.0, 16.0),
+        PillPlacement::Floating => vec2(54.0, 14.0),
+    };
+    let area = Rect::from_min_max(pos2(screen.left(), screen.top() + bar_height), screen.max);
+    let pill = match placement {
+        PillPlacement::Notch => Rect::from_min_size(
+            pos2(
+                screen.center().x - pill_size.x / 2.0,
+                screen.top() + bar_height / 2.0,
+            ),
+            pill_size,
+        ),
+        PillPlacement::Floating => {
+            let centre = pos2(
+                area.left() + position.x as f32 * area.width(),
+                area.bottom() - position.y as f32 * area.height(),
+            );
+            let half = pill_size / 2.0;
+            let centre = pos2(
+                centre.x.clamp(area.left() + half.x, area.right() - half.x),
+                centre.y.clamp(area.top() + half.y, area.bottom() - half.y),
+            );
+            Rect::from_center_size(centre, pill_size)
+        }
+    };
+    let pill_radius = match placement {
+        PillPlacement::Notch => bottom_round(6),
+        PillPlacement::Floating => CornerRadius::same(255),
+    };
+    painter.rect_filled(pill, pill_radius, ink);
+    painter.rect_stroke(
+        pill,
+        pill_radius,
+        Stroke::new(1.0, colors.input),
+        StrokeKind::Inside,
+    );
+    painter.circle_filled(
+        pos2(pill.left() + 8.0, pill.center().y + 1.0),
+        3.5,
+        colors.wattle,
+    );
+    painter.rect_filled(
+        Rect::from_center_size(
+            pos2(pill.left() + 30.0, pill.center().y + 1.0),
+            vec2(24.0, 2.5),
+        ),
+        CornerRadius::same(2),
+        Color32::from_rgb(0xfb, 0xf7, 0xee),
+    );
+    painter.rect_stroke(
+        screen,
+        radius,
+        Stroke::new(1.0, colors.input),
+        StrokeKind::Inside,
+    );
 }

@@ -40,9 +40,11 @@ mod macos {
     use clap::Parser;
     use engine::{LanguageMode, ModelFiles, OnnxEngine, Precision};
     use objc2::MainThreadMarker;
-    use platform::{MicrophoneMenu, PermissionReport, PillState, Sound, Status};
+    use platform::{MicrophoneMenu, PermissionReport, PillPosition, PillState, Sound, Status};
     use platform_macos::login_item::{self, LoginItem};
-    use platform_macos::{MacPlatform, PillArt, PillPanel, copy_text, play_sound};
+    use platform_macos::{
+        MacPlatform, PillArt, PillEvent, PillLayout, PillPanel, PlacementEnd, copy_text, play_sound,
+    };
     use store::{HistoryService, Settings};
     use tray_icon::menu::MenuEvent;
     use winit::application::ApplicationHandler;
@@ -81,6 +83,8 @@ mod macos {
         Status(Status),
         Permissions(PermissionReport),
         Pill(PillState),
+        PlacementMoved(PillPosition),
+        PlacementDone,
         Sound(Sound),
         Microphones(MicrophoneMenu),
         Update(Option<String>),
@@ -163,6 +167,64 @@ mod macos {
             }
         }
 
+        fn pill(&mut self) -> Option<&PillPanel> {
+            if self.pill.is_none() {
+                let proxy = self.proxy.clone();
+                let events: platform_macos::PillEvents = std::rc::Rc::new(move |event| {
+                    let _ = proxy.send_event(match event {
+                        PillEvent::Moved(position) => UserEvent::PlacementMoved(position),
+                        PillEvent::Done => UserEvent::PlacementDone,
+                    });
+                });
+                self.pill = MainThreadMarker::new().map(|mtm| PillPanel::new(mtm, events));
+            }
+            self.pill.as_ref()
+        }
+
+        fn pill_layout(&self) -> PillLayout {
+            PillLayout {
+                placement: self.preferences.pill_placement,
+                position: self.preferences.pill_position,
+            }
+        }
+
+        fn begin_placement(&mut self) {
+            let language = self.language;
+            let position = self.preferences.pill_position;
+            let state = PillState::Listening;
+            let Some(pill) = self.pill() else {
+                return;
+            };
+            if let Some(content) = language.pill_content(&state) {
+                pill.begin_placement(
+                    &content,
+                    PillArt::for_state(&state),
+                    position,
+                    language.pill_place_hint(),
+                    language.settings_pill_done(),
+                );
+            }
+            let placing = pill.is_placing();
+            if let Some(window) = self.settings_window.as_mut() {
+                window.show_placement(placing);
+            }
+        }
+
+        fn end_placement(&mut self, end: PlacementEnd) {
+            let saved = self
+                .pill
+                .as_ref()
+                .and_then(|pill| pill.finish_placement(end));
+            if let Some(window) = self.settings_window.as_mut() {
+                window.show_placement(false);
+            }
+            if let Some(position) = saved {
+                let mut changed = self.preferences;
+                changed.pill_position = position;
+                self.change_preferences(changed);
+            }
+        }
+
         fn model_chip(&self) -> ModelChip {
             model_chip(&self.model, self.model_loading)
         }
@@ -180,10 +242,20 @@ mod macos {
             };
             match window.handle(event) {
                 SettingsOutcome::Idle => {}
-                SettingsOutcome::Close => self.settings_window = None,
+                SettingsOutcome::Close => {
+                    self.end_placement(PlacementEnd::Escape);
+                    self.settings_window = None;
+                }
+                SettingsOutcome::PlacePill => self.begin_placement(),
+                SettingsOutcome::EndPlacement(end) => self.end_placement(end),
                 SettingsOutcome::OpenLoginItems => login_item::open_login_items_settings(),
                 SettingsOutcome::OpenHistory => self.open_history(event_loop),
-                SettingsOutcome::Changed(changed) => self.change_preferences(changed),
+                SettingsOutcome::Changed(changed) => {
+                    if changed.pill_placement != platform::PillPlacement::Floating {
+                        self.end_placement(PlacementEnd::Escape);
+                    }
+                    self.change_preferences(changed);
+                }
             }
         }
 
@@ -500,17 +572,23 @@ mod macos {
                 }
                 UserEvent::Permissions(report) => self.on_permissions(event_loop, report),
                 UserEvent::Pill(state) => {
-                    if self.pill.is_none() {
-                        self.pill = MainThreadMarker::new().map(PillPanel::new);
-                    }
-                    if let Some(pill) = &self.pill {
+                    let layout = self.pill_layout();
+                    let content = self.language.pill_content(&state);
+                    if let Some(pill) = self.pill() {
                         pill.show(
-                            self.language.pill_content(&state).as_ref(),
+                            content.as_ref(),
                             PillArt::for_state(&state),
                             platform::pill_click(&state),
+                            layout,
                         );
                     }
                 }
+                UserEvent::PlacementMoved(position) => {
+                    if let Some(window) = self.settings_window.as_mut() {
+                        window.show_pill_preview(position);
+                    }
+                }
+                UserEvent::PlacementDone => self.end_placement(PlacementEnd::Done),
                 UserEvent::Sound(sound) => play_sound(sound),
                 UserEvent::Microphones(menu) => {
                     if let Some(menu_bar) = &self.menu_bar

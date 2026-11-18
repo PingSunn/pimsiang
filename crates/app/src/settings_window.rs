@@ -3,7 +3,8 @@ use app::i18n::Language;
 use app::model_chip::ModelChip;
 use app::preferences::Preferences;
 use engine::LanguageMode;
-use platform::TriggerKey;
+use platform::{PillPlacement, PillPosition, TriggerKey};
+use platform_macos::PlacementEnd;
 use platform_macos::login_item::{self, LoginItem};
 use winit::dpi::LogicalSize;
 use winit::event::WindowEvent;
@@ -23,6 +24,8 @@ pub enum Outcome {
     Changed(Preferences),
     OpenLoginItems,
     OpenHistory,
+    PlacePill,
+    EndPlacement(PlacementEnd),
 }
 
 pub struct SettingsWindow {
@@ -34,6 +37,8 @@ pub struct SettingsWindow {
     error: Option<String>,
     section: Section,
     model: ModelChip,
+    placing: bool,
+    pill_preview: Option<PillPosition>,
 }
 
 impl SettingsWindow {
@@ -60,6 +65,8 @@ impl SettingsWindow {
             error: None,
             section: Section::General,
             model,
+            placing: false,
+            pill_preview: None,
         })
     }
 
@@ -76,6 +83,21 @@ impl SettingsWindow {
             self.model = model;
             self.surface.request_redraw();
         }
+    }
+
+    pub fn show_placement(&mut self, placing: bool) {
+        if self.placing != placing || (!placing && self.pill_preview.is_some()) {
+            self.placing = placing;
+            if !placing {
+                self.pill_preview = None;
+            }
+            self.surface.request_redraw();
+        }
+    }
+
+    pub fn show_pill_preview(&mut self, position: PillPosition) {
+        self.pill_preview = Some(position);
+        self.surface.request_redraw();
     }
 
     pub fn show_result(
@@ -115,6 +137,8 @@ impl SettingsWindow {
             error: self.error.clone(),
             model: self.model,
             version: env!("CARGO_PKG_VERSION"),
+            placing: self.placing,
+            pill_preview: self.pill_preview,
         };
         let mut section = self.section;
         let mut actions = Actions::default();
@@ -128,6 +152,12 @@ impl SettingsWindow {
             Outcome::OpenLoginItems
         } else if actions.open_history {
             Outcome::OpenHistory
+        } else if actions.place_pill {
+            Outcome::PlacePill
+        } else if actions.done_placement {
+            Outcome::EndPlacement(PlacementEnd::Done)
+        } else if actions.escape_placement {
+            Outcome::EndPlacement(PlacementEnd::Escape)
         } else if preferences != before {
             self.preferences = preferences;
             Outcome::Changed(preferences)
@@ -190,12 +220,17 @@ pub(crate) struct Inputs {
     pub(crate) error: Option<String>,
     pub(crate) model: ModelChip,
     pub(crate) version: &'static str,
+    pub(crate) placing: bool,
+    pub(crate) pill_preview: Option<PillPosition>,
 }
 
 #[derive(Default)]
 pub(crate) struct Actions {
     pub(crate) open_login_items: bool,
     pub(crate) open_history: bool,
+    pub(crate) place_pill: bool,
+    pub(crate) done_placement: bool,
+    pub(crate) escape_placement: bool,
     pub(crate) close: bool,
 }
 
@@ -283,7 +318,9 @@ pub(crate) fn show(
                         });
                 });
         });
-    if !popup_open && (theme::escape_pressed(ui) || theme::close_pressed(ui)) {
+    if !popup_open && inputs.placing && theme::escape_pressed(ui) {
+        actions.escape_placement = true;
+    } else if !popup_open && (theme::escape_pressed(ui) || theme::close_pressed(ui)) {
         actions.close = true;
     }
 }
@@ -333,6 +370,7 @@ fn general(
         });
         theme::description(ui, language.settings_language_help());
     });
+    pill_position(ui, inputs, preferences, actions);
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing.y = theme::SPACE_2;
         theme::section_label(ui, language.settings_system_group());
@@ -387,6 +425,68 @@ fn general(
             }
         });
     }
+}
+
+fn pill_position(
+    ui: &mut egui::Ui,
+    inputs: &Inputs,
+    preferences: &mut Preferences,
+    actions: &mut Actions,
+) {
+    let language = inputs.language;
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = theme::SPACE_2;
+        theme::section_label(ui, language.settings_pill_group());
+        theme::group(ui, |ui| {
+            ui.add_space(14.0);
+            ui.horizontal_top(|ui| {
+                ui.spacing_mut().item_spacing.x = theme::SPACE_5;
+                theme::pill_thumbnail(
+                    ui,
+                    preferences.pill_placement,
+                    inputs.pill_preview.unwrap_or(preferences.pill_position),
+                );
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = theme::SPACE_3;
+                    let options = [
+                        (
+                            PillPlacement::Notch,
+                            vec![theme::Part::Text(language.settings_pill_notch())],
+                        ),
+                        (
+                            PillPlacement::Floating,
+                            vec![theme::Part::Text(language.settings_pill_floating())],
+                        ),
+                    ];
+                    theme::segmented(ui, &mut preferences.pill_placement, &options);
+                    let help = match (preferences.pill_placement, inputs.placing) {
+                        (PillPlacement::Floating, true) => language.settings_pill_placing_help(),
+                        (PillPlacement::Floating, false) => language.settings_pill_floating_help(),
+                        (PillPlacement::Notch, _) => language.settings_pill_notch_help(),
+                    };
+                    theme::description(ui, help);
+                    let floating = preferences.pill_placement == PillPlacement::Floating;
+                    if inputs.placing {
+                        if theme::button(ui, Variant::Primary, language.settings_pill_done())
+                            .clicked()
+                        {
+                            actions.done_placement = true;
+                        }
+                    } else if theme::button_enabled(
+                        ui,
+                        Variant::Outline,
+                        floating,
+                        language.settings_pill_position(),
+                    )
+                    .clicked()
+                    {
+                        actions.place_pill = true;
+                    }
+                });
+            });
+            ui.add_space(14.0);
+        });
+    });
 }
 
 pub(crate) fn glyph_of(key: TriggerKey) -> theme::Glyph {

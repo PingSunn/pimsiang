@@ -1,3 +1,9 @@
+mod history;
+mod service;
+
+pub use history::{Entry, History, HistoryError, Kind, SCHEMA_VERSION};
+pub use service::HistoryService;
+
 use std::io::{self, Write};
 use std::path::Path;
 use std::sync::Mutex;

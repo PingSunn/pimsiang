@@ -207,3 +207,30 @@ fn paste_failure_still_returns_to_ready() {
     assert!(c.platform().pastes().is_empty());
     assert_eq!(c.platform().statuses().last(), Some(&Status::Ready));
 }
+
+#[test]
+fn run_turns_channel_events_into_ticks_and_returns_when_the_channel_closes() {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let mut engine = FakeEngine::new(Vec::<String>::new(), "สวัสดี");
+    engine.load().unwrap();
+    let c = Controller::new(
+        FakePlatform::new(),
+        engine,
+        FakeMicrophone::new(),
+        Config {
+            hold_threshold: Duration::from_millis(20),
+            language: LanguageMode::ThMix,
+        },
+    );
+    let worker = std::thread::spawn(move || c.run(rx));
+
+    tx.send(Input::Trigger(TriggerEvent::pressed(Instant::now())))
+        .unwrap();
+    std::thread::sleep(Duration::from_millis(150));
+    tx.send(Input::Trigger(TriggerEvent::released(Instant::now())))
+        .unwrap();
+    drop(tx);
+    let c = worker.join().unwrap();
+
+    assert_eq!(c.platform().pastes(), ["สวัสดี"]);
+}

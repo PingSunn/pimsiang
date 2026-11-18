@@ -1,3 +1,4 @@
+use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant};
 
 use audio::Microphone;
@@ -67,6 +68,25 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
         match self.state {
             State::Pending { since } => Some(since + self.config.hold_threshold),
             State::Idle | State::Listening => None,
+        }
+    }
+
+    pub fn run(mut self, inputs: Receiver<Input>) -> Self {
+        loop {
+            let input = match self.next_deadline() {
+                Some(deadline) => {
+                    match inputs.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+                        Ok(input) => input,
+                        Err(RecvTimeoutError::Timeout) => Input::Tick(Instant::now()),
+                        Err(RecvTimeoutError::Disconnected) => return self,
+                    }
+                }
+                None => match inputs.recv() {
+                    Ok(input) => input,
+                    Err(_) => return self,
+                },
+            };
+            self.handle(input);
         }
     }
 

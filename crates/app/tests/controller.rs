@@ -969,3 +969,29 @@ fn trigger_events_after_transcribing_work_normally() {
 
     assert_eq!(c.platform().pastes(), ["วางแล้ว", "วางแล้ว"]);
 }
+
+#[test]
+fn dictation_is_unavailable_until_the_model_is_ready() {
+    let engine = FakeEngine::new(["สวัส"], "สวัสดีครับ");
+    let mut c = Controller::new(FakePlatform::new(), engine, FakeMicrophone::new(), config())
+        .model_pending();
+    c.preload_model();
+    assert_eq!(c.engine().load_count(), 0);
+
+    let t0 = Instant::now();
+    hold(&mut c, t0);
+
+    assert_eq!(
+        c.platform().pills(),
+        [PillState::Error(PillError::ModelNotReady)]
+    );
+    assert_eq!(c.engine().load_count(), 0);
+    assert_eq!(c.microphone().start_count(), 0);
+
+    c.handle(Input::ModelReady);
+    assert!(c.engine().is_loaded());
+
+    let t1 = t0 + Duration::from_secs(10);
+    hold(&mut c, t1);
+    assert!(c.microphone().is_capturing());
+}

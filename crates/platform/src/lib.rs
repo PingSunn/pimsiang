@@ -130,6 +130,7 @@ impl PermissionReport {
 pub enum PillError {
     PermissionMissing(Permission),
     ModelNotLoaded,
+    ModelNotReady,
     MicrophoneUnavailable,
     TranscriptionFailed,
     PasteFailed,
@@ -146,6 +147,7 @@ impl PillError {
                 "Input Monitoring permission is missing"
             }
             Self::ModelNotLoaded => "Model not loaded",
+            Self::ModelNotReady => "Model not ready",
             Self::MicrophoneUnavailable => "No microphone available",
             Self::TranscriptionFailed => "Transcription failed",
             Self::PasteFailed => "Could not paste the text",

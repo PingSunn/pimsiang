@@ -47,6 +47,7 @@ pub enum Input {
     Permission(PermissionCommand),
     Microphone(MicrophoneChoice),
     MicrophoneLost,
+    ModelReady,
 }
 
 type TriggerSource = Box<dyn FnMut() -> TriggerSink + Send>;
@@ -81,6 +82,7 @@ pub struct Controller<P, E, M> {
     shown_microphones: Option<MicrophoneMenu>,
     choice: MicrophoneChoice,
     prompted: Vec<Permission>,
+    model_ready: bool,
 }
 
 impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
@@ -100,7 +102,13 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
             shown_microphones: None,
             choice: MicrophoneChoice::default(),
             prompted: Vec::new(),
+            model_ready: true,
         }
+    }
+
+    pub fn model_pending(mut self) -> Self {
+        self.model_ready = false;
+        self
     }
 
     pub fn watch_permissions(
@@ -119,6 +127,9 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
     }
 
     pub fn preload_model(&mut self) {
+        if !self.model_ready {
+            return;
+        }
         if let Err(error) = self.engine.load() {
             tracing::error!(%error, "cannot load the Model");
             self.fail(PillError::ModelNotLoaded);
@@ -215,6 +226,10 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
                 self.publish_microphones();
             }
             Input::MicrophoneLost => return self.on_microphone_lost(),
+            Input::ModelReady => {
+                self.model_ready = true;
+                self.preload_model();
+            }
         }
         Vec::new()
     }
@@ -441,6 +456,10 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
         if let Some(permission) = self.missing_permission() {
             tracing::warn!(permission = permission.name(), "permission is missing");
             self.fail(PillError::PermissionMissing(permission));
+            return;
+        }
+        if !self.model_ready {
+            self.fail(PillError::ModelNotReady);
             return;
         }
         if !self.engine.is_loaded()

@@ -95,6 +95,7 @@ fn the_update_state_survives_a_restart() {
         last_update_check: Some(1_700_000_000),
         available_update: Some("0.2.0".to_owned()),
         dismissed_update: Some("0.1.5".to_owned()),
+        ..Settings::default()
     };
 
     settings.save(&path).unwrap();
@@ -180,4 +181,86 @@ fn no_temporary_file_is_left_behind() {
         .map(|entry| entry.unwrap().file_name())
         .collect();
     assert_eq!(names, vec![std::ffi::OsString::from("settings")]);
+}
+
+#[test]
+fn a_missing_file_gives_the_documented_defaults() {
+    let dir = tempfile::tempdir().unwrap();
+
+    let settings = Settings::load(&dir.path().join("settings"));
+
+    assert_eq!(settings.trigger_key, None);
+    assert_eq!(settings.language, None);
+    assert!(settings.sounds());
+    assert!(settings.clipboard_restore());
+    assert!(settings.launch_at_login());
+}
+
+#[test]
+fn the_preferences_survive_a_restart() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("settings");
+    let settings = Settings {
+        trigger_key: Some("right-command".to_owned()),
+        language: Some("th-TH".to_owned()),
+        sounds: Some(false),
+        clipboard_restore: Some(false),
+        launch_at_login: Some(false),
+        ..Settings::default()
+    };
+
+    settings.save(&path).unwrap();
+
+    let loaded = Settings::load(&path);
+    assert_eq!(loaded, settings);
+    assert!(!loaded.sounds());
+    assert!(!loaded.clipboard_restore());
+    assert!(!loaded.launch_at_login());
+}
+
+#[test]
+fn a_switch_turned_back_on_is_stored_as_on() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("settings");
+    Settings::update(&path, |settings| settings.sounds = Some(false)).unwrap();
+
+    Settings::update(&path, |settings| settings.sounds = Some(true)).unwrap();
+
+    assert_eq!(Settings::load(&path).sounds, Some(true));
+}
+
+#[test]
+fn an_unreadable_switch_falls_back_to_its_default() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("settings");
+    std::fs::write(&path, "sounds=maybe\nclipboard_restore=\nmicrophone=usb\n").unwrap();
+
+    let settings = Settings::load(&path);
+
+    assert_eq!(settings.sounds, None);
+    assert!(settings.sounds());
+    assert!(settings.clipboard_restore());
+    assert_eq!(settings.microphone.as_deref(), Some("usb"));
+}
+
+#[test]
+fn changing_a_preference_keeps_the_microphone_and_the_update_state() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("settings");
+    Settings {
+        microphone: Some("usb".to_owned()),
+        dismissed_update: Some("0.2.0".to_owned()),
+        ..Settings::default()
+    }
+    .save(&path)
+    .unwrap();
+
+    let saved = Settings::update(&path, |settings| {
+        settings.language = Some("th-TH".to_owned());
+    })
+    .unwrap();
+
+    assert_eq!(saved.microphone.as_deref(), Some("usb"));
+    assert_eq!(saved.dismissed_update.as_deref(), Some("0.2.0"));
+    assert_eq!(Settings::load(&path).language.as_deref(), Some("th-TH"));
 }

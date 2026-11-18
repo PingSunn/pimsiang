@@ -16,11 +16,21 @@ const MICROPHONE_KEY: &str = "microphone=";
 const LAST_UPDATE_CHECK_KEY: &str = "last_update_check=";
 const AVAILABLE_UPDATE_KEY: &str = "available_update=";
 const DISMISSED_UPDATE_KEY: &str = "dismissed_update=";
-const KEYS: [&str; 4] = [
+const TRIGGER_KEY_KEY: &str = "trigger_key=";
+const LANGUAGE_KEY: &str = "language=";
+const SOUNDS_KEY: &str = "sounds=";
+const CLIPBOARD_RESTORE_KEY: &str = "clipboard_restore=";
+const LAUNCH_AT_LOGIN_KEY: &str = "launch_at_login=";
+const KEYS: [&str; 9] = [
     MICROPHONE_KEY,
     LAST_UPDATE_CHECK_KEY,
     AVAILABLE_UPDATE_KEY,
     DISMISSED_UPDATE_KEY,
+    TRIGGER_KEY_KEY,
+    LANGUAGE_KEY,
+    SOUNDS_KEY,
+    CLIPBOARD_RESTORE_KEY,
+    LAUNCH_AT_LOGIN_KEY,
 ];
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -29,6 +39,23 @@ pub struct Settings {
     pub last_update_check: Option<u64>,
     pub available_update: Option<String>,
     pub dismissed_update: Option<String>,
+    pub trigger_key: Option<String>,
+    pub language: Option<String>,
+    pub sounds: Option<bool>,
+    pub clipboard_restore: Option<bool>,
+    pub launch_at_login: Option<bool>,
+}
+
+fn switch(text: &str, key: &str) -> Option<bool> {
+    match value(text, key)? {
+        "on" => Some(true),
+        "off" => Some(false),
+        _ => None,
+    }
+}
+
+fn switch_text(value: Option<bool>) -> Option<&'static str> {
+    value.map(|on| if on { "on" } else { "off" })
 }
 
 fn value<'a>(text: &'a str, key: &str) -> Option<&'a str> {
@@ -55,7 +82,24 @@ impl Settings {
                 .and_then(|seconds| seconds.parse().ok()),
             available_update: value(&text, AVAILABLE_UPDATE_KEY).map(str::to_owned),
             dismissed_update: value(&text, DISMISSED_UPDATE_KEY).map(str::to_owned),
+            trigger_key: value(&text, TRIGGER_KEY_KEY).map(str::to_owned),
+            language: value(&text, LANGUAGE_KEY).map(str::to_owned),
+            sounds: switch(&text, SOUNDS_KEY),
+            clipboard_restore: switch(&text, CLIPBOARD_RESTORE_KEY),
+            launch_at_login: switch(&text, LAUNCH_AT_LOGIN_KEY),
         }
+    }
+
+    pub fn sounds(&self) -> bool {
+        self.sounds.unwrap_or(true)
+    }
+
+    pub fn clipboard_restore(&self) -> bool {
+        self.clipboard_restore.unwrap_or(true)
+    }
+
+    pub fn launch_at_login(&self) -> bool {
+        self.launch_at_login.unwrap_or(true)
     }
 
     pub fn save(&self, path: &Path) -> io::Result<()> {
@@ -95,6 +139,19 @@ impl Settings {
             &mut text,
             DISMISSED_UPDATE_KEY,
             self.dismissed_update.as_deref(),
+        );
+        push(&mut text, TRIGGER_KEY_KEY, self.trigger_key.as_deref());
+        push(&mut text, LANGUAGE_KEY, self.language.as_deref());
+        push(&mut text, SOUNDS_KEY, switch_text(self.sounds));
+        push(
+            &mut text,
+            CLIPBOARD_RESTORE_KEY,
+            switch_text(self.clipboard_restore),
+        );
+        push(
+            &mut text,
+            LAUNCH_AT_LOGIN_KEY,
+            switch_text(self.launch_at_login),
         );
         let existing = std::fs::read_to_string(path).unwrap_or_default();
         for line in existing.lines().map(|line| line.trim_end_matches('\r')) {

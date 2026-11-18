@@ -365,16 +365,14 @@ fn pill(ui: &mut egui::Ui, text: &str) {
         egui::Stroke::new(1.0, egui::Color32::from_rgb(0x2a, 0x2a, 0x40)),
         egui::StrokeKind::Inside,
     );
+    let start = rect.left() + (rect.width() - (8.0 + 8.0 + galley.size().x)) / 2.0;
     painter.circle_filled(
-        pos2(rect.left() + 18.0 + 4.0, rect.center().y),
+        pos2(start + 4.0, rect.center().y),
         4.0,
         egui::Color32::from_rgb(0x7a, 0x6b, 0xff),
     );
     painter.galley(
-        pos2(
-            rect.left() + 18.0 + 16.0 + (rect.width() - 2.0 * 18.0 - 16.0 - galley.size().x) / 2.0,
-            rect.center().y - galley.size().y / 2.0,
-        ),
+        pos2(start + 16.0, rect.center().y - galley.size().y / 2.0),
         galley,
         egui::Color32::WHITE,
     );

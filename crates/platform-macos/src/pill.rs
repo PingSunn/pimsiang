@@ -65,7 +65,7 @@ impl PillPanel {
         let label = NSTextField::labelWithString(&NSString::from_str(""), mtm);
         label.setFont(Some(&NSFont::systemFontOfSize(FONT_SIZE)));
         label.setTextColor(Some(&rgb(0xf3, 0xf3, 0xf8)));
-        label.setAlignment(NSTextAlignment::Center);
+        label.setAlignment(NSTextAlignment::Left);
         label.setLineBreakMode(NSLineBreakMode::ByTruncatingHead);
 
         let shape = NSBox::new(mtm);
@@ -135,13 +135,16 @@ impl PillPanel {
         self.shape.setCornerRadius(radius);
         self.shape
             .setFrame(NSRect::new(NSPoint::new(0.0, 0.0), frame.size));
+        let text_available = width - 2.0 * PADDING_X - DOT_SIZE - DOT_GAP;
+        let shown_width = text_width.min(text_available);
+        let start = (width - (DOT_SIZE + DOT_GAP + shown_width)) / 2.0;
         self.dot.setFrame(NSRect::new(
-            NSPoint::new(PADDING_X, PADDING_Y + (LABEL_HEIGHT - DOT_SIZE) / 2.0),
+            NSPoint::new(start, PADDING_Y + (LABEL_HEIGHT - DOT_SIZE) / 2.0),
             NSSize::new(DOT_SIZE, DOT_SIZE),
         ));
         self.label.setFrame(NSRect::new(
-            NSPoint::new(PADDING_X + DOT_SIZE + DOT_GAP, PADDING_Y),
-            NSSize::new(width - 2.0 * PADDING_X - DOT_SIZE - DOT_GAP, LABEL_HEIGHT),
+            NSPoint::new(start + DOT_SIZE + DOT_GAP, PADDING_Y),
+            NSSize::new(shown_width, LABEL_HEIGHT),
         ));
         self.panel.orderFrontRegardless();
     }

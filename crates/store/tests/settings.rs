@@ -191,6 +191,7 @@ fn a_missing_file_gives_the_documented_defaults() {
 
     assert_eq!(settings.trigger_key, None);
     assert_eq!(settings.language, None);
+    assert_eq!(settings.recognition_mode, None);
     assert!(settings.sounds());
     assert!(settings.clipboard_restore());
     assert!(settings.launch_at_login());
@@ -203,6 +204,7 @@ fn the_preferences_survive_a_restart() {
     let settings = Settings {
         trigger_key: Some("right-command".to_owned()),
         language: Some("th-TH".to_owned()),
+        recognition_mode: Some("conversation".to_owned()),
         sounds: Some(false),
         clipboard_restore: Some(false),
         launch_at_login: Some(false),
@@ -310,4 +312,25 @@ fn the_pill_placement_and_position_round_trip_in_the_settings_file() {
     let loaded = Settings::load(&path);
     assert_eq!(loaded.pill_placement.as_deref(), Some("floating"));
     assert_eq!(loaded.pill_position.as_deref(), Some("0.5000,0.1200"));
+}
+
+#[test]
+fn the_recognition_mode_is_stored_under_openthai_mode() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("settings");
+
+    Settings::update(&path, |settings| {
+        settings.recognition_mode = Some("conversation".to_owned());
+    })
+    .unwrap();
+
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(
+        text.lines()
+            .any(|line| line == "openthai.mode=conversation")
+    );
+    assert_eq!(
+        Settings::load(&path).recognition_mode.as_deref(),
+        Some("conversation")
+    );
 }

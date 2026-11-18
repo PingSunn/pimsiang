@@ -18,6 +18,7 @@ const AVAILABLE_UPDATE_KEY: &str = "available_update=";
 const DISMISSED_UPDATE_KEY: &str = "dismissed_update=";
 const TRIGGER_KEY_KEY: &str = "trigger_key=";
 const LANGUAGE_KEY: &str = "language=";
+const RECOGNITION_MODE_KEY: &str = "openthai.mode=";
 const SOUNDS_KEY: &str = "sounds=";
 const CLIPBOARD_RESTORE_KEY: &str = "clipboard_restore=";
 const LAUNCH_AT_LOGIN_KEY: &str = "launch_at_login=";
@@ -25,13 +26,14 @@ const LOGIN_ITEM_DECIDED_KEY: &str = "login_item_decided=";
 const UNLOAD_WHEN_IDLE_KEY: &str = "unload_when_idle=";
 const PILL_PLACEMENT_KEY: &str = "pill_placement=";
 const PILL_POSITION_KEY: &str = "pill_position=";
-const KEYS: [&str; 13] = [
+const KEYS: [&str; 14] = [
     MICROPHONE_KEY,
     LAST_UPDATE_CHECK_KEY,
     AVAILABLE_UPDATE_KEY,
     DISMISSED_UPDATE_KEY,
     TRIGGER_KEY_KEY,
     LANGUAGE_KEY,
+    RECOGNITION_MODE_KEY,
     SOUNDS_KEY,
     CLIPBOARD_RESTORE_KEY,
     LAUNCH_AT_LOGIN_KEY,
@@ -49,6 +51,7 @@ pub struct Settings {
     pub dismissed_update: Option<String>,
     pub trigger_key: Option<String>,
     pub language: Option<String>,
+    pub recognition_mode: Option<String>,
     pub sounds: Option<bool>,
     pub clipboard_restore: Option<bool>,
     pub launch_at_login: Option<bool>,
@@ -96,6 +99,7 @@ impl Settings {
             dismissed_update: value(&text, DISMISSED_UPDATE_KEY).map(str::to_owned),
             trigger_key: value(&text, TRIGGER_KEY_KEY).map(str::to_owned),
             language: value(&text, LANGUAGE_KEY).map(str::to_owned),
+            recognition_mode: value(&text, RECOGNITION_MODE_KEY).map(str::to_owned),
             sounds: switch(&text, SOUNDS_KEY),
             clipboard_restore: switch(&text, CLIPBOARD_RESTORE_KEY),
             launch_at_login: switch(&text, LAUNCH_AT_LOGIN_KEY),
@@ -166,6 +170,11 @@ impl Settings {
         );
         push(&mut text, TRIGGER_KEY_KEY, self.trigger_key.as_deref());
         push(&mut text, LANGUAGE_KEY, self.language.as_deref());
+        push(
+            &mut text,
+            RECOGNITION_MODE_KEY,
+            self.recognition_mode.as_deref(),
+        );
         push(&mut text, SOUNDS_KEY, switch_text(self.sounds));
         push(
             &mut text,

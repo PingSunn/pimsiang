@@ -246,6 +246,15 @@ impl PillState {
     }
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct PillContent {
+    pub settled: String,
+    pub tentative: String,
+    pub caret: bool,
+    pub dots: bool,
+    pub badge: Option<String>,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PillAction {
     OpenSettings(Permission),

@@ -487,8 +487,9 @@ mod macos {
                     }
                     if let Some(pill) = &self.pill {
                         pill.show(
-                            self.language.pill_text(&state).as_deref(),
+                            self.language.pill_content(&state).as_ref(),
                             PillArt::for_state(&state),
+                            platform::pill_click(&state),
                         );
                     }
                 }

@@ -6,9 +6,9 @@ use std::time::{Duration, Instant};
 use audio::{Microphone, MicrophoneChoice, Opened};
 use engine::{Engine, EngineError, LanguageMode, UtteranceOptions};
 use platform::{
-    Focus, MicrophoneEntry, MicrophoneMenu, Permission, PermissionReport, PermissionStatus,
-    PartialText, PillError, PillNotice, PillState, Platform, Sound, Status, TriggerEvent, TriggerKey,
-    TriggerSink, TriggerState,
+    Focus, MicrophoneEntry, MicrophoneMenu, PartialText, Permission, PermissionReport,
+    PermissionStatus, PillError, PillNotice, PillState, Platform, Sound, Status, TriggerEvent,
+    TriggerKey, TriggerSink, TriggerState,
 };
 use store::Kind;
 

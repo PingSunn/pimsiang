@@ -1,6 +1,6 @@
 use platform::{
-    Permission, PermissionReport, PermissionStatus, PillError, PillNotice, PillState, Status,
-    TriggerKey,
+    Permission, PermissionReport, PermissionStatus, PillContent, PillError, PillNotice, PillState,
+    Status, TriggerKey,
 };
 use store::Kind;
 
@@ -273,7 +273,7 @@ impl Language {
     }
 
     pub fn pill_transcribing(self) -> &'static str {
-        self.pick("Transcribing…", "กำลังถอดเสียง…")
+        self.pick("Transcribing…", "กำลังเขียนให้…")
     }
 
     pub fn pill_error(self, error: PillError) -> String {
@@ -311,7 +311,7 @@ impl Language {
                 self.pick("Microphone disconnected", "ไมโครโฟนขาดการเชื่อมต่อ")
             }
             PillNotice::NoTranscriptYet => self.pick("No transcript yet", "ยังไม่มีข้อความ"),
-            PillNotice::QuickNoteSaved => self.pick("Saved as a Note", "บันทึกเป็นโน้ตแล้ว"),
+            PillNotice::QuickNoteSaved => self.pick("Saved as a Note", "จดเป็นโน้ตแล้ว"),
             PillNotice::NoTextFieldKeptAsNote => self.pick(
                 "No text field focused. Saved as a Note and copied",
                 "ไม่มีช่องข้อความ บันทึกเป็นโน้ตและคัดลอกแล้ว",
@@ -333,6 +333,42 @@ impl Language {
             PillState::Notice(notice) => Some(self.pill_notice(*notice).to_owned()),
             PillState::Error(error) => Some(self.pill_error(*error)),
         }
+    }
+
+    pub fn pill_badge_note(self) -> &'static str {
+        self.pick("Note", "โน้ต")
+    }
+
+    pub fn pill_content(self, state: &PillState) -> Option<PillContent> {
+        let text = self.pill_text(state)?;
+        let plain = |text: String| PillContent {
+            settled: text,
+            ..PillContent::default()
+        };
+        Some(match state {
+            PillState::Partial(partial) => {
+                let (settled, tentative) = partial.split();
+                PillContent {
+                    settled: settled.to_owned(),
+                    tentative: tentative.to_owned(),
+                    caret: true,
+                    ..PillContent::default()
+                }
+            }
+            PillState::Transcribing => PillContent {
+                dots: true,
+                ..plain(text)
+            },
+            PillState::Notice(
+                PillNotice::QuickNoteSaved
+                | PillNotice::NoTextFieldKeptAsNote
+                | PillNotice::PasteFailedKeptAsNote,
+            ) => PillContent {
+                badge: Some(self.pill_badge_note().to_owned()),
+                ..plain(text)
+            },
+            _ => plain(text),
+        })
     }
 
     pub fn menu_history(self) -> &'static str {

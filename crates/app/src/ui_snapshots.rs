@@ -493,9 +493,7 @@ fn pill_snapshots() {
                 ui.spacing_mut().item_spacing.y = 14.0;
                 for state in [
                     platform::PillState::Listening,
-                    platform::PillState::partial(
-                        "ช่วยส่งรายงานประจำสัปดาห์ให้ทีมก่อนบ่ายสามโมง",
-                    ),
+                    platform::PillState::partial("ช่วยส่งรายงานประจำสัปดาห์ให้ทีมก่อนบ่ายสามโมง"),
                     platform::PillState::Transcribing,
                     platform::PillState::Error(platform::PillError::MicrophoneUnavailable),
                 ] {

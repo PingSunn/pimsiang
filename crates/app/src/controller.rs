@@ -5,9 +5,9 @@ use std::time::{Duration, Instant};
 use audio::{Microphone, MicrophoneChoice, Opened};
 use engine::{Engine, LanguageMode, UtteranceOptions};
 use platform::{
-    MicrophoneEntry, MicrophoneMenu, Permission, PermissionReport, PermissionStatus, PillError,
-    PillNotice, PillState, Platform, Sound, Status, TriggerEvent, TriggerKey, TriggerSink,
-    TriggerState,
+    Focus, MicrophoneEntry, MicrophoneMenu, Permission, PermissionReport, PermissionStatus,
+    PillError, PillNotice, PillState, Platform, Sound, Status, TriggerEvent, TriggerKey,
+    TriggerSink, TriggerState,
 };
 use store::Kind;
 
@@ -74,8 +74,14 @@ struct PermissionWatch {
 
 enum State {
     Idle,
-    Pending { since: Instant, second_tap: bool },
-    Listening { hands_free: bool },
+    Pending {
+        since: Instant,
+        second_tap: bool,
+        shift: bool,
+    },
+    Listening {
+        hands_free: bool,
+    },
     EndingHandsFree,
 }
 
@@ -85,6 +91,7 @@ pub struct Controller<P, E, M> {
     microphone: M,
     config: Config,
     state: State,
+    quick_note: bool,
     last_tap: Option<Instant>,
     hide_at: Option<Instant>,
     shown_partial: Option<String>,
@@ -106,6 +113,7 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
             microphone,
             config,
             state: State::Idle,
+            quick_note: false,
             last_tap: None,
             hide_at: None,
             shown_partial: None,
@@ -230,7 +238,7 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
     fn dispatch(&mut self, input: Input, queued: Option<&Receiver<Input>>) -> Vec<Input> {
         match input {
             Input::Trigger(event) => match event.state {
-                TriggerState::Pressed => self.on_pressed(event.at),
+                TriggerState::Pressed => self.on_pressed(event.at, event.shift),
                 TriggerState::Released => return self.on_released(event.at, queued),
                 TriggerState::Combined => self.on_combined(),
                 TriggerState::Escape => self.on_escape(),
@@ -266,7 +274,7 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
         }
     }
 
-    fn on_pressed(&mut self, at: Instant) {
+    fn on_pressed(&mut self, at: Instant, shift: bool) {
         match self.state {
             State::Idle => {
                 let second_tap = self.last_tap.take().is_some_and(|tap| {
@@ -275,6 +283,7 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
                 self.state = State::Pending {
                     since: at,
                     second_tap,
+                    shift,
                 };
             }
             State::Listening { hands_free: true } => self.state = State::EndingHandsFree,
@@ -287,10 +296,12 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
     fn on_released(&mut self, at: Instant, queued: Option<&Receiver<Input>>) -> Vec<Input> {
         match self.state {
             State::Idle | State::Listening { hands_free: true } => Vec::new(),
-            State::Pending { second_tap, .. } => {
+            State::Pending {
+                second_tap, shift, ..
+            } => {
                 self.state = State::Idle;
                 if second_tap {
-                    self.begin(true);
+                    self.begin(true, shift);
                 } else {
                     self.last_tap = Some(at);
                 }
@@ -361,11 +372,11 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
             self.hide_at = None;
             self.platform.show_pill(PillState::Hidden);
         }
-        if let State::Pending { since, .. } = self.state
+        if let State::Pending { since, shift, .. } = self.state
             && now >= since + self.config.hold_threshold
         {
             self.state = State::Idle;
-            self.begin(false);
+            self.begin(false, shift);
         }
         if let Some(watch) = &self.watch
             && now >= watch.next_poll
@@ -484,7 +495,7 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
         self.platform.show_pill(PillState::Error(error));
     }
 
-    fn begin(&mut self, hands_free: bool) {
+    fn begin(&mut self, hands_free: bool, quick_note: bool) {
         if let Some(permission) = self.missing_permission() {
             tracing::warn!(permission = permission.name(), "permission is missing");
             self.fail(PillError::PermissionMissing(permission));
@@ -520,6 +531,7 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
             }
         };
         self.state = State::Listening { hands_free };
+        self.quick_note = quick_note;
         self.hide_at = None;
         self.shown_partial = None;
         self.held_partial = None;
@@ -581,6 +593,7 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
             self.state = State::Pending {
                 since: Instant::now(),
                 second_tap: false,
+                shift: false,
             };
         }
         if cancelled {
@@ -598,9 +611,9 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
         };
         self.platform.show_status(Status::Ready);
         match delivered {
-            Ok(()) => match notice {
+            Ok(shown) => match shown.or(notice) {
                 Some(notice) => {
-                    self.hide_at = Some(Instant::now() + self.config.error_linger);
+                    self.hide_at = Some(Instant::now() + self.notice_duration(notice));
                     self.platform.show_pill(PillState::Notice(notice));
                 }
                 None => self.hide_at = Some(Instant::now() + self.config.pill_linger),
@@ -610,20 +623,50 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
         waiting
     }
 
-    fn deliver(&mut self, text: &str) -> Result<(), PillError> {
+    fn notice_duration(&self, notice: PillNotice) -> Duration {
+        match notice {
+            PillNotice::QuickNoteSaved => self.config.notice_linger,
+            _ => self.config.error_linger,
+        }
+    }
+
+    fn deliver(&mut self, text: &str) -> Result<Option<PillNotice>, PillError> {
         if text.is_empty() {
             tracing::info!("Utterance produced no text");
-            return Ok(());
+            return Ok(None);
+        }
+        if self.quick_note {
+            tracing::info!(chars = text.chars().count(), "kept a Quick note");
+            self.record(text, Kind::Note);
+            return Ok(Some(PillNotice::QuickNoteSaved));
+        }
+        if self.platform.focus_probe() == Focus::NoTextField {
+            tracing::info!("no text field is focused; keeping the Final text as a Note");
+            return self.keep_and_copy(text, PillNotice::NoTextFieldKeptAsNote);
         }
         match self.platform.paste(text, self.config.clipboard_restore) {
             Ok(()) => {
                 tracing::info!(chars = text.chars().count(), "pasted Final text");
                 self.record(text, Kind::Pasted);
-                Ok(())
+                Ok(None)
             }
             Err(error) => {
                 tracing::error!(%error, "cannot paste the Final text");
-                self.record(text, Kind::Note);
+                self.keep_and_copy(text, PillNotice::PasteFailedKeptAsNote)
+            }
+        }
+    }
+
+    fn keep_and_copy(
+        &mut self,
+        text: &str,
+        notice: PillNotice,
+    ) -> Result<Option<PillNotice>, PillError> {
+        self.record(text, Kind::Note);
+        match self.platform.copy(text) {
+            Ok(()) => Ok(Some(notice)),
+            Err(error) => {
+                tracing::error!(%error, "cannot copy the Note to the clipboard");
                 Err(PillError::PasteFailed)
             }
         }

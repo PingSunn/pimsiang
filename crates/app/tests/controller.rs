@@ -6,7 +6,7 @@ use audio::fake::FakeMicrophone;
 use engine::fake::FakeEngine;
 use engine::{Engine, LanguageMode, UtteranceOptions};
 use platform::fake::FakePlatform;
-use platform::{PillError, PillState, Sound, Status, TriggerEvent, TriggerKey};
+use platform::{PillError, PillNotice, PillState, Sound, Status, TriggerEvent, TriggerKey};
 
 const HOLD: Duration = Duration::from_millis(200);
 const TAP_WINDOW: Duration = Duration::from_millis(300);
@@ -389,7 +389,7 @@ fn model_that_cannot_load_is_shown_in_the_pill() {
 }
 
 #[test]
-fn paste_failure_is_shown_in_the_pill() {
+fn paste_failure_is_shown_in_the_pill_as_a_kept_note() {
     let mut engine = FakeEngine::new(Vec::<String>::new(), "x");
     engine.load().unwrap();
     let mut c = Controller::new(
@@ -405,7 +405,7 @@ fn paste_failure_is_shown_in_the_pill() {
 
     assert_eq!(
         c.platform().pills().last(),
-        Some(&PillState::Error(PillError::PasteFailed))
+        Some(&PillState::Notice(PillNotice::PasteFailedKeptAsNote))
     );
 }
 

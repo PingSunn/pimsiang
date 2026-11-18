@@ -42,12 +42,18 @@ cargo_version="$(awk -F'"' '/^version *=/ { print $2; exit }' Cargo.toml)"
 if git rev-parse -q --verify "refs/tags/$tag" > /dev/null; then
   fail "tag $tag already exists"
 fi
+remote_tag=0
+if [ "$dry_run" -eq 0 ] && git remote get-url origin > /dev/null 2>&1; then
+  if [ -n "$(git ls-remote --tags origin "refs/tags/$tag")" ]; then
+    remote_tag=1
+  fi
+fi
 
 keychain_args=()
 if [ -n "${PIMSIANG_SIGN_KEYCHAIN:-}" ]; then
   keychain_args=("$PIMSIANG_SIGN_KEYCHAIN")
 fi
-if ! security find-identity -p codesigning "${keychain_args[@]}" | grep -Fq "\"$IDENTITY\""; then
+if ! security find-identity -v -p codesigning ${keychain_args[@]+"${keychain_args[@]}"} | grep -Fq "\"$IDENTITY\""; then
   fail "signing identity \"$IDENTITY\" not found; run scripts/make-signing-cert.sh once (releases are never ad hoc)"
 fi
 
@@ -109,8 +115,21 @@ if [ "$dry_run" -eq 0 ]; then
 fi
 
 sha="$(git rev-parse HEAD)"
-publish gh release create "$tag" "$zip" "$zip.sha256" \
-  --repo "$REPO" --target "$sha" --title "PimSiang $version" --generate-notes
+release_exists=0
+if [ "$dry_run" -eq 0 ] && gh release view "$tag" --repo "$REPO" > /dev/null 2>&1; then
+  release_exists=1
+fi
+if [ "$remote_tag" -eq 1 ] && [ "$release_exists" -eq 0 ]; then
+  fail "tag $tag exists on origin but has no GitHub release; see docs/adr/0032 (manual recovery)"
+fi
+if [ "$release_exists" -eq 1 ]; then
+  published="$(gh release download "$tag" --repo "$REPO" --pattern "$(basename "$zip")" --output - | shasum -a 256 | awk '{ print $1 }')"
+  [ "$published" = "$sha256" ] || fail "release $tag already exists with a different asset (sha256 $published, built $sha256); see docs/adr/0032 (manual recovery)"
+  echo "release $tag already has this exact asset; skipping upload"
+else
+  publish gh release create "$tag" "$zip" "$zip.sha256" \
+    --repo "$REPO" --target "$sha" --title "PimSiang $version" --generate-notes
+fi
 
 if [ "$dry_run" -eq 1 ]; then
   echo "[dry-run] would run: copy $cask to $TAP_DIR/Casks/pimsiang.rb and commit it"

@@ -1,4 +1,4 @@
-use store::Settings;
+use store::{Precision, Settings};
 
 #[test]
 fn a_missing_file_gives_the_defaults() {
@@ -310,4 +310,32 @@ fn the_pill_placement_and_position_round_trip_in_the_settings_file() {
     let loaded = Settings::load(&path);
     assert_eq!(loaded.pill_placement.as_deref(), Some("floating"));
     assert_eq!(loaded.pill_position.as_deref(), Some("0.5000,0.1200"));
+}
+
+#[test]
+fn the_precision_defaults_to_accurate_and_round_trips() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("settings");
+    assert_eq!(Settings::load(&path).precision, None);
+    assert_eq!(Settings::load(&path).precision(), Precision::Accurate);
+
+    Settings::update(&path, |settings| {
+        settings.precision = Some(Precision::Light.name().to_owned());
+    })
+    .unwrap();
+
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(text.contains("precision=light\n"));
+    assert_eq!(Settings::load(&path).precision(), Precision::Light);
+}
+
+#[test]
+fn an_unknown_precision_falls_back_to_accurate() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("settings");
+    std::fs::write(&path, "precision=turbo\n").unwrap();
+
+    assert_eq!(Settings::load(&path).precision(), Precision::Accurate);
+    assert_eq!(Precision::from_name("accurate"), Some(Precision::Accurate));
+    assert_eq!(Precision::from_name("fp32"), None);
 }

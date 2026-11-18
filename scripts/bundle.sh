@@ -19,11 +19,8 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/en.lproj" "$APP/Contents/Resources/th.lproj"
 cp "$BINARY" "$APP/Contents/MacOS/pimsiang"
 
-icon_entry=""
-if [ -f "$ICON" ]; then
-  cp "$ICON" "$APP/Contents/Resources/PimSiang.icns"
-  icon_entry="<key>CFBundleIconFile</key><string>PimSiang</string>"
-fi
+cp "$ICON" "$APP/Contents/Resources/PimSiang.icns"
+icon_entry="<key>CFBundleIconFile</key><string>PimSiang</string>"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

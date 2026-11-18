@@ -153,11 +153,37 @@ impl PillError {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PillNotice {
+    MicrophoneFellBack,
+}
+
+impl PillNotice {
+    pub fn message(self) -> &'static str {
+        match self {
+            Self::MicrophoneFellBack => "Microphone not found, using the system default",
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MicrophoneEntry {
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct MicrophoneMenu {
+    pub devices: Vec<MicrophoneEntry>,
+    pub selected: Option<String>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PillState {
     Listening,
     Partial(String),
     Transcribing,
+    Notice(PillNotice),
     Error(PillError),
     Hidden,
 }
@@ -183,4 +209,5 @@ pub trait Platform {
     fn request_permission(&mut self, permission: Permission);
     fn open_settings(&mut self, permission: Permission);
     fn show_permissions(&mut self, report: PermissionReport);
+    fn show_microphones(&mut self, menu: MicrophoneMenu);
 }

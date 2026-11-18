@@ -16,12 +16,13 @@ mod macos {
     use app::controller::{Config, Controller, Input, PermissionCommand};
     use app::i18n::Language;
     use app::onboarding;
-    use audio::MicCapture;
+    use audio::{MicCapture, MicrophoneChoice};
     use clap::Parser;
     use engine::{LanguageMode, ModelFiles, OnnxEngine, Precision};
     use objc2::MainThreadMarker;
-    use platform::{PermissionReport, PillState, Sound, Status};
+    use platform::{MicrophoneMenu, PermissionReport, PillState, Sound, Status};
     use platform_macos::{MacPlatform, PillPanel, play_sound};
+    use store::Settings;
     use tray_icon::menu::MenuEvent;
     use winit::application::ApplicationHandler;
     use winit::event::{StartCause, WindowEvent};
@@ -54,12 +55,14 @@ mod macos {
         Permissions(PermissionReport),
         Pill(PillState),
         Sound(Sound),
+        Microphones(MicrophoneMenu),
         Menu(MenuEvent),
         Fatal(String),
     }
 
     struct App {
         log_dir: PathBuf,
+        settings_path: Option<PathBuf>,
         menu_bar: Option<MenuBar>,
         pill: Option<PillPanel>,
         failure: Option<String>,
@@ -81,6 +84,21 @@ mod macos {
                 Ok(setup) => self.setup = Some(setup),
                 Err(error) => tracing::error!(%error, "cannot open the setup window"),
             }
+        }
+
+        fn choose_microphone(&mut self, choice: MicrophoneChoice) {
+            if let Some(path) = &self.settings_path {
+                let settings = Settings {
+                    microphone: match &choice {
+                        MicrophoneChoice::SystemDefault => None,
+                        MicrophoneChoice::Device(id) => Some(id.clone()),
+                    },
+                };
+                if let Err(error) = settings.save(path) {
+                    tracing::warn!(%error, "cannot save the microphone choice");
+                }
+            }
+            let _ = self.inputs.send(Input::Microphone(choice));
         }
 
         fn setup_view(&self) -> onboarding::View {
@@ -178,9 +196,17 @@ mod macos {
                     }
                 }
                 UserEvent::Sound(sound) => play_sound(sound),
+                UserEvent::Microphones(menu) => {
+                    if let Some(menu_bar) = &self.menu_bar
+                        && let Err(error) = menu_bar.show_microphones(&menu)
+                    {
+                        tracing::warn!(%error, "cannot update the microphone menu");
+                    }
+                }
                 UserEvent::Menu(event) => {
                     let action = self.menu_bar.as_ref().and_then(|bar| bar.action(&event.id));
                     match action {
+                        Some(MenuAction::Microphone(choice)) => self.choose_microphone(choice),
                         Some(MenuAction::SetupPermissions) => self.open_setup(event_loop),
                         Some(MenuAction::OpenLogFolder) => {
                             if let Err(error) = open_folder(&self.log_dir) {
@@ -232,6 +258,7 @@ mod macos {
 
         let mut app = App {
             log_dir,
+            settings_path: settings_path(),
             menu_bar: None,
             pill: None,
             failure: None,
@@ -253,6 +280,11 @@ mod macos {
         }
     }
 
+    fn settings_path() -> Option<PathBuf> {
+        let home = std::env::var_os("HOME")?;
+        Some(PathBuf::from(home).join("Library/Application Support/PimSiang/settings"))
+    }
+
     fn run_controller(
         args: &Args,
         proxy: &EventLoopProxy<UserEvent>,
@@ -263,6 +295,7 @@ mod macos {
         let pill_proxy = proxy.clone();
         let permissions_proxy = proxy.clone();
         let sound_proxy = proxy.clone();
+        let microphones_proxy = proxy.clone();
         let platform = MacPlatform::new(
             Box::new(move |status| {
                 let _ = status_proxy.send_event(UserEvent::Status(status));
@@ -275,6 +308,9 @@ mod macos {
             }),
             Box::new(move |sound| {
                 let _ = sound_proxy.send_event(UserEvent::Sound(sound));
+            }),
+            Box::new(move |menu| {
+                let _ = microphones_proxy.send_event(UserEvent::Microphones(menu));
             }),
         );
         let engine = OnnxEngine::new(ModelFiles::new(&args.model_dir, args.precision));
@@ -301,6 +337,11 @@ mod macos {
                 let _ = trigger_tx.send(Input::Trigger(event));
             })
         });
+        if let Some(path) = settings_path()
+            && let Some(id) = Settings::load(&path).microphone
+        {
+            controller.handle(Input::Microphone(MicrophoneChoice::Device(id)));
+        }
         controller.handle(Input::Tick(Instant::now()));
         controller.preload_model();
         controller.run(rx);

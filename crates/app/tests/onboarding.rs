@@ -47,6 +47,8 @@ fn every_string_exists_in_both_languages() {
             language.all_set(),
             language.menu_setup(),
             language.menu_all_granted(),
+            language.menu_microphone(),
+            language.menu_system_default(),
         ];
         for row in &rows {
             texts.push(row.title);

@@ -58,6 +58,14 @@ impl Language {
         self.pick("All permissions granted", "ได้รับสิทธิ์ครบแล้ว")
     }
 
+    pub fn menu_microphone(self) -> &'static str {
+        self.pick("Microphone", "ไมโครโฟน")
+    }
+
+    pub fn menu_system_default(self) -> &'static str {
+        self.pick("System default", "ค่าเริ่มต้นของระบบ")
+    }
+
     pub fn menu_missing(self, report: &PermissionReport) -> String {
         let names: Vec<&str> = report
             .missing()

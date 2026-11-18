@@ -93,6 +93,7 @@ impl PillPanel {
             PillState::Listening => "Listening…".to_owned(),
             PillState::Partial(text) => text.clone(),
             PillState::Transcribing => "Transcribing…".to_owned(),
+            PillState::Notice(notice) => notice.message().to_owned(),
             PillState::Error(error) => error.message().to_owned(),
         };
         self.label.setStringValue(&NSString::from_str(&text));

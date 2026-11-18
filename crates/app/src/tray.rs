@@ -1,11 +1,12 @@
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 
 use app::i18n::Language;
-use platform::{PermissionReport, Status};
-use tray_icon::menu::{Menu, MenuId, MenuItem};
+use audio::MicrophoneChoice;
+use platform::{MicrophoneMenu, PermissionReport, Status};
+use tray_icon::menu::{CheckMenuItem, Menu, MenuId, MenuItem, Submenu};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
 
 const ICON_SIZE: u32 = 44;
@@ -16,6 +17,8 @@ pub struct MenuBar {
     permissions_info: MenuItem,
     setup_permissions: MenuItem,
     setup_permissions_id: MenuId,
+    microphones: Submenu,
+    microphone_ids: RefCell<Vec<(MenuId, MicrophoneChoice)>>,
     open_logs: MenuId,
     quit: MenuId,
     status: Cell<Status>,
@@ -23,6 +26,7 @@ pub struct MenuBar {
 }
 
 pub enum MenuAction {
+    Microphone(MicrophoneChoice),
     SetupPermissions,
     OpenLogFolder,
     Quit,
@@ -32,11 +36,18 @@ impl MenuBar {
     pub fn new(language: Language) -> Result<Self> {
         let permissions_info = MenuItem::new(language.menu_all_granted(), false, None);
         let setup_permissions = MenuItem::new(language.menu_setup(), false, None);
+        let microphones = Submenu::new(language.menu_microphone(), true);
         let open_logs = MenuItem::new("Open log folder", true, None);
         let quit = MenuItem::new("Quit PimSiang", true, None);
         let menu = Menu::new();
-        menu.append_items(&[&permissions_info, &setup_permissions, &open_logs, &quit])
-            .context("building the menu")?;
+        menu.append_items(&[
+            &permissions_info,
+            &setup_permissions,
+            &microphones,
+            &open_logs,
+            &quit,
+        ])
+        .context("building the menu")?;
         let tray = TrayIconBuilder::new()
             .with_menu(Box::new(menu))
             .with_tooltip("PimSiang")
@@ -47,6 +58,8 @@ impl MenuBar {
             tray,
             language,
             setup_permissions_id: setup_permissions.id().clone(),
+            microphones,
+            microphone_ids: RefCell::new(Vec::new()),
             permissions_info,
             setup_permissions,
             status: Cell::new(Status::Ready),
@@ -73,6 +86,30 @@ impl MenuBar {
         self.refresh()
     }
 
+    pub fn show_microphones(&self, menu: &MicrophoneMenu) -> Result<()> {
+        while self.microphones.remove_at(0).is_some() {}
+        let mut ids = Vec::new();
+        let default_item = CheckMenuItem::new(
+            self.language.menu_system_default(),
+            true,
+            menu.selected.is_none(),
+            None,
+        );
+        self.microphones.append(&default_item)?;
+        ids.push((default_item.id().clone(), MicrophoneChoice::SystemDefault));
+        for device in &menu.devices {
+            let checked = menu.selected.as_deref() == Some(device.id.as_str());
+            let item = CheckMenuItem::new(&device.name, true, checked, None);
+            self.microphones.append(&item)?;
+            ids.push((
+                item.id().clone(),
+                MicrophoneChoice::Device(device.id.clone()),
+            ));
+        }
+        *self.microphone_ids.borrow_mut() = ids;
+        Ok(())
+    }
+
     fn refresh(&self) -> Result<()> {
         let status = self.status.get();
         let warning = self.warning.get() && status == Status::Ready;
@@ -90,7 +127,15 @@ impl MenuBar {
     }
 
     pub fn action(&self, id: &MenuId) -> Option<MenuAction> {
-        if *id == self.setup_permissions_id {
+        let microphone = self
+            .microphone_ids
+            .borrow()
+            .iter()
+            .find(|(item, _)| item == id)
+            .map(|(_, choice)| choice.clone());
+        if let Some(choice) = microphone {
+            Some(MenuAction::Microphone(choice))
+        } else if *id == self.setup_permissions_id {
             Some(MenuAction::SetupPermissions)
         } else if *id == self.open_logs {
             Some(MenuAction::OpenLogFolder)

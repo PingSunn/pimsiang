@@ -1,6 +1,6 @@
 use crate::{
-    Permission, PermissionReport, PermissionStatus, PillState, Platform, PlatformError, Sound,
-    Status, TriggerEvent, TriggerSink,
+    MicrophoneMenu, Permission, PermissionReport, PermissionStatus, PillState, Platform,
+    PlatformError, Sound, Status, TriggerEvent, TriggerSink,
 };
 
 pub struct FakePlatform {
@@ -12,6 +12,7 @@ pub struct FakePlatform {
     paste_fails: bool,
     permissions: PermissionReport,
     reports: Vec<PermissionReport>,
+    microphones: Vec<MicrophoneMenu>,
     requested: Vec<Permission>,
     opened: Vec<Permission>,
     listen_fails: bool,
@@ -33,6 +34,7 @@ impl Default for FakePlatform {
                 input_monitoring: PermissionStatus::Granted,
             },
             reports: Vec::new(),
+            microphones: Vec::new(),
             requested: Vec::new(),
             opened: Vec::new(),
             listen_fails: false,
@@ -74,6 +76,10 @@ impl FakePlatform {
 
     pub fn reports(&self) -> &[PermissionReport] {
         &self.reports
+    }
+
+    pub fn microphones(&self) -> &[MicrophoneMenu] {
+        &self.microphones
     }
 
     pub fn requested(&self) -> &[Permission] {
@@ -164,5 +170,9 @@ impl Platform for FakePlatform {
 
     fn show_permissions(&mut self, report: PermissionReport) {
         self.reports.push(report);
+    }
+
+    fn show_microphones(&mut self, menu: MicrophoneMenu) {
+        self.microphones.push(menu);
     }
 }

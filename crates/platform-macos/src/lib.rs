@@ -21,8 +21,8 @@ use core_graphics::event::{
 };
 use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
 use platform::{
-    Permission, PermissionReport, PermissionStatus, PillState, Platform, PlatformError, Sound,
-    Status, TriggerEvent, TriggerSink,
+    MicrophoneMenu, Permission, PermissionReport, PermissionStatus, PillState, Platform,
+    PlatformError, Sound, Status, TriggerEvent, TriggerSink,
 };
 
 const RIGHT_OPTION_DEVICE_MASK: u64 = 0x40;
@@ -32,12 +32,14 @@ pub type StatusSink = Box<dyn Fn(Status) + Send>;
 pub type PillSink = Box<dyn Fn(PillState) + Send>;
 pub type PermissionSink = Box<dyn Fn(PermissionReport) + Send>;
 pub type SoundSink = Box<dyn Fn(Sound) + Send>;
+pub type MicrophoneSink = Box<dyn Fn(MicrophoneMenu) + Send>;
 
 pub struct MacPlatform {
     status: StatusSink,
     pill: PillSink,
     permissions: PermissionSink,
     sound: SoundSink,
+    microphones: MicrophoneSink,
     tap_stop: Option<Arc<AtomicBool>>,
 }
 
@@ -47,12 +49,14 @@ impl MacPlatform {
         pill: PillSink,
         permissions: PermissionSink,
         sound: SoundSink,
+        microphones: MicrophoneSink,
     ) -> Self {
         Self {
             status,
             pill,
             permissions,
             sound,
+            microphones,
             tap_stop: None,
         }
     }
@@ -107,6 +111,10 @@ impl Platform for MacPlatform {
 
     fn show_permissions(&mut self, report: PermissionReport) {
         (self.permissions)(report);
+    }
+
+    fn show_microphones(&mut self, menu: MicrophoneMenu) {
+        (self.microphones)(menu);
     }
 
     fn paste(&mut self, text: &str) -> Result<(), PlatformError> {

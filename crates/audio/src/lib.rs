@@ -2,9 +2,11 @@ use std::f64::consts::PI;
 use std::path::Path;
 
 mod capture;
+mod devices;
 pub mod fake;
 
-pub use capture::MicCapture;
+pub use capture::{CpalDevices, MicCapture};
+pub use devices::{InputDevice, InputDevices, MicrophoneChoice, Opened, select};
 
 pub const TARGET_SAMPLE_RATE: u32 = 16_000;
 
@@ -21,7 +23,9 @@ pub enum AudioError {
 }
 
 pub trait Microphone {
-    fn start(&mut self) -> Result<(), AudioError>;
+    fn choose(&mut self, choice: MicrophoneChoice);
+    fn devices(&self) -> Vec<InputDevice>;
+    fn start(&mut self) -> Result<Opened, AudioError>;
     fn stop(&mut self);
 }
 

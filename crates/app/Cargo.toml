@@ -21,6 +21,7 @@ path = "src/bin/transcribe.rs"
 [dependencies]
 engine.workspace = true
 audio.workspace = true
+store.workspace = true
 platform.workspace = true
 platform-macos.workspace = true
 anyhow.workspace = true

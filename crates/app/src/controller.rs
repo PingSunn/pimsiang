@@ -2,11 +2,11 @@ use std::collections::VecDeque;
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant};
 
-use audio::Microphone;
+use audio::{Microphone, MicrophoneChoice, Opened};
 use engine::{Engine, LanguageMode, UtteranceOptions};
 use platform::{
-    Permission, PermissionReport, PermissionStatus, PillError, PillState, Platform, Sound, Status,
-    TriggerEvent, TriggerSink, TriggerState,
+    MicrophoneEntry, MicrophoneMenu, Permission, PermissionReport, PermissionStatus, PillError,
+    PillNotice, PillState, Platform, Sound, Status, TriggerEvent, TriggerSink, TriggerState,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -43,6 +43,7 @@ pub enum Input {
     Audio(Vec<f32>),
     Tick(Instant),
     Permission(PermissionCommand),
+    Microphone(MicrophoneChoice),
 }
 
 type TriggerSource = Box<dyn FnMut() -> TriggerSink + Send>;
@@ -72,6 +73,8 @@ pub struct Controller<P, E, M> {
     hide_at: Option<Instant>,
     shown_partial: Option<String>,
     watch: Option<PermissionWatch>,
+    shown_microphones: Option<MicrophoneMenu>,
+    choice: MicrophoneChoice,
     prompted: Vec<Permission>,
 }
 
@@ -87,6 +90,8 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
             hide_at: None,
             shown_partial: None,
             watch: None,
+            shown_microphones: None,
+            choice: MicrophoneChoice::default(),
             prompted: Vec::new(),
         }
     }
@@ -127,6 +132,10 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
 
     pub fn microphone(&self) -> &M {
         &self.microphone
+    }
+
+    pub fn microphone_mut(&mut self) -> &mut M {
+        &mut self.microphone
     }
 
     pub fn next_deadline(&self) -> Option<Instant> {
@@ -188,6 +197,11 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
             Input::Audio(samples) => self.on_audio(&samples),
             Input::Tick(now) => self.on_tick(now),
             Input::Permission(PermissionCommand::Grant(permission)) => self.grant(permission),
+            Input::Microphone(choice) => {
+                self.choice = choice.clone();
+                self.microphone.choose(choice);
+                self.publish_microphones();
+            }
         }
         Vec::new()
     }
@@ -278,6 +292,31 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
             && now >= watch.next_poll
         {
             self.poll_permissions(now);
+            self.publish_microphones();
+        }
+    }
+
+    fn publish_microphones(&mut self) {
+        let devices = self.microphone.devices();
+        let selected = match &self.choice {
+            MicrophoneChoice::Device(id) if devices.iter().any(|device| device.id == *id) => {
+                Some(id.clone())
+            }
+            MicrophoneChoice::Device(_) | MicrophoneChoice::SystemDefault => None,
+        };
+        let menu = MicrophoneMenu {
+            devices: devices
+                .into_iter()
+                .map(|device| MicrophoneEntry {
+                    id: device.id,
+                    name: device.name,
+                })
+                .collect(),
+            selected,
+        };
+        if self.shown_microphones.as_ref() != Some(&menu) {
+            self.shown_microphones = Some(menu.clone());
+            self.platform.show_microphones(menu);
         }
     }
 
@@ -381,17 +420,24 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
             return;
         }
         self.play(Sound::Start);
-        if let Err(error) = self.microphone.start() {
-            tracing::error!(%error, "cannot start the microphone");
-            self.engine.cancel_utterance();
-            self.fail(PillError::MicrophoneUnavailable);
-            return;
-        }
+        let opened = match self.microphone.start() {
+            Ok(opened) => opened,
+            Err(error) => {
+                tracing::error!(%error, "cannot start the microphone");
+                self.engine.cancel_utterance();
+                self.fail(PillError::MicrophoneUnavailable);
+                return;
+            }
+        };
         self.state = State::Listening { hands_free };
         self.hide_at = None;
         self.shown_partial = None;
         self.platform.show_status(Status::Listening);
         self.platform.show_pill(PillState::Listening);
+        if opened == Opened::FellBackToDefault {
+            self.platform
+                .show_pill(PillState::Notice(PillNotice::MicrophoneFellBack));
+        }
     }
 
     fn finish(&mut self, queued: Option<&Receiver<Input>>) -> Vec<Input> {

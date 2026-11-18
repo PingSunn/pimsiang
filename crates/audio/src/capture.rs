@@ -4,10 +4,33 @@ use std::thread::{self, JoinHandle};
 use cpal::SampleFormat;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
-use crate::{AudioError, AudioSink, Microphone, TARGET_SAMPLE_RATE, downmix, resample};
+use crate::{
+    AudioError, AudioSink, InputDevice, InputDevices, Microphone, MicrophoneChoice, Opened,
+    TARGET_SAMPLE_RATE, downmix, resample, select,
+};
+
+pub struct CpalDevices;
+
+fn describe(device: &cpal::Device) -> Option<InputDevice> {
+    let id = device.id().ok()?.to_string();
+    let name = device.description().ok()?.name().to_owned();
+    Some(InputDevice { id, name })
+}
+
+impl InputDevices for CpalDevices {
+    fn list(&self) -> Result<Vec<InputDevice>, AudioError> {
+        let devices = cpal::default_host().input_devices().map_err(mic_error)?;
+        Ok(devices.filter_map(|device| describe(&device)).collect())
+    }
+
+    fn default_device(&self) -> Option<InputDevice> {
+        describe(&cpal::default_host().default_input_device()?)
+    }
+}
 
 pub struct MicCapture {
     sink: AudioSink,
+    choice: MicrophoneChoice,
     running: Option<Running>,
 }
 
@@ -20,20 +43,33 @@ impl MicCapture {
     pub fn new(sink: AudioSink) -> Self {
         Self {
             sink,
+            choice: MicrophoneChoice::default(),
             running: None,
         }
     }
 }
 
 impl Microphone for MicCapture {
-    fn start(&mut self) -> Result<(), AudioError> {
+    fn choose(&mut self, choice: MicrophoneChoice) {
+        self.choice = choice;
+    }
+
+    fn devices(&self) -> Vec<InputDevice> {
+        CpalDevices.list().unwrap_or_default()
+    }
+
+    fn start(&mut self) -> Result<Opened, AudioError> {
         if self.running.is_some() {
-            return Ok(());
+            return Ok(Opened::AsChosen);
+        }
+        let (device, opened) = select(&CpalDevices, &self.choice)?;
+        if opened == Opened::FellBackToDefault {
+            tracing::warn!(chosen = ?self.choice, using = %device.name, "chosen microphone is gone; using the system default");
         }
         let (stop_tx, stop_rx) = mpsc::channel();
         let (ready_tx, ready_rx) = mpsc::channel();
         let sink = self.sink.clone();
-        let thread = thread::spawn(move || match open_stream(sink) {
+        let thread = thread::spawn(move || match open_stream(&device.id, sink) {
             Ok((stream, chunker)) => {
                 let _ = ready_tx.send(Ok(()));
                 let _ = stop_rx.recv();
@@ -52,7 +88,7 @@ impl Microphone for MicCapture {
                     stop: stop_tx,
                     thread,
                 });
-                Ok(())
+                Ok(opened)
             }
             Ok(Err(error)) => {
                 let _ = thread.join();
@@ -85,11 +121,16 @@ fn mic_error(error: impl std::fmt::Display) -> AudioError {
     AudioError::Microphone(error.to_string())
 }
 
-fn open_stream(sink: AudioSink) -> Result<(cpal::Stream, Arc<Mutex<Chunker>>), AudioError> {
+fn open_stream(
+    id: &str,
+    sink: AudioSink,
+) -> Result<(cpal::Stream, Arc<Mutex<Chunker>>), AudioError> {
     let host = cpal::default_host();
-    let device = host
-        .default_input_device()
-        .ok_or_else(|| AudioError::Microphone("no input device".to_owned()))?;
+    let device = id
+        .parse::<cpal::DeviceId>()
+        .ok()
+        .and_then(|id| host.device_by_id(&id))
+        .ok_or_else(|| AudioError::Microphone("input device not found".to_owned()))?;
     let supported = device.default_input_config().map_err(mic_error)?;
     let format = supported.sample_format();
     let channels = usize::from(supported.channels());

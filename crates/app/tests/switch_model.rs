@@ -94,3 +94,26 @@ fn a_switch_during_an_utterance_is_dropped_by_a_newer_one() {
 
     assert_eq!(c.engine().switched_to(), [int8]);
 }
+
+#[test]
+fn the_switch_is_announced_once_it_has_been_applied() {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let mut engine = FakeEngine::new(["สวัส"], "x");
+    engine.load().unwrap();
+    let mut c = Controller::new(FakePlatform::new(), engine, FakeMicrophone::new(), config())
+        .on_model_switched(move |files| {
+            let _ = tx.send(files.clone());
+        });
+    let t0 = Instant::now();
+
+    hold(&mut c, t0);
+    c.handle(Input::SwitchModel(fp32()));
+    assert!(rx.try_recv().is_err());
+
+    c.handle(Input::Trigger(TriggerEvent::released(
+        t0 + Duration::from_secs(1),
+    )));
+
+    assert_eq!(rx.try_recv().unwrap(), fp32());
+    assert!(rx.try_recv().is_err());
+}

@@ -102,6 +102,7 @@ enum State {
 }
 
 type Wake = Arc<dyn Fn() + Send + Sync>;
+type Switched = Box<dyn Fn(&ModelFiles) + Send>;
 
 pub struct Controller<P, E, M> {
     platform: P,
@@ -128,6 +129,7 @@ pub struct Controller<P, E, M> {
     now: Instant,
     idle_since: Option<Instant>,
     pending_switch: Option<ModelFiles>,
+    switched: Option<Switched>,
 }
 
 impl<P: Platform, E: Engine + Send + 'static, M: Microphone> Controller<P, E, M> {
@@ -159,11 +161,17 @@ impl<P: Platform, E: Engine + Send + 'static, M: Microphone> Controller<P, E, M>
             now,
             idle_since: loaded.then_some(now),
             pending_switch: None,
+            switched: None,
         }
     }
 
     pub fn on_model_loaded(mut self, wake: impl Fn() + Send + Sync + 'static) -> Self {
         self.wake = Some(Arc::new(wake));
+        self
+    }
+
+    pub fn on_model_switched(mut self, sink: impl Fn(&ModelFiles) + Send + 'static) -> Self {
+        self.switched = Some(Box::new(sink));
         self
     }
 
@@ -306,8 +314,11 @@ impl<P: Platform, E: Engine + Send + 'static, M: Microphone> Controller<P, E, M>
         };
         let was_loaded = self.with_engine(|engine| engine.is_loaded());
         tracing::info!(dir = %files.dir.display(), "switching the Model");
-        self.with_engine(|engine| engine.switch_model(files));
+        self.with_engine(|engine| engine.switch_model(files.clone()));
         self.idle_since = None;
+        if let Some(switched) = &self.switched {
+            switched(&files);
+        }
         if was_loaded {
             self.preload_model();
         }

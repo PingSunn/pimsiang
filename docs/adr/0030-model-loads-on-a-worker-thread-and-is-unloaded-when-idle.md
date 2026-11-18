@@ -1,0 +1,12 @@
+# The Model loads on a worker thread, audio is buffered meanwhile, and an idle Model is unloaded after ten minutes
+
+Loading the Model takes seconds, and the Utterance controller thread also receives the audio and the Trigger key events, so loading on that thread would let both pile up behind it. The controller now holds the Engine in an `Arc<Mutex<_>>`. When an Utterance starts while the Model is unloaded, it starts the microphone at once, shows the loading state in the Pill, and loads the Model on a short-lived worker thread that sends `Input::ModelLoaded` back to the controller when it is done. The controller never touches the Engine while that load runs: audio is appended to a buffer, release (or the second Trigger press of a hands-free Utterance) only stops the microphone and remembers that the Utterance has ended, and Esc or the Combined key cancels it. When the load finishes, the controller starts the Utterance, pushes the buffered audio and then carries on listening, or, if the key was already released, decodes the buffered audio and delivers the Final text the usual way. A load that fails stops the microphone and shows the "Model not loaded" Pill error. A load that was cancelled still leaves the Model loaded, and an Utterance started meanwhile waits for the same load instead of starting a second one. Loading at startup and after a download stays synchronous.
+
+The controller unloads the Model when the `unload_when_idle` setting is on (the default, `on` or `off` in the settings file) and ten minutes pass with no Utterance. The clock starts when the Model is loaded and restarts after every Utterance that ends or is cancelled; it is measured with the times the controller already receives in Trigger events and Ticks, so tests drive it with a fake clock. Nothing is unloaded while an Utterance is pending, being listened to, loading or transcribing, and the run loop wakes up for the unload deadline only while there is one. The ten minutes are a constant, not a setting.
+
+## Considered options
+
+- **Load on the controller thread:** simplest, but key events and audio queue up for the whole load, and the Pill cannot show a loading state until it ends.
+- **Make `Engine::load` asynchronous:** pushes threading into every Engine and the fake; the mutex keeps the Engine trait unchanged.
+- **Refuse the Utterance until the Model is loaded:** loses the first words after a long break, which is the case this ticket exists to make painless.
+- **A user-set idle time:** more settings for little gain; ten minutes is the spec's number.

@@ -8,6 +8,8 @@ Trigram needs at least three characters, so a query of one or two characters (co
 
 A Final text whose paste failed is stored as a Note, so text the user spoke is never lost; "Paste last transcript" pastes the newest entry again without recording a second copy. The History window shows 50 entries and a "Show more" button, and confirms "Clear all" inside the window rather than with a native alert.
 
+The History files are created with mode 0600 before SQLite opens them, so the journal files SQLite derives from the database inherit it. A row whose `kind` is neither `pasted` nor `note` is skipped with a warning rather than read as `pasted`, so one bad row never hides the rest. The open History window reloads, keeping its current search, through an event sent from the History thread right after each insert. "Paste last transcript" hides the application first (`NSApp.hide`) and waits 250 ms so focus returns to the previous app instead of landing in the History search box; an empty History shows a bilingual Pill notice instead of doing nothing.
+
 ## Considered options
 
 - **Querying from the UI thread on its own connection:** simpler, but a locked database or a large clear would freeze the window.

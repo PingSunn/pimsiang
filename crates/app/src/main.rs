@@ -90,12 +90,13 @@ mod macos {
 
         fn choose_microphone(&mut self, choice: MicrophoneChoice) {
             if let Some(path) = &self.settings_path {
-                let mut settings = Settings::load(path);
-                settings.microphone = match &choice {
-                    MicrophoneChoice::SystemDefault => None,
-                    MicrophoneChoice::Device(id) => Some(id.clone()),
-                };
-                if let Err(error) = settings.save(path) {
+                let saved = Settings::update(path, |settings| {
+                    settings.microphone = match &choice {
+                        MicrophoneChoice::SystemDefault => None,
+                        MicrophoneChoice::Device(id) => Some(id.clone()),
+                    };
+                });
+                if let Err(error) = saved {
                     tracing::warn!(%error, "cannot save the microphone choice");
                 }
             }

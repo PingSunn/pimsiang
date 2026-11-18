@@ -140,6 +140,41 @@ fn a_check_is_due_once_a_day() {
 }
 
 #[test]
+fn a_check_is_due_exactly_at_the_interval_and_not_a_second_before() {
+    assert!(!update::is_due(Some(NOW - DAY + 1), NOW));
+    assert!(update::is_due(Some(NOW - DAY), NOW));
+    assert!(update::is_due(Some(NOW - DAY - 1), NOW));
+    assert!(!update::is_due(Some(NOW), NOW));
+    assert!(update::is_due(Some(0), DAY));
+    assert!(update::is_due(Some(u64::MAX), NOW));
+}
+
+#[test]
+fn a_tag_with_a_missing_minor_or_patch_is_read() {
+    assert_eq!(
+        update::parse_release(&release("v0.1")).unwrap(),
+        Some(version("0.1.0"))
+    );
+    assert_eq!(
+        update::parse_release(&release("2")).unwrap(),
+        Some(version("2.0.0"))
+    );
+    assert_eq!(
+        update::parse_release(&release("v0.1-beta.1")).unwrap(),
+        None
+    );
+    assert!(update::parse_release(&release("v1.2.3.4")).is_err());
+}
+
+#[test]
+fn the_upgrade_command_names_the_tap() {
+    assert_eq!(
+        update::UPGRADE_COMMAND,
+        "brew upgrade --cask PingSunn/tap/pimsiang"
+    );
+}
+
+#[test]
 fn a_newer_release_is_found_and_remembered() {
     let server = Server::start(200, &release("v0.2.0"));
     let (_dir, path) = settings_file();

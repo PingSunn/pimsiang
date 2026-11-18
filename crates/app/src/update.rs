@@ -7,12 +7,14 @@ use semver::Version;
 use store::Settings;
 
 pub const CHECK_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
+pub const WAKE_INTERVAL: Duration = Duration::from_secs(60 * 60);
 pub const FIRST_CHECK_DELAY: Duration = Duration::from_secs(20);
-pub const UPGRADE_COMMAND: &str = "brew upgrade --cask pimsiang";
+pub const UPGRADE_COMMAND: &str = "brew upgrade --cask PingSunn/tap/pimsiang";
 pub const GITHUB_API: &str = "https://api.github.com";
 pub const REPOSITORY: &str = "PingSunn/pimsiang";
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Clone, Debug)]
 pub struct Source {
@@ -56,13 +58,14 @@ pub fn parse_release(body: &str) -> Result<Option<Version>> {
         .get("tag_name")
         .and_then(serde_json::Value::as_str)
         .context("the release has no tag")?;
-    let version = Version::parse(tag.trim_start_matches('v')).context("reading the release tag")?;
+    let version = parse_version(tag).context("reading the release tag")?;
     Ok((version.pre.is_empty()).then_some(version))
 }
 
 pub fn fetch_latest(source: &Source) -> Result<Option<Version>> {
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(REQUEST_TIMEOUT))
+        .timeout_connect(Some(CONNECT_TIMEOUT))
         .build()
         .into();
     let body = agent
@@ -96,7 +99,14 @@ pub fn visible(current: &Version, settings: &Settings) -> Option<Version> {
 }
 
 fn parse_version(text: &str) -> Option<Version> {
-    Version::parse(text.trim_start_matches('v')).ok()
+    let text = text.trim_start_matches('v');
+    let (core, rest) = match text.find(['-', '+']) {
+        Some(at) => text.split_at(at),
+        None => (text, ""),
+    };
+    let missing = 3usize.saturating_sub(core.split('.').count());
+    let padded = format!("{core}{}{rest}", ".0".repeat(missing));
+    Version::parse(&padded).ok()
 }
 
 pub fn check(
@@ -105,27 +115,34 @@ pub fn check(
     current: &Version,
     now: u64,
 ) -> Option<Version> {
-    let mut settings = Settings::load(settings_path);
-    if is_due(settings.last_update_check, now) {
+    let settings = Settings::load(settings_path);
+    if !is_due(settings.last_update_check, now) {
+        return visible(current, &settings);
+    }
+    let outcome = fetch_latest(source);
+    if let Err(error) = &outcome {
+        tracing::info!(error = %format!("{error:#}"), "no update known");
+    }
+    let saved = Settings::update(settings_path, |settings| {
         settings.last_update_check = Some(now);
-        match fetch_latest(source) {
-            Ok(Some(latest)) => {
-                settings.available_update = is_newer(current, &latest).then(|| latest.to_string());
-            }
-            Ok(None) => {}
-            Err(error) => tracing::info!(error = %format!("{error:#}"), "no update known"),
+        if let Ok(Some(latest)) = &outcome {
+            settings.available_update = is_newer(current, latest).then(|| latest.to_string());
         }
-        if let Err(error) = settings.save(settings_path) {
+    });
+    match saved {
+        Ok(saved) => visible(current, &saved),
+        Err(error) => {
             tracing::warn!(%error, "cannot save the update check");
+            visible(current, &settings)
         }
     }
-    visible(current, &settings)
 }
 
 pub fn dismiss(settings_path: &Path) -> io::Result<()> {
-    let mut settings = Settings::load(settings_path);
-    settings.dismissed_update = settings.available_update.clone();
-    settings.save(settings_path)
+    Settings::update(settings_path, |settings| {
+        settings.dismissed_update = settings.available_update.clone();
+    })
+    .map(|_| ())
 }
 
 pub fn unix_now() -> u64 {
@@ -149,11 +166,17 @@ pub fn spawn_checker(
     std::thread::Builder::new()
         .name("update-check".to_owned())
         .spawn(move || {
-            let mut delay = first_delay;
+            std::thread::sleep(first_delay);
+            let mut first = true;
             loop {
-                std::thread::sleep(delay);
-                notify(check(&source, &settings_path, &current, unix_now()));
-                delay = CHECK_INTERVAL;
+                let now = unix_now();
+                let due = is_due(Settings::load(&settings_path).last_update_check, now);
+                let found = check(&source, &settings_path, &current, now);
+                if first || due {
+                    notify(found);
+                }
+                first = false;
+                std::thread::sleep(WAKE_INTERVAL);
             }
         })
         .map(|_| ())

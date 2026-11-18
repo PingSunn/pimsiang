@@ -1,0 +1,134 @@
+use std::num::NonZeroU32;
+use std::sync::Arc;
+
+use anyhow::{Context, Result, anyhow};
+use egui::{FontData, FontDefinitions, FontFamily, ViewportId};
+use egui_wgpu::winit::Painter;
+use egui_wgpu::{RendererOptions, WgpuConfiguration};
+use winit::dpi::{LogicalSize, PhysicalSize};
+use winit::event::WindowEvent;
+use winit::event_loop::ActiveEventLoop;
+use winit::window::{Window, WindowId};
+
+const ANUPHAN: &[u8] = include_bytes!("../assets/Anuphan[wght].ttf");
+const FONT_NAME: &str = "Anuphan";
+
+pub struct Surface {
+    window: Arc<Window>,
+    context: egui::Context,
+    input: egui_winit::State,
+    painter: Painter,
+}
+
+impl Surface {
+    pub fn open(
+        event_loop: &ActiveEventLoop,
+        title: &str,
+        size: LogicalSize<f64>,
+        resizable: bool,
+    ) -> Result<Self> {
+        let attributes = Window::default_attributes()
+            .with_title(title)
+            .with_inner_size(size)
+            .with_resizable(resizable);
+        let window = Arc::new(
+            event_loop
+                .create_window(attributes)
+                .context("creating the window")?,
+        );
+        let context = egui::Context::default();
+        context.set_fonts(fonts());
+        let input = egui_winit::State::new(
+            context.clone(),
+            ViewportId::ROOT,
+            &*window,
+            Some(window.scale_factor() as f32),
+            window.theme(),
+            None,
+        );
+        let mut painter = pollster::block_on(Painter::new(
+            context.clone(),
+            WgpuConfiguration::default(),
+            false,
+            RendererOptions::default(),
+        ));
+        pollster::block_on(painter.set_window(ViewportId::ROOT, Some(window.clone())))
+            .map_err(|error| anyhow!("preparing the window for drawing: {error}"))?;
+        window.focus_window();
+        window.request_redraw();
+        Ok(Self {
+            window,
+            context,
+            input,
+            painter,
+        })
+    }
+
+    pub fn id(&self) -> WindowId {
+        self.window.id()
+    }
+
+    pub fn focus(&self) {
+        self.window.focus_window();
+    }
+
+    pub fn request_redraw(&self) {
+        self.window.request_redraw();
+    }
+
+    pub fn resize(&mut self, size: PhysicalSize<u32>) {
+        if let (Some(width), Some(height)) =
+            (NonZeroU32::new(size.width), NonZeroU32::new(size.height))
+        {
+            self.painter
+                .on_window_resized(ViewportId::ROOT, width, height);
+        }
+    }
+
+    pub fn forward(&mut self, event: &WindowEvent) {
+        let response = self.input.on_window_event(&self.window, event);
+        if response.repaint {
+            self.window.request_redraw();
+        }
+    }
+
+    pub fn frame(&mut self, show: impl FnMut(&mut egui::Ui)) -> bool {
+        let raw_input = self.input.take_egui_input(&self.window);
+        let output = self.context.run_ui(raw_input, show);
+        self.input
+            .handle_platform_output(&self.window, output.platform_output);
+        let primitives = self
+            .context
+            .tessellate(output.shapes, output.pixels_per_point);
+        let mut textures = output.textures_delta;
+        self.painter.paint_and_update_textures(
+            ViewportId::ROOT,
+            output.pixels_per_point,
+            [0.1, 0.1, 0.1, 1.0],
+            &primitives,
+            &mut textures,
+            Vec::new(),
+            &self.window,
+        );
+        output
+            .viewport_output
+            .get(&ViewportId::ROOT)
+            .is_some_and(|viewport| viewport.repaint_delay.is_zero())
+    }
+}
+
+fn fonts() -> FontDefinitions {
+    let mut definitions = FontDefinitions::default();
+    definitions.font_data.insert(
+        FONT_NAME.to_owned(),
+        Arc::new(FontData::from_static(ANUPHAN)),
+    );
+    for family in [FontFamily::Proportional, FontFamily::Monospace] {
+        definitions
+            .families
+            .entry(family)
+            .or_default()
+            .insert(0, FONT_NAME.to_owned());
+    }
+    definitions
+}

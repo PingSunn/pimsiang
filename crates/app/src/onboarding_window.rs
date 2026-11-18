@@ -1,18 +1,13 @@
-use std::sync::Arc;
-
-use anyhow::{Context, Result, anyhow};
+use anyhow::Result;
 use app::onboarding::View;
-use egui::{Color32, FontData, FontDefinitions, FontFamily, RichText, ViewportId};
-use egui_wgpu::winit::Painter;
-use egui_wgpu::{RendererOptions, WgpuConfiguration};
+use egui::{Color32, RichText};
 use platform::{Permission, PermissionStatus};
-use winit::dpi::{LogicalSize, PhysicalSize};
+use winit::dpi::LogicalSize;
 use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
-use winit::window::{Window, WindowId};
+use winit::window::WindowId;
 
-const ANUPHAN: &[u8] = include_bytes!("../assets/Anuphan[wght].ttf");
-const FONT_NAME: &str = "Anuphan";
+use crate::egui_surface::Surface;
 
 pub enum Outcome {
     Idle,
@@ -22,115 +17,46 @@ pub enum Outcome {
 }
 
 pub struct OnboardingWindow {
-    window: Arc<Window>,
-    context: egui::Context,
-    input: egui_winit::State,
-    painter: Painter,
+    surface: Surface,
 }
 
 impl OnboardingWindow {
     pub fn open(event_loop: &ActiveEventLoop, title: &str) -> Result<Self> {
-        let attributes = Window::default_attributes()
-            .with_title(title)
-            .with_inner_size(LogicalSize::new(540.0, 680.0))
-            .with_resizable(false);
-        let window = Arc::new(
-            event_loop
-                .create_window(attributes)
-                .context("creating the setup window")?,
-        );
-        let context = egui::Context::default();
-        context.set_fonts(fonts());
-        let input = egui_winit::State::new(
-            context.clone(),
-            ViewportId::ROOT,
-            &*window,
-            Some(window.scale_factor() as f32),
-            window.theme(),
-            None,
-        );
-        let mut painter = pollster::block_on(Painter::new(
-            context.clone(),
-            WgpuConfiguration::default(),
-            false,
-            RendererOptions::default(),
-        ));
-        pollster::block_on(painter.set_window(ViewportId::ROOT, Some(window.clone())))
-            .map_err(|error| anyhow!("preparing the setup window for drawing: {error}"))?;
-        window.focus_window();
-        window.request_redraw();
-        Ok(Self {
-            window,
-            context,
-            input,
-            painter,
-        })
+        let surface = Surface::open(event_loop, title, LogicalSize::new(540.0, 680.0), false)?;
+        Ok(Self { surface })
     }
 
     pub fn id(&self) -> WindowId {
-        self.window.id()
+        self.surface.id()
     }
 
     pub fn focus(&self) {
-        self.window.focus_window();
+        self.surface.focus();
     }
 
     pub fn request_redraw(&self) {
-        self.window.request_redraw();
+        self.surface.request_redraw();
     }
 
     pub fn handle(&mut self, event: &WindowEvent, view: &View) -> Outcome {
         match event {
             WindowEvent::CloseRequested => return Outcome::Close,
-            WindowEvent::Resized(size) => self.resize(*size),
+            WindowEvent::Resized(size) => self.surface.resize(*size),
             WindowEvent::RedrawRequested => return self.draw(view),
             _ => {}
         }
-        let response = self.input.on_window_event(&self.window, event);
-        if response.repaint {
-            self.window.request_redraw();
-        }
+        self.surface.forward(event);
         Outcome::Idle
     }
 
-    fn resize(&mut self, size: PhysicalSize<u32>) {
-        if let (Some(width), Some(height)) = (
-            std::num::NonZeroU32::new(size.width),
-            std::num::NonZeroU32::new(size.height),
-        ) {
-            self.painter
-                .on_window_resized(ViewportId::ROOT, width, height);
-        }
-    }
-
     fn draw(&mut self, view: &View) -> Outcome {
-        let raw_input = self.input.take_egui_input(&self.window);
         let mut grant = None;
         let mut retry = false;
-        let output = self
-            .context
-            .run_ui(raw_input, |ui| show(ui, view, &mut grant, &mut retry));
-        self.input
-            .handle_platform_output(&self.window, output.platform_output);
-        let primitives = self
-            .context
-            .tessellate(output.shapes, output.pixels_per_point);
-        let mut textures = output.textures_delta;
-        self.painter.paint_and_update_textures(
-            ViewportId::ROOT,
-            output.pixels_per_point,
-            [0.1, 0.1, 0.1, 1.0],
-            &primitives,
-            &mut textures,
-            Vec::new(),
-            &self.window,
-        );
-        let repaint_now = output
-            .viewport_output
-            .get(&ViewportId::ROOT)
-            .is_some_and(|viewport| viewport.repaint_delay.is_zero());
+        let repaint_now = self
+            .surface
+            .frame(|ui| show(ui, view, &mut grant, &mut retry));
         if repaint_now || grant.is_some() || retry {
-            self.window.request_redraw();
+            self.surface.request_redraw();
         }
         match grant {
             Some(permission) => Outcome::Grant(permission),
@@ -138,22 +64,6 @@ impl OnboardingWindow {
             None => Outcome::Idle,
         }
     }
-}
-
-fn fonts() -> FontDefinitions {
-    let mut definitions = FontDefinitions::default();
-    definitions.font_data.insert(
-        FONT_NAME.to_owned(),
-        Arc::new(FontData::from_static(ANUPHAN)),
-    );
-    for family in [FontFamily::Proportional, FontFamily::Monospace] {
-        definitions
-            .families
-            .entry(family)
-            .or_default()
-            .insert(0, FONT_NAME.to_owned());
-    }
-    definitions
 }
 
 fn show(ui: &mut egui::Ui, view: &View, grant: &mut Option<Permission>, retry: &mut bool) {

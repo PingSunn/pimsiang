@@ -1,4 +1,6 @@
 #[cfg(target_os = "macos")]
+mod egui_surface;
+#[cfg(target_os = "macos")]
 mod logging;
 #[cfg(target_os = "macos")]
 mod onboarding_window;

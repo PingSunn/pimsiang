@@ -105,7 +105,7 @@ case_option_combo() {
   local mark count
   mark="$(log_mark)"
   count="$(db_count)"
-  keys down:ropt sleep:0.3 e sleep:0.5 up:ropt
+  keys down:ropt sleep:0.12 e sleep:0.5 up:ropt
   sleep 3
   assert_log_lacks "$mark" 'pasted Final text|kept a Quick note|Utterance produced no text|cancelled|as a Note' "Right Option + e started an Utterance"
   [ "$(db_count)" -eq "$count" ] || die "History changed after Right Option + e"

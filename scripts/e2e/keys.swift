@@ -16,7 +16,6 @@ func key(_ code: CGKeyCode, mask: CGEventFlags) {
         }
         event.flags = mask
         event.post(tap: .cghidEventTap)
-        usleep(20_000)
     }
 }
 

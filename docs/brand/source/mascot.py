@@ -222,7 +222,7 @@ def head(state, theme, size=64):
         parts.append(f'<path d="M48.5 36.4H61.5" stroke="{BEAK_SEAM}" stroke-width="1.4" stroke-linecap="round"/>')
     parts.append(f'<circle cx="39" cy="31" r="5.2" fill="{PAPER}"/><circle cx="40.3" cy="31" r="2.8" fill="{FEATHER}"/><circle cx="41.3" cy="29.9" r="1" fill="#FFFFFF"/>')
     if state == "listening":
-        parts.append(f'<circle cx="9" cy="10" r="5.6" fill="{LIVE}"/>')
+        parts.append(f'<circle cx="10" cy="11" r="7" fill="{LIVE}"/>')
     if state == "confused":
         parts.append(glyph("?", 26, 9.5, 13, BEAK))
     return "\n".join(parts)

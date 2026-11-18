@@ -40,6 +40,8 @@ for size in 16 32 128 256 512; do
 done
 iconutil -c icns "$iconset" -o "$brand/PimSiang.icns"
 rm -rf "$(dirname "$iconset")"
+mkdir -p "$root/packaging/macos"
+cp "$brand/PimSiang.icns" "$root/packaging/macos/PimSiang.icns"
 
 assets="$root/crates/app/assets"
 mkdir -p "$assets/mascot" "$assets/menubar" "$root/crates/platform-macos/assets"
@@ -48,13 +50,13 @@ for svg in "$brand"/mascot/pimsiang-myna-*.svg; do
   name="${name#pimsiang-myna-}"
   case "$name" in
     head-default | head-default-dark) png "$svg" "$assets/mascot/$name.png" 128 ;;
-    head-*) ;;
-    *) png "$svg" "$assets/mascot/$name.png" 360 ;;
+    waving | waving-dark | writing | writing-dark | confused | confused-dark | sleeping | sleeping-dark | searching | searching-dark | oops | oops-dark)
+      png "$svg" "$assets/mascot/$name.png" 360 ;;
   esac
 done
 for state in "" -listening -transcribing -attention; do
-  png "$brand/pimsiang-menubar$state.svg" "$assets/menubar/glyph${state#-}.png" 54
+  png "$brand/pimsiang-menubar$state.svg" "$assets/menubar/glyph$state.png" 54
 done
 for state in listening writing confused default; do
-  png "$brand/mascot/pimsiang-myna-head-$state-dark.svg" "$root/crates/platform-macos/assets/pill-$state.png" 72
+  png "$brand/mascot/pimsiang-myna-head-$state-dark.svg" "$root/crates/platform-macos/assets/pill-$state.png" 96
 done

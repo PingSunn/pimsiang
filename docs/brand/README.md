@@ -73,6 +73,6 @@ macOS template images are monochrome, so the system tints them for light and dar
 
 1. builds `source/render` (a small Rust tool on `resvg`, with its own `Cargo.lock`, outside the app workspace);
 2. runs `source/mascot.py`, which writes every SVG above (Thai letters and the wordmark are converted to paths with Mitr through `brand-render textpath`);
-3. renders the PNGs in `exports/`, builds `PimSiang.icns` with `iconutil`, and writes the PNGs the app embeds: `crates/app/assets/mascot/`, `crates/app/assets/menubar/` and `crates/platform-macos/assets/`.
+3. renders the PNGs in `exports/`, builds `PimSiang.icns` with `iconutil` (also copied to `packaging/macos/`, which `scripts/bundle.sh` puts in the bundle with `CFBundleIconFile`), and writes the PNGs the app embeds: `crates/app/assets/mascot/`, `crates/app/assets/menubar/` and `crates/platform-macos/assets/`.
 
 Fonts for the render are read from `crates/app/assets/` (`scripts/fetch-font.sh` downloads them). Change the art in `source/mascot.py` and rerun the script; do not edit the SVGs by hand.

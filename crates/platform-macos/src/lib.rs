@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
+mod permissions;
 mod pill;
 
 pub use pill::PillPanel;
@@ -17,22 +18,31 @@ use core_graphics::event::{
     CGEventType, CallbackResult, EventField, KeyCode,
 };
 use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
-use platform::{PillState, Platform, PlatformError, Status, TriggerEvent, TriggerSink};
+use platform::{
+    Permission, PermissionReport, PermissionStatus, PillState, Platform, PlatformError, Status,
+    TriggerEvent, TriggerSink,
+};
 
 const RIGHT_OPTION_DEVICE_MASK: u64 = 0x40;
 const TAP_POLL: Duration = Duration::from_millis(500);
 
 pub type StatusSink = Box<dyn Fn(Status) + Send>;
 pub type PillSink = Box<dyn Fn(PillState) + Send>;
+pub type PermissionSink = Box<dyn Fn(PermissionReport) + Send>;
 
 pub struct MacPlatform {
     status: StatusSink,
     pill: PillSink,
+    permissions: PermissionSink,
 }
 
 impl MacPlatform {
-    pub fn new(status: StatusSink, pill: PillSink) -> Self {
-        Self { status, pill }
+    pub fn new(status: StatusSink, pill: PillSink, permissions: PermissionSink) -> Self {
+        Self {
+            status,
+            pill,
+            permissions,
+        }
     }
 }
 
@@ -54,6 +64,22 @@ impl Platform for MacPlatform {
 
     fn show_pill(&mut self, state: PillState) {
         (self.pill)(state);
+    }
+
+    fn permission_status(&self, permission: Permission) -> PermissionStatus {
+        permissions::status(permission)
+    }
+
+    fn request_permission(&mut self, permission: Permission) {
+        permissions::request(permission);
+    }
+
+    fn open_settings(&mut self, permission: Permission) {
+        permissions::open_settings(permission);
+    }
+
+    fn show_permissions(&mut self, report: PermissionReport) {
+        (self.permissions)(report);
     }
 
     fn paste(&mut self, text: &str) -> Result<(), PlatformError> {
@@ -161,4 +187,11 @@ fn common_modes() -> CFStringRef {
 #[allow(unsafe_code)]
 fn default_mode() -> CFStringRef {
     unsafe { kCFRunLoopDefaultMode }
+}
+
+pub fn system_languages() -> Vec<String> {
+    objc2_foundation::NSLocale::preferredLanguages()
+        .iter()
+        .map(|tag| tag.to_string())
+        .collect()
 }

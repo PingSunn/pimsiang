@@ -15,6 +15,7 @@ const PADDING_Y: f64 = 7.0;
 const MIN_WIDTH: f64 = 140.0;
 const MAX_WIDTH: f64 = 520.0;
 const CORNER_RADIUS: f64 = 14.0;
+const BORDER_WIDTH: f64 = 1.0;
 const MENU_BAR_GAP: f64 = 6.0;
 
 pub struct PillPanel {
@@ -60,15 +61,16 @@ impl PillPanel {
 
         let label = NSTextField::labelWithString(&NSString::from_str(""), mtm);
         label.setFont(Some(&NSFont::systemFontOfSize(FONT_SIZE)));
-        label.setTextColor(Some(&NSColor::whiteColor()));
+        label.setTextColor(Some(&zinc(0xfa, 0xfa, 0xfa)));
         label.setAlignment(NSTextAlignment::Center);
         label.setLineBreakMode(NSLineBreakMode::ByTruncatingHead);
 
         let shape = NSBox::new(mtm);
         shape.setBoxType(NSBoxType::Custom);
         shape.setTitlePosition(NSTitlePosition::NoTitle);
-        shape.setBorderWidth(0.0);
-        shape.setFillColor(&NSColor::blackColor());
+        shape.setBorderWidth(BORDER_WIDTH);
+        shape.setBorderColor(&zinc(0x27, 0x27, 0x2a));
+        shape.setFillColor(&zinc(0x09, 0x09, 0x0b));
         shape.setCornerRadius(CORNER_RADIUS);
         let container = NSView::new(mtm);
         container.addSubview(&shape);
@@ -115,6 +117,11 @@ impl PillPanel {
             NSSize::new(width, height),
         );
         self.panel.setFrame_display(frame, true);
+        let radius = match anchor.notch {
+            Some(_) => CORNER_RADIUS,
+            None => height / 2.0,
+        };
+        self.shape.setCornerRadius(radius);
         self.shape
             .setFrame(NSRect::new(NSPoint::new(0.0, 0.0), frame.size));
         self.label.setFrame(NSRect::new(
@@ -157,6 +164,15 @@ impl PillPanel {
             },
         }
     }
+}
+
+fn zinc(red: u8, green: u8, blue: u8) -> Retained<NSColor> {
+    NSColor::colorWithSRGBRed_green_blue_alpha(
+        f64::from(red) / 255.0,
+        f64::from(green) / 255.0,
+        f64::from(blue) / 255.0,
+        1.0,
+    )
 }
 
 fn contains(frame: NSRect, point: NSPoint) -> bool {

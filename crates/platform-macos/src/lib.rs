@@ -203,6 +203,13 @@ fn device_mask(key: TriggerKey) -> u64 {
     }
 }
 
+fn trigger_flags(bits: u64, key: TriggerKey) -> (bool, bool) {
+    (
+        bits & device_mask(key) != 0,
+        bits & CGEventFlags::CGEventFlagShift.bits() != 0,
+    )
+}
+
 fn send_command_v() -> Result<(), String> {
     let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
         .map_err(|()| "cannot create an event source".to_owned())?;
@@ -249,10 +256,9 @@ fn run_event_tap(
                     let keycode = event.get_integer_value_field(EventField::KEYBOARD_EVENT_KEYCODE);
                     let trigger = key_from_index(callback_key.load(Ordering::SeqCst));
                     if keycode == key_code(trigger) {
-                        let pressed = event.get_flags().bits() & device_mask(trigger) != 0;
+                        let (pressed, shift) = trigger_flags(event.get_flags().bits(), trigger);
                         if callback_down.swap(pressed, Ordering::SeqCst) != pressed {
                             let at = Instant::now();
-                            let shift = event.get_flags().contains(CGEventFlags::CGEventFlagShift);
                             emit(
                                 &callback_sink,
                                 if pressed && shift {
@@ -331,4 +337,39 @@ pub fn system_languages() -> Vec<String> {
         .iter()
         .map(|tag| tag.to_string())
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const KEYS: [TriggerKey; 3] = [
+        TriggerKey::RightOption,
+        TriggerKey::RightCommand,
+        TriggerKey::RightControl,
+    ];
+
+    #[test]
+    fn shift_with_each_trigger_key_down_is_a_quick_note_press() {
+        let shift = CGEventFlags::CGEventFlagShift.bits();
+        for key in KEYS {
+            assert_eq!(trigger_flags(device_mask(key) | shift, key), (true, true));
+        }
+    }
+
+    #[test]
+    fn each_trigger_key_down_without_shift_is_a_dictation_press() {
+        for key in KEYS {
+            assert_eq!(trigger_flags(device_mask(key), key), (true, false));
+        }
+    }
+
+    #[test]
+    fn releasing_each_trigger_key_is_not_pressed() {
+        let shift = CGEventFlags::CGEventFlagShift.bits();
+        for key in KEYS {
+            assert_eq!(trigger_flags(shift, key), (false, true));
+            assert_eq!(trigger_flags(0, key), (false, false));
+        }
+    }
 }

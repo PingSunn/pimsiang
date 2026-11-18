@@ -65,6 +65,7 @@ mod macos {
 
     const PERMISSION_POLL: Duration = Duration::from_secs(1);
     const SETUP_CLOSE_DELAY: Duration = Duration::from_millis(1_500);
+    const QUIT_GRACE: Duration = Duration::from_secs(3);
     const HANDOVER: Duration = Duration::from_millis(250);
 
     enum UserEvent {
@@ -91,6 +92,7 @@ mod macos {
         bundled: bool,
         model: ModelStatus,
         model_dir: PathBuf,
+        custom_model: Option<ModelFiles>,
         model_prompted: bool,
         proxy: EventLoopProxy<UserEvent>,
         inputs: Sender<Input>,
@@ -330,6 +332,22 @@ mod macos {
             self.refresh_setup();
         }
 
+        fn check_custom_model(&mut self, files: &ModelFiles) {
+            let missing = model_download::missing_files(files);
+            let status = if missing.is_empty() {
+                let _ = self.inputs.send(Input::ModelReady);
+                ModelStatus::Ready
+            } else {
+                ModelStatus::Failed(format!(
+                    "{} is missing {}",
+                    files.dir.display(),
+                    missing.join(", ")
+                ))
+            };
+            self.model = status.clone();
+            let _ = self.proxy.send_event(UserEvent::Model(status));
+        }
+
         fn start_model_download(&mut self) {
             self.model = ModelStatus::Downloading {
                 done: 0,
@@ -408,7 +426,10 @@ mod macos {
                     self.setup = None;
                     self.close_setup_at = None;
                 }
-                Outcome::RetryModel => self.start_model_download(),
+                Outcome::RetryModel => match self.custom_model.clone() {
+                    Some(files) => self.check_custom_model(&files),
+                    None => self.start_model_download(),
+                },
                 Outcome::Grant(permission) => {
                     let _ = self
                         .inputs
@@ -559,6 +580,7 @@ mod macos {
         }
 
         let (inputs, receiver) = mpsc::channel::<Input>();
+        let (finished, controller_done) = mpsc::channel::<()>();
         std::thread::Builder::new()
             .name("utterance-controller".to_owned())
             .spawn({
@@ -578,6 +600,7 @@ mod macos {
                     ) {
                         let _ = proxy.send_event(UserEvent::Fatal(format!("{error:#}")));
                     }
+                    let _ = finished.send(());
                 }
             })
             .context("starting the controller thread")?;
@@ -599,6 +622,7 @@ mod macos {
             }
         }
 
+        let custom_model = model.custom.clone();
         let mut app = App {
             log_dir,
             settings_path: settings_path(),
@@ -609,6 +633,7 @@ mod macos {
             bundled,
             model: ModelStatus::Ready,
             model_dir: model.dir.clone(),
+            custom_model,
             model_prompted: false,
             proxy: proxy.clone(),
             inputs,
@@ -623,13 +648,22 @@ mod macos {
         };
         if model.download {
             app.start_model_download();
+        } else if let Some(files) = &model.custom
+            && !model_download::missing_files(files).is_empty()
+        {
+            app.check_custom_model(files);
         }
         event_loop
             .run_app(&mut app)
             .context("running the event loop")?;
+        let _ = app.inputs.send(Input::Quit);
+        if controller_done.recv_timeout(QUIT_GRACE).is_err() {
+            tracing::warn!("the controller did not stop in time; quitting anyway");
+        }
         if let Some(history) = &history {
             history.flush();
         }
+        platform_macos::restore_clipboard_now();
         match app.failure {
             Some(message) => Err(anyhow::anyhow!(message)),
             None => Ok(()),
@@ -641,6 +675,7 @@ mod macos {
         dir: PathBuf,
         precision: Precision,
         download: bool,
+        custom: Option<ModelFiles>,
     }
 
     impl ModelSource {
@@ -650,6 +685,7 @@ mod macos {
                     dir: dir.clone(),
                     precision: args.precision,
                     download: false,
+                    custom: Some(ModelFiles::new(dir, args.precision)),
                 };
             }
             let home = std::env::var_os("HOME")
@@ -661,6 +697,7 @@ mod macos {
                 dir,
                 precision: Precision::Int8,
                 download,
+                custom: None,
             }
         }
     }
@@ -766,7 +803,11 @@ mod macos {
                 let _ = trigger_tx.send(Input::Trigger(event));
             })
         });
-        if model.download {
+        let custom_missing = model
+            .custom
+            .as_ref()
+            .is_some_and(|files| !model_download::missing_files(files).is_empty());
+        if model.download || custom_missing {
             controller = controller.model_pending();
         }
         if let Some(history) = history {

@@ -272,3 +272,34 @@ fn a_snapshot_that_overruns_its_time_budget_is_dropped() {
 
     assert_eq!(gathered, Gathered::OverBudget);
 }
+
+#[test]
+fn a_pending_restore_can_be_performed_at_once_and_the_late_one_does_nothing() {
+    let clipboard = Clipboard::new();
+    let mut pasteboard = FakePasteboard::holding("before");
+    let pending = clipboard
+        .put_text(&mut pasteboard, "สวัสดี", true)
+        .unwrap()
+        .unwrap();
+
+    let outcome = clipboard.restore_pending(&mut pasteboard);
+
+    assert_eq!(outcome, Restore::Restored);
+    assert_eq!(pasteboard.contents.as_deref(), Some("before"));
+    assert_eq!(
+        clipboard.restore(&mut pasteboard, pending),
+        Restore::Superseded
+    );
+}
+
+#[test]
+fn restoring_at_once_with_nothing_pending_leaves_the_clipboard_alone() {
+    let clipboard = Clipboard::<Option<String>>::new();
+    let mut pasteboard = FakePasteboard::holding("mine");
+
+    assert_eq!(
+        clipboard.restore_pending(&mut pasteboard),
+        Restore::Superseded
+    );
+    assert_eq!(pasteboard.contents.as_deref(), Some("mine"));
+}

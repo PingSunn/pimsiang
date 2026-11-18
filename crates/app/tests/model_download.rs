@@ -5,7 +5,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use app::model_download::{
-    Downloader, Error, Event, Extracted, Item, Manifest, ModelStatus, is_ready, space_needed,
+    Downloader, Error, Event, Extracted, Item, Manifest, ModelStatus, is_ready, missing_files,
+    space_needed,
 };
 use sha2::{Digest, Sha256};
 
@@ -604,4 +605,27 @@ fn spawn_reports_progress_then_ready_and_failures() {
             assert!(matches!(last, ModelStatus::Failed(message) if message.contains("500")));
         }
     }
+}
+
+#[test]
+fn a_custom_model_folder_without_its_files_names_what_is_missing() {
+    let dir = tempfile::tempdir().unwrap();
+    let files = engine::ModelFiles::new(dir.path(), engine::Precision::Int8);
+    assert_eq!(
+        missing_files(&files),
+        [
+            "encoder.int8.onnx",
+            "decoder_joint.onnx",
+            "silero_vad.onnx",
+            "tokens.txt"
+        ]
+    );
+
+    for name in ["encoder.int8.onnx", "decoder_joint.onnx", "tokens.txt"] {
+        std::fs::write(dir.path().join(name), b"x").unwrap();
+    }
+    assert_eq!(missing_files(&files), ["silero_vad.onnx"]);
+
+    std::fs::write(dir.path().join("silero_vad.onnx"), b"x").unwrap();
+    assert!(missing_files(&files).is_empty());
 }

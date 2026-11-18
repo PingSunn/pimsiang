@@ -145,6 +145,19 @@ pub fn is_ready(dir: &Path, manifest: &Manifest) -> bool {
     manifest.items.iter().all(|item| item.present(dir))
 }
 
+pub fn missing_files(files: &engine::ModelFiles) -> Vec<String> {
+    [
+        files.encoder(),
+        files.decoder_joint(),
+        files.vad(),
+        files.tokens(),
+    ]
+    .into_iter()
+    .filter(|path| !path.is_file())
+    .filter_map(|path| Some(path.file_name()?.to_string_lossy().into_owned()))
+    .collect()
+}
+
 pub fn default_dir(home: &Path) -> PathBuf {
     home.join("Library/Application Support/PimSiang/models")
         .join(format!("int8-{}", &REVISION[..8]))

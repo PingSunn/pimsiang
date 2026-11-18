@@ -166,4 +166,19 @@ impl<S> Clipboard<S> {
             Err(error) => Restore::Failed(error),
         }
     }
+
+    pub fn restore_pending<P: Pasteboard<Snapshot = S>>(&self, pasteboard: &mut P) -> Restore {
+        let mut slot = self.lock();
+        slot.ticket += 1;
+        let Some(snapshot) = slot.snapshot.take() else {
+            return Restore::Superseded;
+        };
+        if pasteboard.change_count() != slot.written {
+            return Restore::ClipboardChanged;
+        }
+        match pasteboard.restore(snapshot) {
+            Ok(()) => Restore::Restored,
+            Err(error) => Restore::Failed(error),
+        }
+    }
 }

@@ -27,7 +27,7 @@ fn stored_values_round_trip_through_the_settings() {
     };
     let mut settings = Settings::default();
 
-    preferences.apply(&mut settings);
+    preferences.apply_keeping_language(&mut settings, false);
 
     assert_eq!(settings.trigger_key.as_deref(), Some("right-control"));
     assert_eq!(settings.language.as_deref(), Some("th-TH"));
@@ -56,7 +56,7 @@ fn applying_preferences_keeps_the_microphone_and_update_state() {
         ..Settings::default()
     };
 
-    Preferences::default().apply(&mut settings);
+    Preferences::default().apply_keeping_language(&mut settings, false);
 
     assert_eq!(settings.microphone.as_deref(), Some("usb"));
     assert_eq!(settings.dismissed_update.as_deref(), Some("0.2.0"));

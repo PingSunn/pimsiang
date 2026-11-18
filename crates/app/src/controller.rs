@@ -392,7 +392,9 @@ impl<P: Platform, E: Engine + Send + 'static, M: Microphone> Controller<P, E, M>
                 }
                 Vec::new()
             }
-            State::Listening { hands_free: false } | State::EndingHandsFree => self.finish(queued),
+            State::Listening { hands_free: false } | State::EndingHandsFree => {
+                self.end(queued, None)
+            }
         }
     }
 
@@ -831,10 +833,6 @@ impl<P: Platform, E: Engine + Send + 'static, M: Microphone> Controller<P, E, M>
             self.idle_since = None;
             tracing::info!("unloaded the Model after being idle");
         }
-    }
-
-    fn finish(&mut self, queued: Option<&Receiver<Input>>) -> Vec<Input> {
-        self.end(queued, None)
     }
 
     fn end(&mut self, queued: Option<&Receiver<Input>>, notice: Option<PillNotice>) -> Vec<Input> {

@@ -38,10 +38,6 @@ impl Preferences {
         }
     }
 
-    pub fn apply(&self, settings: &mut Settings) {
-        self.apply_keeping_language(settings, false);
-    }
-
     pub fn apply_keeping_language(&self, settings: &mut Settings, keep_language: bool) {
         settings.trigger_key = Some(self.trigger_key.name().to_owned());
         if !keep_language {

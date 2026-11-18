@@ -89,3 +89,11 @@ _Avoid_: Local model, user model
 **Language mode**:
 How a Model writes English words spoken inside Thai speech (`th-mix` in Latin letters, `th-TH` in Thai script). Only some Models offer it.
 _Avoid_: Locale, language setting
+
+**Recognition mode**:
+How a Model weighs the speech it hears: Standard for speech meant to be written down, Conversation for casual talk. Only some Models offer it.
+_Avoid_: Mode (alone), speaking style
+
+**Precision**:
+Which build of a Model's weights the Engine runs: Accurate (full size, the default) or Light (smaller and faster, slightly less accurate).
+_Avoid_: Quality, model size, int8/fp32 (as user-facing names)

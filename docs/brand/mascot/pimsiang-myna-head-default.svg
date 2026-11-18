@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="PimSiang hill myna head, default">
+<circle cx="31" cy="38" r="21" fill="#1C1A17"/>
+<path d="M25 20C26 13 33 11 37 14" fill="none" stroke="#1C1A17" stroke-width="4.4" stroke-linecap="round"/>
+<path d="M34 42C41 38.5 48 42.5 47 50C45 55 38.5 54.5 36 49.5C35 47 34 45 34 42Z" fill="#FFD23F"/>
+<path d="M46 33C54 31 60.5 32.5 63.5 36C58.5 40 52 40.5 46 40Z" fill="#F28C28"/>
+<path d="M48.5 36.4H61.5" stroke="#C96A12" stroke-width="1.4" stroke-linecap="round"/>
+<circle cx="39" cy="31" r="5.2" fill="#FBF7EE"/><circle cx="40.3" cy="31" r="2.8" fill="#1C1A17"/><circle cx="41.3" cy="29.9" r="1" fill="#FFFFFF"/>
+</svg>

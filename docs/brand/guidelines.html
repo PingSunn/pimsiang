@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PimSiang brand guidelines</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@400;500;600&family=Mitr:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --feather: #1C1A17; --wattle: #FFD23F; --beak: #F28C28; --paper: #FBF7EE; --live: #E5484D;
+    --ink2: #6B645A; --rule: #E8E0CF; --side: #F6F1E4; --select: #FFE89A;
+    --font: "Anuphan", system-ui, sans-serif; --display: "Mitr", "Anuphan", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--feather); font: 15px/1.65 var(--font); }
+  main { max-width: 1040px; margin: 0 auto; padding: 56px 32px 80px; }
+  h1, h2 { font-family: var(--display); font-weight: 600; }
+  h1 { font-size: 34px; line-height: 1.3; margin: 24px 0 8px; }
+  h2 { font-size: 22px; margin: 56px 0 6px; }
+  p { margin: 0 0 12px; }
+  .lead { color: var(--ink2); font-size: 17px; max-width: 680px; }
+  .muted { color: var(--ink2); font-size: 13px; }
+  .grid { display: grid; gap: 16px; }
+  .g2 { grid-template-columns: repeat(2, 1fr); }
+  .g3 { grid-template-columns: repeat(3, 1fr); }
+  .g4 { grid-template-columns: repeat(4, 1fr); }
+  .tile { border: 1px solid var(--rule); border-radius: 12px; overflow: hidden; background: #fff; }
+  .stage { display: flex; align-items: center; justify-content: center; height: 180px; padding: 28px; overflow: hidden; }
+  .stage img { max-width: 100%; max-height: 100%; }
+  .cap { padding: 10px 14px; border-top: 1px solid var(--rule); font-size: 13px; background: var(--paper); }
+  .cap code { font-size: 12px; color: var(--ink2); }
+  .swatch { height: 84px; }
+  .hex { font: 12px/1.4 ui-monospace, monospace; color: var(--ink2); }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; }
+  .pair > div { height: 150px; display: flex; align-items: center; justify-content: center; padding: 10px; }
+  .pair .dk { background: #16140F; }
+  .pair img { max-width: 100%; max-height: 100%; }
+  .dont .stage { position: relative; }
+  .dont .stage::after { content: ""; position: absolute; inset: 14px; border: 2px solid var(--live); border-radius: 8px; opacity: .3; }
+  .dont .cap { color: #B3262B; }
+  .type-sample { padding: 20px; }
+  .big { font: 600 32px/1.3 var(--display); }
+  .mid { font: 500 18px/1.5 var(--font); }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  td, th { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  ul { margin: 0 0 12px; padding-left: 20px; }
+  .sizes { display: flex; align-items: flex-end; gap: 28px; padding: 24px; }
+  .sizes figure { margin: 0; text-align: center; font-size: 12px; color: var(--ink2); }
+  .bar { display: flex; gap: 20px; padding: 14px 18px; align-items: center; border-radius: 8px; font-size: 13px; }
+  .bar.l { background: #E9E4D6; color: #1c1c1c; } .bar.d { background: #2A2824; color: #eee; }
+  .bar img { width: 18px; height: 18px; } .bar.d img { filter: invert(1) brightness(1.2); }
+  .bob { animation: bob 2.4s ease-in-out infinite; }
+  .pulse { animation: pulse 1.4s ease-in-out infinite; }
+  @keyframes bob { 50% { transform: translateY(-3px); } }
+  @keyframes pulse { 50% { opacity: .35; } }
+  @media (prefers-reduced-motion: reduce) { .bob, .pulse { animation: none; } }
+  @media (max-width: 760px) { .g3, .g4 { grid-template-columns: repeat(2, 1fr); } }
+  @media print { main { padding: 24px; } h2 { break-after: avoid; } .tile { break-inside: avoid; } }
+</style>
+</head>
+<body>
+<main>
+  <img src="pimsiang-wordmark.svg" alt="PimSiang พิมพ์เสียง" style="height:64px">
+  <h1>แนวทางการใช้แบรนด์ PimSiang</h1>
+  <p class="lead">นกขุนทองคือนกที่ขึ้นชื่อเรื่องพูดตามได้ ใน PimSiang มันฟังสิ่งที่คุณพูดแล้วพิมพ์กลับมาให้ หน้านี้สรุปโลโก้ สี ฟอนต์ นกในแต่ละท่า และการเคลื่อนไหว ไฟล์ต้นฉบับอยู่ในโฟลเดอร์เดียวกัน ใช้ SVG เป็นหลัก ส่วน PNG อยู่ใน <code>exports/</code></p>
+
+  <h2>1. โลโก้และไอคอนแอป</h2>
+  <p class="muted">คำว่า "พิมพ์เสียง" ตั้งด้วย Mitr 600 แปลงเป็น path แล้ว ห้ามพิมพ์เป็นข้อความเอง</p>
+  <div class="grid g2">
+    <div class="tile"><div class="stage"><img src="pimsiang-wordmark.svg" alt=""></div><div class="cap">บนพื้นสว่าง <code>pimsiang-wordmark.svg</code></div></div>
+    <div class="tile"><div class="stage" style="background:#16140F"><img src="pimsiang-wordmark-dark.svg" alt=""></div><div class="cap">บนพื้นมืด <code>pimsiang-wordmark-dark.svg</code></div></div>
+    <div class="tile"><div class="stage"><img src="pimsiang-icon.svg" alt=""></div><div class="cap">ไอคอนแอป macOS (squircle พร้อมเงา) <code>pimsiang-icon.svg</code>, <code>PimSiang.icns</code></div></div>
+    <div class="tile"><div class="stage"><img src="pimsiang-icon-maskable.svg" alt="" style="border-radius:50%"></div><div class="cap">เต็มพื้นที่ สำหรับ maskable (หัวนกอยู่ในโซนปลอดภัย 80%) <code>pimsiang-icon-maskable.svg</code></div></div>
+  </div>
+
+  <h2>2. สี</h2>
+  <p class="muted">สีทั้งหมดมาจากนก: ขนดำ เหนียงเหลือง ปากส้ม บนกระดาษครีม ใช้ Live แดงเฉพาะสถานะกำลังบันทึก</p>
+  <div class="grid g3">
+    <div class="tile"><div class="swatch" style="background:#1C1A17;"></div><div class="cap"><b>Feather</b><br><span class="hex">#1C1A17</span><br><span class="muted">ตัวอักษร ตัวนก ปุ่มหลัก</span></div></div>
+    <div class="tile"><div class="swatch" style="background:#FFD23F;border-bottom:1px solid var(--rule)"></div><div class="cap"><b>Wattle</b><br><span class="hex">#FFD23F</span><br><span class="muted">ไอคอน ตัวเน้น ข้อความบนปุ่มหลัก</span></div></div>
+    <div class="tile"><div class="swatch" style="background:#F28C28;"></div><div class="cap"><b>Beak</b><br><span class="hex">#F28C28</span><br><span class="muted">ปากนก เครื่องหมายคำถาม</span></div></div>
+    <div class="tile"><div class="swatch" style="background:#FBF7EE;border-bottom:1px solid var(--rule)"></div><div class="cap"><b>Paper</b><br><span class="hex">#FBF7EE</span><br><span class="muted">พื้นหลังสว่าง</span></div></div>
+    <div class="tile"><div class="swatch" style="background:#E5484D;"></div><div class="cap"><b>Live</b><br><span class="hex">#E5484D</span><br><span class="muted">กำลังบันทึก คลื่นเสียง</span></div></div>
+    <div class="tile"><div class="swatch" style="background:#6B645A;"></div><div class="cap"><b>Ink-2</b><br><span class="hex">#6B645A</span><br><span class="muted">ข้อความรอง</span></div></div>
+    <div class="tile"><div class="swatch" style="background:#E8E0CF;border-bottom:1px solid var(--rule)"></div><div class="cap"><b>Rule</b><br><span class="hex">#E8E0CF</span><br><span class="muted">เส้นแบ่ง ขอบ</span></div></div>
+    <div class="tile"><div class="swatch" style="background:#F6F1E4;border-bottom:1px solid var(--rule)"></div><div class="cap"><b>Side</b><br><span class="hex">#F6F1E4</span><br><span class="muted">แถบข้าง พื้นการ์ด</span></div></div>
+    <div class="tile"><div class="swatch" style="background:#FFE89A;border-bottom:1px solid var(--rule)"></div><div class="cap"><b>Select</b><br><span class="hex">#FFE89A</span><br><span class="muted">รายการที่เลือก</span></div></div>
+  </div>
+  <p class="muted" style="margin-top:12px">โหมดมืดใช้พื้น <code>#16140F</code> และ <code>#1F1C17</code> ตัวอักษร Paper เน้นด้วย Wattle ปุ่มหลักในโหมดมืดเป็น Wattle พร้อมตัวอักษร Feather (กลับด้านจากโหมดสว่าง)</p>
+
+  <h2>3. ตัวอักษร</h2>
+  <div class="grid g2">
+    <div class="tile type-sample"><div class="big">พิมพ์เสียง Mitr 600</div><p class="muted">ชื่อหน้าต่างและหัวข้อ เท่านั้น ฟอนต์โค้งมน SIL Open Font License ใช้ได้ฟรีจาก Google Fonts</p></div>
+    <div class="tile type-sample"><div class="mid">Anuphan 400 / 500 / 600 — ข้อความใน UI ทั้งหมด</div><p class="muted">ฟอนต์ที่ฝังอยู่ในแอปแล้ว มีทั้งไทยและละติน</p></div>
+  </div>
+
+  <h2>4. นกในแต่ละท่า</h2>
+  <p class="muted">ไฟล์ <code>mascot/pimsiang-myna-&lt;pose&gt;.svg</code> (viewBox 120 × 120) สำหรับพื้นสว่าง และ <code>-dark.svg</code> สำหรับพื้นมืด นกเป็นของประกอบ ข้อความต้องบอกความหมายเสมอ</p>
+  <div class="grid g3">
+    <div class="tile"><div class="pair"><div><img src="mascot/pimsiang-myna-default.svg" alt=""></div><div class="dk"><img src="mascot/pimsiang-myna-default-dark.svg" alt=""></div></div><div class="cap"><b>ทั่วไป</b> <code>default</code><br><span class="muted">ภาพประกอบทั่วไปที่ไม่มีข้อความเฉพาะ หัวหน้าต่างตั้งค่าใช้เฉพาะหัว</span></div></div>
+    <div class="tile"><div class="pair"><div><img src="mascot/pimsiang-myna-listening.svg" alt=""></div><div class="dk"><img src="mascot/pimsiang-myna-listening-dark.svg" alt=""></div></div><div class="cap"><b>กำลังฟัง</b> <code>listening</code><br><span class="muted">กำลังบันทึกเสียงและแสดงข้อความระหว่างพูด</span></div></div>
+    <div class="tile"><div class="pair"><div><img src="mascot/pimsiang-myna-writing.svg" alt=""></div><div class="dk"><img src="mascot/pimsiang-myna-writing-dark.svg" alt=""></div></div><div class="cap"><b>กำลังถอดเสียง</b> <code>writing</code><br><span class="muted">กำลังถอดเสียง และตอนดาวน์โหลดโมเดล</span></div></div>
+    <div class="tile"><div class="pair"><div><img src="mascot/pimsiang-myna-note.svg" alt=""></div><div class="dk"><img src="mascot/pimsiang-myna-note-dark.svg" alt=""></div></div><div class="cap"><b>บันทึกเป็นโน้ต</b> <code>note</code><br><span class="muted">บันทึกโน้ตด่วนแล้ว</span></div></div>
+    <div class="tile"><div class="pair"><div><img src="mascot/pimsiang-myna-confused.svg" alt=""></div><div class="dk"><img src="mascot/pimsiang-myna-confused-dark.svg" alt=""></div></div><div class="cap"><b>ยังไม่ได้ให้สิทธิ์</b> <code>confused</code><br><span class="muted">ยังไม่ได้ให้สิทธิ์ (ไมโครโฟน การช่วยเหลือพิเศษ การเฝ้าดูคีย์บอร์ด)</span></div></div>
+    <div class="tile"><div class="pair"><div><img src="mascot/pimsiang-myna-sleeping.svg" alt=""></div><div class="dk"><img src="mascot/pimsiang-myna-sleeping-dark.svg" alt=""></div></div><div class="cap"><b>พักโมเดล</b> <code>sleeping</code><br><span class="muted">พักโมเดลเมื่อไม่ได้ใช้ และหน้าประวัติที่ยังว่าง</span></div></div>
+    <div class="tile"><div class="pair"><div><img src="mascot/pimsiang-myna-waving.svg" alt=""></div><div class="dk"><img src="mascot/pimsiang-myna-waving-dark.svg" alt=""></div></div><div class="cap"><b>ยินดีต้อนรับ</b> <code>waving</code><br><span class="muted">ต้อนรับและขั้นตอนตั้งค่าครั้งแรก</span></div></div>
+    <div class="tile"><div class="pair"><div><img src="mascot/pimsiang-myna-oops.svg" alt=""></div><div class="dk"><img src="mascot/pimsiang-myna-oops-dark.svg" alt=""></div></div><div class="cap"><b>ไมโครโฟนหาย / เกิดข้อผิดพลาด</b> <code>oops</code><br><span class="muted">ไมโครโฟนหลุดหรือเกิดข้อผิดพลาด และประวัติที่เปิดไม่ได้</span></div></div>
+    <div class="tile"><div class="pair"><div><img src="mascot/pimsiang-myna-searching.svg" alt=""></div><div class="dk"><img src="mascot/pimsiang-myna-searching-dark.svg" alt=""></div></div><div class="cap"><b>ไม่พบผลลัพธ์</b> <code>searching</code><br><span class="muted">ค้นหาในประวัติแล้วไม่พบ</span></div></div>
+  </div>
+
+  <h2>5. หัวนกขนาดเล็กและไอคอนแถบเมนู</h2>
+  <p class="muted">ต่ำกว่า 64 px ให้ใช้หัวอย่างเดียว (Pill ใช้ 16–32 px) ตัวเต็มตัวจะเละ</p>
+  <div class="grid g4">
+    <div class="tile"><div class="pair"><div><img src="mascot/pimsiang-myna-head-default.svg" alt="" width="64"></div><div class="dk"><img src="mascot/pimsiang-myna-head-default-dark.svg" alt="" width="64"></div></div><div class="cap"><code>head-default</code></div></div>
+    <div class="tile"><div class="pair"><div><img src="mascot/pimsiang-myna-head-listening.svg" alt="" width="64"></div><div class="dk"><img src="mascot/pimsiang-myna-head-listening-dark.svg" alt="" width="64"></div></div><div class="cap"><code>head-listening</code></div></div>
+    <div class="tile"><div class="pair"><div><img src="mascot/pimsiang-myna-head-writing.svg" alt="" width="64"></div><div class="dk"><img src="mascot/pimsiang-myna-head-writing-dark.svg" alt="" width="64"></div></div><div class="cap"><code>head-writing</code></div></div>
+    <div class="tile"><div class="pair"><div><img src="mascot/pimsiang-myna-head-confused.svg" alt="" width="64"></div><div class="dk"><img src="mascot/pimsiang-myna-head-confused-dark.svg" alt="" width="64"></div></div><div class="cap"><code>head-confused</code></div></div>
+  </div>
+  <div class="tile" style="margin-top:16px"><div class="sizes">
+    <figure><img src="pimsiang-icon.svg" width="128" alt=""><br>128</figure>
+    <figure><img src="pimsiang-icon.svg" width="64" alt=""><br>64</figure>
+    <figure><img src="pimsiang-icon.svg" width="32" alt=""><br>32</figure>
+    <figure><img src="pimsiang-icon.svg" width="16" alt=""><br>16</figure>
+  </div><div class="cap">ไอคอนแอป ขั้นต่ำ 16 px</div></div>
+  <div class="grid g2" style="margin-top:16px">
+    <div class="tile"><div class="stage" style="flex-direction:column;gap:10px">
+      <div class="bar l">A <img src="pimsiang-menubar.svg" alt=""> <img src="pimsiang-menubar-listening.svg" alt=""> <img src="pimsiang-menubar-transcribing.svg" alt=""> <img src="pimsiang-menubar-attention.svg" alt=""> 19:24</div>
+      <div class="bar d">A <img src="pimsiang-menubar.svg" alt=""> <img src="pimsiang-menubar-listening.svg" alt=""> <img src="pimsiang-menubar-transcribing.svg" alt=""> <img src="pimsiang-menubar-attention.svg" alt=""> 19:24</div>
+    </div><div class="cap">แถบเมนู: พร้อม, กำลังฟัง (จุด), กำลังถอดเสียง (สามจุด), ต้องให้สิทธิ์ (ป้าย !) <code>pimsiang-menubar*.svg</code></div></div>
+    <div class="tile"><div class="stage"><table><tr><td>รูป</td><td>ขาวดำ แบบ template ดวงตากับเหนียงเจาะเป็นช่องว่าง</td></tr><tr><td>สถานะ</td><td>เป็นจุดเล็กๆ ที่มุม ไม่เปลี่ยนสีของทั้งรูป (macOS ย้อมสีรูป template เอง)</td></tr></table></div><div class="cap">ดูชัดที่ 18 px</div></div>
+  </div>
+
+  <h2>6. พื้นสว่างและพื้นมืด</h2>
+  <ul>
+    <li>เลือกไฟล์ตามพื้นหลังเสมอ ตัวนกสีดำบนพื้นมืดจะหาย <code>-dark.svg</code> เพิ่มขอบครีม (<code>#F6F1E4</code>) รอบตัว และปรับเงา ปีก และไม้ถือให้สว่างขึ้น</li>
+    <li>Pill เป็นแคปซูล Feather เสมอ จึงใช้หัวแบบ <code>-dark</code></li>
+    <li>พื้นเหลือง Wattle ใช้กับไอคอนแอปเท่านั้น</li>
+  </ul>
+
+  <h2>7. ขนาดต่ำสุดและพื้นที่ว่าง</h2>
+  <table>
+    <tr><th>รายการ</th><th>ขั้นต่ำ</th></tr>
+    <tr><td>นกเต็มตัว</td><td>64 px สูง</td></tr>
+    <tr><td>หัวนก</td><td>16 px</td></tr>
+    <tr><td>ไอคอนแถบเมนู</td><td>18 px (วาดที่ 18 pt, ส่งออก 2x และ 3x)</td></tr>
+    <tr><td>ไอคอนแอป</td><td>16 px</td></tr>
+    <tr><td>Wordmark</td><td>กว้าง 96 px</td></tr>
+    <tr><td>พื้นที่ว่างรอบโลโก้</td><td>อย่างน้อยเท่าความสูงของตัว "พ" ใน wordmark</td></tr>
+  </table>
+
+  <h2>8. ห้ามทำ</h2>
+  <div class="grid g4 dont">
+    <div class="tile"><div class="stage"><img src="mascot/pimsiang-myna-default.svg" alt="" style="transform:scaleX(1.6)"></div><div class="cap">ยืดหรือบีบ</div></div>
+    <div class="tile"><div class="stage"><img src="mascot/pimsiang-myna-default.svg" alt="" style="filter:hue-rotate(160deg) saturate(2)"></div><div class="cap">เปลี่ยนสี</div></div>
+    <div class="tile"><div class="stage" style="background:#16140F"><img src="mascot/pimsiang-myna-default.svg" alt=""></div><div class="cap">ใช้ไฟล์สว่างบนพื้นมืด</div></div>
+    <div class="tile"><div class="stage"><img src="mascot/pimsiang-myna-default.svg" alt="" style="transform:rotate(35deg)"></div><div class="cap">หมุน</div></div>
+  </div>
+  <ul style="margin-top:14px">
+    <li>ไม่วาดนกท่าใหม่เอง ไม่ใช้อีโมจิแทนนก ไม่ใส่เงาหรือไล่สีให้ SVG</li>
+    <li>ไม่ใช้ Live แดงกับอย่างอื่นนอกจากกำลังบันทึก</li>
+    <li>ไม่ตั้ง "พิมพ์เสียง" ด้วยฟอนต์อื่นแทน wordmark</li>
+    <li>ไม่ให้นกอยู่ในข้อความเตือนที่โทษผู้ใช้ น้ำเสียงเป็นมิตรเสมอ</li>
+  </ul>
+
+  <h2>9. การเคลื่อนไหว</h2>
+  <p class="muted">ช้าและนุ่ม ใช้เฉพาะที่สื่อสถานะ ไฟล์ SVG ในโฟลเดอร์นี้นิ่ง ถ้าทำให้ขยับ ต้องหยุดเมื่อผู้ใช้เปิด <code>prefers-reduced-motion: reduce</code> ตัวอย่างด้านล่างเป็นไปตามกฎนั้น</p>
+  <div class="grid g3">
+    <div class="tile"><div class="stage"><img class="bob" src="mascot/pimsiang-myna-writing.svg" alt=""></div><div class="cap">ลอยขึ้น 3 px ใน 2.4 วินาที (ถอดเสียง)</div></div>
+    <div class="tile"><div class="stage"><img class="pulse" src="mascot/pimsiang-myna-head-listening.svg" alt="" width="96"></div><div class="cap">กะพริบ opacity 1 → .35 ใน 1.4 วินาที (กำลังฟัง)</div></div>
+    <div class="tile"><div class="stage"><img src="mascot/pimsiang-myna-sleeping.svg" alt=""></div><div class="cap">ไม่ขยับ: ใครเปิดลดการเคลื่อนไหวจะเห็นเหมือนทุกท่า</div></div>
+  </div>
+
+  <h2>10. ในแอป</h2>
+  <ul>
+    <li>Setup: <code>waving</code> · ดาวน์โหลดโมเดล: <code>writing</code> · History ว่าง: <code>sleeping</code> · ไม่พบ: <code>searching</code> · เปิดประวัติไม่ได้: <code>oops</code> · ยังไม่ได้ให้สิทธิ์: <code>confused</code> · หัวหน้าต่างตั้งค่า: หัว <code>default</code></li>
+    <li>Pill: หัวนกแทนจุดสี กำลังฟัง = หัวฟังพร้อมจุดแดง, ถอดเสียง = หัวพิมพ์, ผิดพลาดหรือขาดสิทธิ์ = หัวสงสัย</li>
+  </ul>
+</main>
+</body>
+</html>

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="PimSiang app icon">
+<defs>
+<clipPath id="tile"><rect x="100" y="100" width="824" height="824" rx="185"/></clipPath><filter id="lift" x="-10%" y="-10%" width="120%" height="125%"><feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#3C2800" flood-opacity="0.28"/></filter>
+</defs>
+<rect x="100" y="100" width="824" height="824" rx="185" fill="#FFD23F" filter="url(#lift)"/>
+<g clip-path="url(#tile)">
+<path d="M0 760C220 700 560 704 1024 780V1024H0Z" fill="#F2C12E"/>
+<g transform="translate(116.0 127.0) scale(11.0)"><circle cx="31" cy="38" r="21" fill="#1C1A17"/>
+<path d="M25 20C26 13 33 11 37 14" fill="none" stroke="#1C1A17" stroke-width="4.4" stroke-linecap="round"/>
+<path d="M34 42C41 38.5 48 42.5 47 50C45 55 38.5 54.5 36 49.5C35 47 34 45 34 42Z" fill="#FFD23F"/>
+<path d="M46 33C54 31 60.5 32.5 63.5 36C58.5 40 52 40.5 46 40Z" fill="#F28C28"/>
+<path d="M48.5 36.4H61.5" stroke="#C96A12" stroke-width="1.4" stroke-linecap="round"/>
+<circle cx="39" cy="31" r="5.2" fill="#FBF7EE"/><circle cx="40.3" cy="31" r="2.8" fill="#1C1A17"/><circle cx="41.3" cy="29.9" r="1" fill="#FFFFFF"/></g>
+</g>
+</svg>

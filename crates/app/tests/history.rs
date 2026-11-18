@@ -391,3 +391,81 @@ fn highlight_ranges_are_valid_char_boundaries_and_do_not_overlap() {
         }
     }
 }
+
+#[derive(Clone, Copy, Debug)]
+struct CentralEurope;
+
+impl CentralEurope {
+    fn offset_at_utc(utc: &chrono::NaiveDateTime) -> chrono::FixedOffset {
+        let summer_starts = chrono::NaiveDate::from_ymd_opt(2025, 3, 30)
+            .unwrap()
+            .and_hms_opt(1, 0, 0)
+            .unwrap();
+        let hours = if *utc >= summer_starts { 2 } else { 1 };
+        chrono::FixedOffset::east_opt(hours * 3600).unwrap()
+    }
+}
+
+impl chrono::TimeZone for CentralEurope {
+    type Offset = chrono::FixedOffset;
+
+    fn from_offset(_: &chrono::FixedOffset) -> Self {
+        CentralEurope
+    }
+
+    fn offset_from_local_date(
+        &self,
+        local: &chrono::NaiveDate,
+    ) -> chrono::LocalResult<chrono::FixedOffset> {
+        self.offset_from_local_datetime(&local.and_hms_opt(12, 0, 0).unwrap())
+    }
+
+    fn offset_from_local_datetime(
+        &self,
+        local: &chrono::NaiveDateTime,
+    ) -> chrono::LocalResult<chrono::FixedOffset> {
+        chrono::LocalResult::Single(Self::offset_at_utc(&(*local - chrono::Duration::hours(1))))
+    }
+
+    fn offset_from_utc_date(&self, utc: &chrono::NaiveDate) -> chrono::FixedOffset {
+        Self::offset_at_utc(&utc.and_hms_opt(0, 0, 0).unwrap())
+    }
+
+    fn offset_from_utc_datetime(&self, utc: &chrono::NaiveDateTime) -> chrono::FixedOffset {
+        Self::offset_at_utc(utc)
+    }
+}
+
+#[test]
+fn an_entry_from_before_a_daylight_saving_change_keeps_its_own_local_time_and_day() {
+    use app::history_view::{Day, day_of, format_time, group_by_day};
+    use chrono::TimeZone;
+    let now = chrono::Utc
+        .with_ymd_and_hms(2025, 6, 18, 10, 0, 0)
+        .unwrap()
+        .timestamp();
+    let winter_late_evening = chrono::Utc
+        .with_ymd_and_hms(2025, 1, 10, 22, 30, 0)
+        .unwrap()
+        .timestamp();
+
+    assert_eq!(format_time(winter_late_evening, CentralEurope), "23:30");
+    assert_eq!(
+        day_of(winter_late_evening, now, CentralEurope),
+        Some(Day::On(
+            chrono::NaiveDate::from_ymd_opt(2025, 1, 10).unwrap()
+        ))
+    );
+    let entries = vec![dated(1, now), dated(2, winter_late_evening)];
+    let days: Vec<Day> = group_by_day(&entries, now, CentralEurope)
+        .iter()
+        .map(|group| group.day)
+        .collect();
+    assert_eq!(
+        days,
+        [
+            Day::Today,
+            Day::On(chrono::NaiveDate::from_ymd_opt(2025, 1, 10).unwrap())
+        ]
+    );
+}

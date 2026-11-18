@@ -1,7 +1,7 @@
 use anyhow::Result;
 use app::history_view::{self, PAGE_SIZE, Page};
 use app::i18n::Language;
-use chrono::FixedOffset;
+use chrono::{FixedOffset, Local};
 use store::{Entry, Kind};
 use winit::dpi::LogicalSize;
 use winit::event::WindowEvent;
@@ -132,7 +132,14 @@ impl HistoryWindow {
 #[derive(Clone, Copy)]
 pub(crate) struct Clock {
     pub(crate) now: i64,
-    pub(crate) offset: FixedOffset,
+    pub(crate) zone: Zone,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum Zone {
+    Local,
+    #[cfg_attr(not(test), allow(dead_code))]
+    Fixed(FixedOffset),
 }
 
 impl Clock {
@@ -143,7 +150,28 @@ impl Clock {
             .unwrap_or(0);
         Self {
             now,
-            offset: history_view::local_offset(now),
+            zone: Zone::Local,
+        }
+    }
+
+    fn groups<'a>(&self, entries: &'a [Entry]) -> Vec<history_view::Group<'a>> {
+        match self.zone {
+            Zone::Local => history_view::group_by_day(entries, self.now, Local),
+            Zone::Fixed(offset) => history_view::group_by_day(entries, self.now, offset),
+        }
+    }
+
+    fn year(&self) -> i32 {
+        match self.zone {
+            Zone::Local => history_view::year_of(self.now, Local),
+            Zone::Fixed(offset) => history_view::year_of(self.now, offset),
+        }
+    }
+
+    fn time(&self, created: i64) -> String {
+        match self.zone {
+            Zone::Local => history_view::format_time(created, Local),
+            Zone::Fixed(offset) => history_view::format_time(created, offset),
         }
     }
 }
@@ -323,12 +351,8 @@ pub(crate) fn show(
                             if loaded && page.entries.is_empty() {
                                 empty(ui, language, state.query.trim().is_empty());
                             }
-                            let groups = history_view::group_by_day(
-                                &page.entries,
-                                state.clock.now,
-                                state.clock.offset,
-                            );
-                            let year = history_view::year_of(state.clock.now, state.clock.offset);
+                            let groups = state.clock.groups(&page.entries);
+                            let year = state.clock.year();
                             for (index, group) in groups.iter().enumerate() {
                                 ui.add_space(if index == 0 { 12.0 } else { 14.0 });
                                 ui.label(
@@ -457,12 +481,9 @@ fn show_entry(
                     ui.spacing_mut().item_spacing.x = 10.0;
                     let muted = colors.muted_foreground;
                     ui.label(
-                        egui::RichText::new(history_view::format_time(
-                            entry.created,
-                            state.clock.offset,
-                        ))
-                        .size(theme::TEXT_XS)
-                        .color(muted),
+                        egui::RichText::new(state.clock.time(entry.created))
+                            .size(theme::TEXT_XS)
+                            .color(muted),
                     );
                     if entry.kind == Kind::Note {
                         ui.label(

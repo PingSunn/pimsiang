@@ -230,7 +230,9 @@ const NOW: i64 = 1_763_468_640;
 fn clock() -> Clock {
     Clock {
         now: NOW,
-        offset: chrono::FixedOffset::east_opt(7 * 3600).expect("a valid offset"),
+        zone: history_window::Zone::Fixed(
+            chrono::FixedOffset::east_opt(7 * 3600).expect("a valid offset"),
+        ),
     }
 }
 

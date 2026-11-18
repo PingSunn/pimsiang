@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use std::ops::Range;
 
-use chrono::{DateTime, Datelike, FixedOffset, Local, NaiveDate, Offset, TimeZone};
+use chrono::{DateTime, Datelike, FixedOffset, Local, NaiveDate, TimeZone};
 
 use store::{Entry, HistoryService, Kind};
 
@@ -60,21 +60,13 @@ pub struct Group<'a> {
     pub entries: &'a [Entry],
 }
 
-pub fn local_offset(at: i64) -> FixedOffset {
-    Local
-        .timestamp_opt(at, 0)
-        .single()
-        .map(|time| time.offset().fix())
-        .unwrap_or_else(|| FixedOffset::east_opt(0).expect("zero is a valid offset"))
+fn date_of<Tz: TimeZone>(created: i64, zone: &Tz) -> Option<NaiveDate> {
+    DateTime::from_timestamp(created, 0).map(|time| time.with_timezone(zone).date_naive())
 }
 
-fn date_of(created: i64, offset: FixedOffset) -> Option<NaiveDate> {
-    DateTime::from_timestamp(created, 0).map(|time| time.with_timezone(&offset).date_naive())
-}
-
-pub fn day_of(created: i64, now: i64, offset: FixedOffset) -> Option<Day> {
-    let date = date_of(created, offset)?;
-    let today = date_of(now, offset)?;
+pub fn day_of<Tz: TimeZone>(created: i64, now: i64, zone: Tz) -> Option<Day> {
+    let date = date_of(created, &zone)?;
+    let today = date_of(now, &zone)?;
     Some(if date == today {
         Day::Today
     } else if today.pred_opt() == Some(date) {
@@ -84,12 +76,12 @@ pub fn day_of(created: i64, now: i64, offset: FixedOffset) -> Option<Day> {
     })
 }
 
-pub fn group_by_day(entries: &[Entry], now: i64, offset: FixedOffset) -> Vec<Group<'_>> {
+pub fn group_by_day<Tz: TimeZone>(entries: &[Entry], now: i64, zone: Tz) -> Vec<Group<'_>> {
     let mut groups: Vec<Group<'_>> = Vec::new();
     let mut start = 0;
     let mut current: Option<Day> = None;
     for (index, entry) in entries.iter().enumerate() {
-        let day = day_of(entry.created, now, offset);
+        let day = day_of(entry.created, now, zone.clone());
         if index > 0 && day != current {
             if let Some(day) = current {
                 groups.push(Group {
@@ -110,13 +102,16 @@ pub fn group_by_day(entries: &[Entry], now: i64, offset: FixedOffset) -> Vec<Gro
     groups
 }
 
-pub fn year_of(now: i64, offset: FixedOffset) -> i32 {
-    date_of(now, offset).map_or(1970, |date| date.year())
+pub fn year_of<Tz: TimeZone>(now: i64, zone: Tz) -> i32 {
+    date_of(now, &zone).map_or(1970, |date| date.year())
 }
 
-pub fn format_time(created: i64, offset: FixedOffset) -> String {
+pub fn format_time<Tz: TimeZone>(created: i64, zone: Tz) -> String
+where
+    Tz::Offset: std::fmt::Display,
+{
     DateTime::from_timestamp(created, 0)
-        .map(|time| time.with_timezone(&offset).format("%H:%M").to_string())
+        .map(|time| time.with_timezone(&zone).format("%H:%M").to_string())
         .unwrap_or_default()
 }
 

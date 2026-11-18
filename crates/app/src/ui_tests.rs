@@ -28,7 +28,7 @@ struct HistoryFixture {
 fn clock() -> Clock {
     Clock {
         now: 1_763_450_000,
-        offset: chrono::FixedOffset::east_opt(7 * 3600).unwrap(),
+        zone: history_window::Zone::Fixed(chrono::FixedOffset::east_opt(7 * 3600).unwrap()),
     }
 }
 

@@ -268,3 +268,19 @@ fn audio_after_a_failed_push_is_neither_lost_nor_duplicated() {
     assert!(first.is_err());
     assert_eq!(engine.finish_utterance().unwrap(), "w20 w30");
 }
+
+#[test]
+fn push_tail_yields_the_same_final_text_as_push_audio_without_a_partial_decode() {
+    let audio = [speech(0.2, 1.0), silence(1.0), speech(0.3, 1.0)].concat();
+    let (mut streamed, _) = engine();
+    stream(&mut streamed, &audio);
+    let expected = streamed.finish_utterance().unwrap();
+
+    let (mut tailed, calls) = engine();
+    tailed.push_tail(&audio).unwrap();
+    let decodes_before_finish = calls.lengths().len();
+    let actual = tailed.finish_utterance().unwrap();
+
+    assert_eq!(actual, expected);
+    assert_eq!(decodes_before_finish, 1);
+}

@@ -4,6 +4,7 @@ use rusqlite::{Connection, OptionalExtension, Row, params};
 
 pub const SCHEMA_VERSION: i64 = 2;
 const TRIGRAM_MIN_CHARS: usize = 3;
+const KNOWN_KIND: &str = "kind IN ('pasted', 'note')";
 
 #[derive(Debug, thiserror::Error)]
 pub enum HistoryError {
@@ -169,9 +170,11 @@ impl History {
     }
 
     pub fn total(&self) -> Result<usize, HistoryError> {
-        let count: i64 = self
-            .connection
-            .query_row("SELECT COUNT(*) FROM entries", [], |row| row.get(0))?;
+        let count: i64 = self.connection.query_row(
+            &format!("SELECT COUNT(*) FROM entries WHERE {KNOWN_KIND}"),
+            [],
+            |row| row.get(0),
+        )?;
         Ok(count as usize)
     }
 
@@ -182,13 +185,18 @@ impl History {
         }
         let count: i64 = if query.chars().count() < TRIGRAM_MIN_CHARS {
             self.connection.query_row(
-                "SELECT COUNT(*) FROM entries WHERE text LIKE ?1 ESCAPE '\\'",
+                &format!(
+                    "SELECT COUNT(*) FROM entries WHERE text LIKE ?1 ESCAPE '\\' AND {KNOWN_KIND}"
+                ),
                 params![format!("%{}%", escape_like(query))],
                 |row| row.get(0),
             )?
         } else {
             self.connection.query_row(
-                "SELECT COUNT(*) FROM entries_fts WHERE entries_fts MATCH ?1",
+                &format!(
+                    "SELECT COUNT(*) FROM entries_fts f JOIN entries e ON e.id = f.rowid
+                     WHERE entries_fts MATCH ?1 AND e.{KNOWN_KIND}"
+                ),
                 params![format!("\"{}\"", query.replace('"', "\"\""))],
                 |row| row.get(0),
             )?

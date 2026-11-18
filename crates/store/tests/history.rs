@@ -349,3 +349,27 @@ fn counting_matches_what_a_search_finds() {
         );
     }
 }
+
+#[test]
+fn counts_skip_rows_with_an_unknown_kind_as_search_does() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("history.sqlite");
+    let history = History::open(&path).unwrap();
+    history.add("รายงานปกติ", 1, Kind::Pasted, None).unwrap();
+    Connection::open(&path)
+        .unwrap()
+        .execute(
+            "INSERT INTO entries (text, created, kind) VALUES ('รายงานแปลก', 2, 'bogus')",
+            [],
+        )
+        .unwrap();
+
+    assert_eq!(history.total().unwrap(), history.list(0, 10).unwrap().len());
+    for query in ["", "รา", "รายงาน"] {
+        assert_eq!(
+            history.count(query).unwrap(),
+            history.search(query, 0, 10).unwrap().len(),
+            "{query}"
+        );
+    }
+}

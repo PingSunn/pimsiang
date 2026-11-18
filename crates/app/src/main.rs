@@ -148,16 +148,16 @@ mod macos {
         let mut platform = MacPlatform::new(Box::new(move |status| {
             let _ = status_proxy.send_event(UserEvent::Status(status));
         }));
+        let mut engine = OnnxEngine::new(ModelFiles::new(&args.model_dir, args.precision));
+        engine.load().context("loading the Model")?;
+        tracing::info!("Model loaded");
+
         let trigger_tx = tx.clone();
         platform
             .listen_trigger(Box::new(move |event| {
                 let _ = trigger_tx.send(Input::Trigger(event));
             }))
             .context("watching the Trigger key")?;
-
-        let mut engine = OnnxEngine::new(ModelFiles::new(&args.model_dir, args.precision));
-        engine.load().context("loading the Model")?;
-        tracing::info!("Model loaded");
 
         let audio_tx = tx;
         let microphone = MicCapture::new(Arc::new(move |samples| {

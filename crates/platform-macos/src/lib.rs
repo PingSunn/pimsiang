@@ -173,6 +173,13 @@ impl Platform for MacPlatform {
     }
 }
 
+pub fn restore_clipboard_now() {
+    let mut pasteboard = pasteboard::GeneralPasteboard::new();
+    if let clipboard::Restore::Failed(error) = CLIPBOARD.restore_pending(&mut pasteboard) {
+        tracing::warn!(%error, "cannot restore the clipboard");
+    }
+}
+
 fn key_index(key: TriggerKey) -> u8 {
     TriggerKey::ALL
         .iter()
@@ -319,6 +326,9 @@ fn run_event_tap(
                 emit(&sink, TriggerEvent::released(Instant::now()));
             }
         }
+    }
+    if down.swap(false, Ordering::SeqCst) {
+        emit(&sink, TriggerEvent::released(Instant::now()));
     }
 }
 

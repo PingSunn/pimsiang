@@ -5,12 +5,18 @@ use std::time::Duration;
 
 use core_foundation::base::{CFType, CFTypeRef, TCFType};
 use core_foundation::string::{CFString, CFStringRef};
+use objc2_app_kit::NSWorkspace;
 use platform::Focus;
-use platform::focus::classify;
+use platform::focus::{classify, classify_missing};
 
 const MESSAGING_TIMEOUT_SECONDS: f32 = 0.2;
 const ANSWER_DEADLINE: Duration = Duration::from_millis(500);
 const AX_SUCCESS: i32 = 0;
+const AX_NO_VALUE: i32 = -25212;
+const CHROMIUM_FRAMEWORKS: [&str; 2] = [
+    "Contents/Frameworks/Electron Framework.framework",
+    "Contents/Frameworks/Chromium Embedded Framework.framework",
+];
 
 type AxElement = *const c_void;
 
@@ -48,17 +54,46 @@ fn ask() -> Focus {
         return Focus::Unknown;
     };
     set_timeout(&system);
-    let Some(focused) = attribute(&system, "AXFocusedUIElement") else {
-        return Focus::Unknown;
+    let focused = match attribute(&system, "AXFocusedUIElement") {
+        Ok(focused) => focused,
+        Err(AX_NO_VALUE) => return nothing_focused(),
+        Err(_) => return Focus::Unknown,
     };
     set_timeout(&focused);
-    let role = attribute(&focused, "AXRole")
-        .and_then(|value| value.downcast::<CFString>())
-        .map(|role| role.to_string());
-    let has_range = attribute(&focused, "AXSelectedTextRange").is_some();
-    let focus = classify(role.as_deref(), has_range);
-    tracing::debug!(?role, has_range, ?focus, "focus probe");
+    let role = text_attribute(&focused, "AXRole");
+    let subrole = text_attribute(&focused, "AXSubrole");
+    let has_range = attribute(&focused, "AXSelectedTextRange").is_ok();
+    let focus = classify(role.as_deref(), subrole.as_deref(), has_range);
+    tracing::debug!(?role, ?subrole, has_range, ?focus, "focus probe");
     focus
+}
+
+fn nothing_focused() -> Focus {
+    let front = NSWorkspace::sharedWorkspace().frontmostApplication();
+    let bundle_id = front
+        .as_ref()
+        .and_then(|app| app.bundleIdentifier())
+        .map(|id| id.to_string());
+    let bundle_path = front
+        .as_ref()
+        .and_then(|app| app.bundleURL())
+        .and_then(|url| url.path())
+        .map(|path| std::path::PathBuf::from(path.to_string()));
+    let chromium = bundle_path.is_some_and(|path| {
+        CHROMIUM_FRAMEWORKS
+            .iter()
+            .any(|framework| path.join(framework).exists())
+    });
+    let focus = classify_missing(bundle_id.as_deref(), chromium);
+    tracing::debug!(?bundle_id, chromium, ?focus, "focus probe, nothing focused");
+    focus
+}
+
+fn text_attribute(element: &CFType, name: &str) -> Option<String> {
+    attribute(element, name)
+        .ok()
+        .and_then(|value| value.downcast::<CFString>())
+        .map(|text| text.to_string())
 }
 
 #[allow(unsafe_code)]
@@ -78,7 +113,7 @@ fn set_timeout(element: &CFType) {
 }
 
 #[allow(unsafe_code)]
-fn attribute(element: &CFType, name: &str) -> Option<CFType> {
+fn attribute(element: &CFType, name: &str) -> Result<CFType, i32> {
     let name = CFString::new(name);
     let mut value: CFTypeRef = std::ptr::null();
     let status = unsafe {
@@ -88,8 +123,11 @@ fn attribute(element: &CFType, name: &str) -> Option<CFType> {
             &mut value,
         )
     };
-    if status != AX_SUCCESS || value.is_null() {
-        return None;
+    if status != AX_SUCCESS {
+        return Err(status);
     }
-    Some(unsafe { CFType::wrap_under_create_rule(value) })
+    if value.is_null() {
+        return Err(AX_NO_VALUE);
+    }
+    Ok(unsafe { CFType::wrap_under_create_rule(value) })
 }

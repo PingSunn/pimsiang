@@ -581,3 +581,33 @@ fn the_fast_partial_cadence_returns_after_a_forced_cut() {
         "no Partial after the cut"
     );
 }
+
+#[test]
+fn the_settled_length_covers_closed_segments_and_not_the_open_one() {
+    let (mut engine, _) = engine();
+    let audio = [speech(0.2, 1.0), silence(1.0), speech(0.3, 1.0)].concat();
+    let mut last = None;
+    for chunk in audio.chunks(1_600) {
+        if let Some(text) = engine.push_audio(chunk).unwrap() {
+            last = Some((text, engine.settled_len()));
+        }
+    }
+    let (text, settled) = last.unwrap();
+    assert_eq!(text, "w20 w30");
+    assert_eq!(&text[..settled], "w20 ");
+    assert_eq!(&text[settled..], "w30");
+}
+
+#[test]
+fn the_settled_length_is_zero_while_only_the_first_segment_is_open() {
+    let (mut engine, _) = engine();
+    let mut last = None;
+    for chunk in speech(0.2, 1.0).chunks(1_600) {
+        if let Some(text) = engine.push_audio(chunk).unwrap() {
+            last = Some((text, engine.settled_len()));
+        }
+    }
+    let (text, settled) = last.unwrap();
+    assert_eq!(text, "w20");
+    assert_eq!(settled, 0);
+}

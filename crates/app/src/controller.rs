@@ -7,7 +7,7 @@ use audio::{Microphone, MicrophoneChoice, Opened};
 use engine::{Engine, EngineError, LanguageMode, UtteranceOptions};
 use platform::{
     Focus, MicrophoneEntry, MicrophoneMenu, Permission, PermissionReport, PermissionStatus,
-    PillError, PillNotice, PillState, Platform, Sound, Status, TriggerEvent, TriggerKey,
+    PartialText, PillError, PillNotice, PillState, Platform, Sound, Status, TriggerEvent, TriggerKey,
     TriggerSink, TriggerState,
 };
 use store::Kind;
@@ -110,9 +110,9 @@ pub struct Controller<P, E, M> {
     quick_note: bool,
     last_tap: Option<Instant>,
     hide_at: Option<Instant>,
-    shown_partial: Option<String>,
+    shown_partial: Option<PartialText>,
     notice_until: Option<Instant>,
-    held_partial: Option<String>,
+    held_partial: Option<PartialText>,
     watch: Option<PermissionWatch>,
     shown_microphones: Option<MicrophoneMenu>,
     choice: MicrophoneChoice,
@@ -473,9 +473,9 @@ impl<P: Platform, E: Engine + Send + 'static, M: Microphone> Controller<P, E, M>
             && now >= until
         {
             self.notice_until = None;
-            if let Some(text) = self.held_partial.take() {
-                self.shown_partial = Some(text.clone());
-                self.platform.show_pill(PillState::Partial(text));
+            if let Some(partial) = self.held_partial.take() {
+                self.shown_partial = Some(partial.clone());
+                self.platform.show_pill(PillState::Partial(partial));
             }
         }
         if let Some(hide_at) = self.hide_at
@@ -601,27 +601,35 @@ impl<P: Platform, E: Engine + Send + 'static, M: Microphone> Controller<P, E, M>
         if !matches!(self.state, State::Listening { .. } | State::EndingHandsFree) {
             return;
         }
-        match self.with_engine(|engine| engine.push_audio(samples)) {
-            Ok(Some(text)) => self.show_partial(text),
+        let pushed = self.with_engine(|engine| {
+            engine
+                .push_audio(samples)
+                .map(|text| text.map(|text| (text, engine.settled_len())))
+        });
+        match pushed {
+            Ok(Some((text, settled))) => self.show_partial(text, settled),
             Ok(None) => {}
             Err(error) => tracing::warn!(%error, "decoding failed while listening"),
         }
     }
 
-    fn show_partial(&mut self, text: String) {
+    fn show_partial(&mut self, text: String, settled: usize) {
+        let lead = text.len() - text.trim_start().len();
+        let settled = settled.saturating_sub(lead);
         let text = text.trim().to_owned();
-        if text.is_empty() || self.shown_partial.as_deref() == Some(text.as_str()) {
+        let partial = PartialText::new(text.clone(), settled);
+        if text.is_empty() || self.shown_partial.as_ref() == Some(&partial) {
             return;
         }
         if self
             .notice_until
             .is_some_and(|until| Instant::now() < until)
         {
-            self.held_partial = Some(text);
+            self.held_partial = Some(partial);
             return;
         }
-        self.shown_partial = Some(text.clone());
-        self.platform.show_pill(PillState::Partial(text));
+        self.shown_partial = Some(partial.clone());
+        self.platform.show_pill(PillState::Partial(partial));
     }
 
     fn fail(&mut self, error: PillError) {

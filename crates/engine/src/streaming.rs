@@ -26,6 +26,7 @@ struct OpenUtterance {
     in_speech: bool,
     silent: usize,
     since_partial: usize,
+    settled_len: usize,
     locked: Vec<LockedSegment>,
     recent: VecDeque<(usize, f32)>,
 }
@@ -39,6 +40,7 @@ impl OpenUtterance {
             in_speech: false,
             silent: 0,
             since_partial: 0,
+            settled_len: 0,
             locked: Vec::new(),
             recent: VecDeque::with_capacity(CUT_SEARCH_WINDOWS + 1),
         }
@@ -146,7 +148,7 @@ impl OpenUtterance {
         }
     }
 
-    fn text_with(&self, open: &str) -> String {
+    fn text_with(&mut self, open: &str) -> String {
         let mut text = String::new();
         let mut separator = "";
         for segment in &self.locked {
@@ -154,8 +156,10 @@ impl OpenUtterance {
             text.push_str(&segment.text);
             separator = if segment.forced { "" } else { " " };
         }
+        self.settled_len = text.len();
         if !open.is_empty() {
             text.push_str(separator);
+            self.settled_len = text.len();
             text.push_str(open);
         }
         text
@@ -220,6 +224,12 @@ impl<R: Recognizer, D: SpeechDetector> Engine for StreamingEngine<R, D> {
 
     fn push_tail(&mut self, samples: &[f32]) -> Result<(), EngineError> {
         self.push(samples, false).map(drop)
+    }
+
+    fn settled_len(&self) -> usize {
+        self.utterance
+            .as_ref()
+            .map_or(0, |utterance| utterance.settled_len)
     }
 
     fn finish_utterance(&mut self) -> Result<String, EngineError> {

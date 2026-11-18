@@ -292,7 +292,7 @@ fn pill_follows_listening_partial_transcribing_then_hides() {
         c.platform().pills(),
         [
             PillState::Listening,
-            PillState::Partial("สวัส".to_owned()),
+            PillState::partial("สวัส"),
             PillState::Transcribing
         ]
     );
@@ -329,8 +329,8 @@ fn repeated_partial_text_is_not_shown_twice() {
         c.platform().pills(),
         [
             PillState::Listening,
-            PillState::Partial("สวัส".to_owned()),
-            PillState::Partial("สวัสดี".to_owned())
+            PillState::partial("สวัส"),
+            PillState::partial("สวัสดี")
         ]
     );
 }
@@ -454,7 +454,7 @@ fn backlog_of_audio_costs_one_decode_and_does_not_delay_the_release() {
 
     assert_eq!(c.engine().pushed_samples(), 7 * 1_600);
     assert_eq!(c.engine().push_count(), 2);
-    assert_eq!(c.platform().pills()[1], PillState::Partial("a".to_owned()));
+    assert_eq!(c.platform().pills()[1], PillState::partial("a"));
 }
 
 fn escape(c: &mut TestController, at: Instant) {
@@ -581,7 +581,7 @@ fn hands_free_survives_very_long_speech() {
     assert!(c.microphone().is_capturing());
     assert_eq!(
         c.platform().pills().last(),
-        Some(&PillState::Partial("สวัส".to_owned()))
+        Some(&PillState::partial("สวัส"))
     );
     assert!(c.platform().pastes().is_empty());
 
@@ -1259,4 +1259,20 @@ fn quit_waits_for_the_transcription_in_flight_and_stops_the_loop() {
     ]);
 
     assert_eq!(c.platform().pastes(), ["วางแล้ว"]);
+}
+
+#[test]
+fn the_pill_carries_the_settled_prefix_of_a_partial() {
+    let mut engine = FakeEngine::new(["สวัสดี ครับ"], "x").settled_len_of_partials("สวัสดี ".len());
+    engine.load().unwrap();
+    let mut c = Controller::new(FakePlatform::new(), engine, FakeMicrophone::new(), config());
+    let t0 = Instant::now();
+
+    hold(&mut c, t0);
+    c.handle(Input::Audio(vec![0.0; 1_600]));
+
+    let Some(PillState::Partial(partial)) = c.platform().pills().get(1) else {
+        panic!("expected a Partial on the Pill");
+    };
+    assert_eq!(partial.split(), ("สวัสดี ", "ครับ"));
 }

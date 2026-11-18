@@ -15,6 +15,7 @@ pub struct FakeEngine {
     cancel_count: usize,
     load_fails: bool,
     load_gate: Option<Receiver<()>>,
+    settled: usize,
 }
 
 pub struct LoadGate(Sender<()>);
@@ -42,6 +43,7 @@ impl FakeEngine {
             cancel_count: 0,
             load_fails: false,
             load_gate: None,
+            settled: 0,
         }
     }
 
@@ -49,6 +51,11 @@ impl FakeEngine {
         let (open, gate) = mpsc::channel();
         self.load_gate = Some(gate);
         (self, LoadGate(open))
+    }
+
+    pub fn settled_len_of_partials(mut self, settled: usize) -> Self {
+        self.settled = settled;
+        self
     }
 
     pub fn failing_load(mut self) -> Self {
@@ -115,6 +122,10 @@ impl Engine for FakeEngine {
         self.pushed_samples += samples.len();
         self.push_count += 1;
         Ok(pending.pop_front())
+    }
+
+    fn settled_len(&self) -> usize {
+        self.settled
     }
 
     fn finish_utterance(&mut self) -> Result<String, EngineError> {

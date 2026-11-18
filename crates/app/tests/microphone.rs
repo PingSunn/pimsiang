@@ -296,6 +296,6 @@ fn the_fallback_notice_stays_until_it_has_been_readable_for_a_moment() {
 
     assert_eq!(
         c.platform().pills().last(),
-        Some(&PillState::Partial("สวัส".to_owned()))
+        Some(&PillState::partial("สวัส"))
     );
 }

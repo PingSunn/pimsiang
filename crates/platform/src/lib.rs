@@ -207,14 +207,57 @@ pub struct MicrophoneMenu {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PartialText {
+    pub text: String,
+    pub settled: usize,
+}
+
+impl PartialText {
+    pub fn new(text: impl Into<String>, settled: usize) -> Self {
+        Self {
+            text: text.into(),
+            settled,
+        }
+    }
+
+    pub fn split(&self) -> (&str, &str) {
+        let mut at = self.settled.min(self.text.len());
+        while !self.text.is_char_boundary(at) {
+            at -= 1;
+        }
+        self.text.split_at(at)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PillState {
     Listening,
     LoadingModel,
-    Partial(String),
+    Partial(PartialText),
     Transcribing,
     Notice(PillNotice),
     Error(PillError),
     Hidden,
+}
+
+impl PillState {
+    pub fn partial(text: &str) -> Self {
+        Self::Partial(PartialText::new(text, 0))
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PillAction {
+    OpenSettings(Permission),
+}
+
+pub fn pill_click(state: &PillState) -> Option<PillAction> {
+    match state {
+        PillState::Error(PillError::PermissionMissing(permission)) => {
+            Some(PillAction::OpenSettings(*permission))
+        }
+        _ => None,
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -246,4 +289,58 @@ pub trait Platform {
     fn open_settings(&mut self, permission: Permission);
     fn show_permissions(&mut self, report: PermissionReport);
     fn show_microphones(&mut self, menu: MicrophoneMenu);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_partial_splits_into_settled_and_uncertain_text() {
+        let partial = PartialText::new("ช่วยส่งรายงาน สามโมง", "ช่วยส่งรายงาน ".len());
+        assert_eq!(partial.split(), ("ช่วยส่งรายงาน ", "สามโมง"));
+    }
+
+    #[test]
+    fn nothing_settled_means_the_whole_text_is_uncertain() {
+        assert_eq!(PartialText::new("สวัส", 0).split(), ("", "สวัส"));
+    }
+
+    #[test]
+    fn everything_settled_leaves_no_uncertain_tail() {
+        let text = "สวัสดี";
+        assert_eq!(PartialText::new(text, text.len()).split(), (text, ""));
+    }
+
+    #[test]
+    fn a_settled_length_past_the_end_is_clamped() {
+        assert_eq!(PartialText::new("abc", 99).split(), ("abc", ""));
+    }
+
+    #[test]
+    fn a_settled_length_inside_a_character_moves_back_to_a_boundary() {
+        assert_eq!(PartialText::new("สว", 4).split(), ("ส", "ว"));
+    }
+
+    #[test]
+    fn only_a_missing_permission_makes_the_pill_clickable() {
+        for permission in Permission::ALL {
+            assert_eq!(
+                pill_click(&PillState::Error(PillError::PermissionMissing(permission))),
+                Some(PillAction::OpenSettings(permission))
+            );
+        }
+        for state in [
+            PillState::Listening,
+            PillState::LoadingModel,
+            PillState::partial("a"),
+            PillState::Transcribing,
+            PillState::Notice(PillNotice::QuickNoteSaved),
+            PillState::Error(PillError::MicrophoneUnavailable),
+            PillState::Error(PillError::PasteFailed),
+            PillState::Hidden,
+        ] {
+            assert_eq!(pill_click(&state), None);
+        }
+    }
 }

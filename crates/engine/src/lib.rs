@@ -85,6 +85,9 @@ pub trait Engine {
     fn is_loaded(&self) -> bool;
     fn start_utterance(&mut self, options: UtteranceOptions) -> Result<(), EngineError>;
     fn push_audio(&mut self, samples: &[f32]) -> Result<Option<String>, EngineError>;
+    fn settled_len(&self) -> usize {
+        0
+    }
     fn push_tail(&mut self, samples: &[f32]) -> Result<(), EngineError> {
         self.push_audio(samples).map(drop)
     }

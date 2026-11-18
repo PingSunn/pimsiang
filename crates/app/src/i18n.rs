@@ -328,7 +328,7 @@ impl Language {
             PillState::Hidden => None,
             PillState::Listening => Some(self.pill_listening().to_owned()),
             PillState::LoadingModel => Some(self.pill_loading_model().to_owned()),
-            PillState::Partial(text) => Some(text.clone()),
+            PillState::Partial(partial) => Some(partial.text.clone()),
             PillState::Transcribing => Some(self.pill_transcribing().to_owned()),
             PillState::Notice(notice) => Some(self.pill_notice(*notice).to_owned()),
             PillState::Error(error) => Some(self.pill_error(*error)),

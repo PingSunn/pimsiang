@@ -323,3 +323,27 @@ fn a_row_with_an_unknown_kind_is_skipped_and_the_rest_is_still_listed() {
         Some("ปกติ".to_owned())
     );
 }
+
+#[test]
+fn counting_matches_what_a_search_finds() {
+    let (_dir, history) = open();
+    history.add("ส่งรายงานให้ทีม", 1, Kind::Pasted, None).unwrap();
+    history.add("ร่างรายงานไตรมาส", 2, Kind::Note, None).unwrap();
+    history.add("deploy after review", 3, Kind::Pasted, None).unwrap();
+    history.add("100% done", 4, Kind::Pasted, None).unwrap();
+
+    assert_eq!(history.total().unwrap(), 4);
+    assert_eq!(history.count("").unwrap(), 4);
+    assert_eq!(history.count("รายงาน").unwrap(), 2);
+    assert_eq!(history.count("DEPLOY").unwrap(), 1);
+    assert_eq!(history.count("ทีม").unwrap(), 1);
+    assert_eq!(history.count("%").unwrap(), 1);
+    assert_eq!(history.count("ไม่มีคำนี้").unwrap(), 0);
+    for query in ["", "รายงาน", "DEPLOY", "ทีม", "%"] {
+        assert_eq!(
+            history.count(query).unwrap(),
+            history.search(query, 0, 100).unwrap().len(),
+            "{query}"
+        );
+    }
+}

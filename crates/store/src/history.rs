@@ -168,6 +168,34 @@ impl History {
         collect(rows)
     }
 
+    pub fn total(&self) -> Result<usize, HistoryError> {
+        let count: i64 = self
+            .connection
+            .query_row("SELECT COUNT(*) FROM entries", [], |row| row.get(0))?;
+        Ok(count as usize)
+    }
+
+    pub fn count(&self, query: &str) -> Result<usize, HistoryError> {
+        let query = query.trim();
+        if query.is_empty() {
+            return self.total();
+        }
+        let count: i64 = if query.chars().count() < TRIGRAM_MIN_CHARS {
+            self.connection.query_row(
+                "SELECT COUNT(*) FROM entries WHERE text LIKE ?1 ESCAPE '\\'",
+                params![format!("%{}%", escape_like(query))],
+                |row| row.get(0),
+            )?
+        } else {
+            self.connection.query_row(
+                "SELECT COUNT(*) FROM entries_fts WHERE entries_fts MATCH ?1",
+                params![format!("\"{}\"", query.replace('"', "\"\""))],
+                |row| row.get(0),
+            )?
+        };
+        Ok(count as usize)
+    }
+
     pub fn delete(&self, id: i64) -> Result<bool, HistoryError> {
         Ok(self
             .connection

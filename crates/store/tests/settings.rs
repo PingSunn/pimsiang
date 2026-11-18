@@ -113,3 +113,71 @@ fn an_unreadable_check_time_is_ignored() {
     assert_eq!(settings.last_update_check, None);
     assert_eq!(settings.microphone.as_deref(), Some("usb"));
 }
+
+#[test]
+fn two_threads_updating_different_keys_both_survive() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("settings");
+    let rounds = 50;
+
+    std::thread::scope(|scope| {
+        scope.spawn(|| {
+            for round in 0..rounds {
+                Settings::update(&path, |settings| {
+                    settings.microphone = Some(format!("mic-{round}"));
+                })
+                .unwrap();
+            }
+        });
+        scope.spawn(|| {
+            for round in 0..rounds {
+                Settings::update(&path, |settings| {
+                    settings.last_update_check = Some(round);
+                })
+                .unwrap();
+            }
+        });
+    });
+
+    let settings = Settings::load(&path);
+    assert_eq!(settings.microphone, Some(format!("mic-{}", rounds - 1)));
+    assert_eq!(settings.last_update_check, Some(rounds - 1));
+}
+
+#[test]
+fn update_changes_one_key_and_keeps_the_others() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("settings");
+    Settings {
+        microphone: Some("usb".to_owned()),
+        ..Settings::default()
+    }
+    .save(&path)
+    .unwrap();
+
+    let saved = Settings::update(&path, |settings| {
+        settings.dismissed_update = Some("0.2.0".to_owned());
+    })
+    .unwrap();
+
+    assert_eq!(saved, Settings::load(&path));
+    assert_eq!(saved.microphone.as_deref(), Some("usb"));
+    assert_eq!(saved.dismissed_update.as_deref(), Some("0.2.0"));
+}
+
+#[test]
+fn no_temporary_file_is_left_behind() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("settings");
+
+    Settings::update(&path, |settings| {
+        settings.microphone = Some("usb".to_owned())
+    })
+    .unwrap();
+
+    let names: Vec<_> = std::fs::read_dir(dir.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert_eq!(names, vec![std::ffi::OsString::from("settings")]);
+}

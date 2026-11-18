@@ -1,5 +1,10 @@
 use std::io::{self, Write};
 use std::path::Path;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static WRITE_LOCK: Mutex<()> = Mutex::new(());
+static WRITE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 const MICROPHONE_KEY: &str = "microphone=";
 const LAST_UPDATE_CHECK_KEY: &str = "last_update_check=";
@@ -48,6 +53,23 @@ impl Settings {
     }
 
     pub fn save(&self, path: &Path) -> io::Result<()> {
+        let _guard = WRITE_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.write(path)
+    }
+
+    pub fn update(path: &Path, change: impl FnOnce(&mut Self)) -> io::Result<Self> {
+        let _guard = WRITE_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut settings = Self::load(path);
+        change(&mut settings);
+        settings.write(path)?;
+        Ok(settings)
+    }
+
+    fn write(&self, path: &Path) -> io::Result<()> {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
         }
@@ -75,7 +97,11 @@ impl Settings {
                 text.push('\n');
             }
         }
-        let temporary = path.with_extension("tmp");
+        let temporary = path.with_extension(format!(
+            "{}.{}.tmp",
+            std::process::id(),
+            WRITE_COUNTER.fetch_add(1, Ordering::Relaxed)
+        ));
         let mut file = std::fs::File::create(&temporary)?;
         file.write_all(text.as_bytes())?;
         file.sync_all()?;

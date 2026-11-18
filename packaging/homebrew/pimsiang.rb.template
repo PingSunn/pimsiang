@@ -16,6 +16,10 @@ cask "pimsiang" do
 
   zap trash: [
     "~/Library/Application Support/PimSiang",
+    "~/Library/Caches/com.pingsunn.pimsiang",
+    "~/Library/HTTPStorages/com.pingsunn.pimsiang",
     "~/Library/Logs/PimSiang",
+    "~/Library/Preferences/com.pingsunn.pimsiang.plist",
+    "~/Library/Saved Application State/com.pingsunn.pimsiang.savedState",
   ]
 end

@@ -16,6 +16,7 @@ fn the_microphone_survives_a_restart() {
     let path = dir.path().join("nested/settings");
     let settings = Settings {
         microphone: Some("coreaudio:BuiltInMicrophoneDevice".to_owned()),
+        ..Settings::default()
     };
 
     settings.save(&path).unwrap();
@@ -29,6 +30,7 @@ fn choosing_the_system_default_clears_the_stored_microphone() {
     let path = dir.path().join("settings");
     Settings {
         microphone: Some("usb".to_owned()),
+        ..Settings::default()
     }
     .save(&path)
     .unwrap();
@@ -66,6 +68,7 @@ fn saving_keeps_keys_it_does_not_know() {
 
     Settings {
         microphone: Some("usb".to_owned()),
+        ..Settings::default()
     }
     .save(&path)
     .unwrap();
@@ -81,4 +84,32 @@ fn saving_keeps_keys_it_does_not_know() {
     let text = std::fs::read_to_string(&path).unwrap();
     assert!(text.contains("theme=dark\n"));
     assert!(!text.contains("microphone="));
+}
+
+#[test]
+fn the_update_state_survives_a_restart() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("settings");
+    let settings = Settings {
+        microphone: Some("usb".to_owned()),
+        last_update_check: Some(1_700_000_000),
+        available_update: Some("0.2.0".to_owned()),
+        dismissed_update: Some("0.1.5".to_owned()),
+    };
+
+    settings.save(&path).unwrap();
+
+    assert_eq!(Settings::load(&path), settings);
+}
+
+#[test]
+fn an_unreadable_check_time_is_ignored() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("settings");
+    std::fs::write(&path, "last_update_check=yesterday\nmicrophone=usb\n").unwrap();
+
+    let settings = Settings::load(&path);
+
+    assert_eq!(settings.last_update_check, None);
+    assert_eq!(settings.microphone.as_deref(), Some("usb"));
 }

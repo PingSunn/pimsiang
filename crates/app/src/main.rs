@@ -12,6 +12,10 @@ mod settings_window;
 mod theme;
 #[cfg(target_os = "macos")]
 mod tray;
+#[cfg(all(target_os = "macos", test))]
+mod ui_snapshots;
+#[cfg(all(target_os = "macos", test))]
+mod ui_tests;
 
 #[cfg(target_os = "macos")]
 mod macos {

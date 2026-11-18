@@ -234,3 +234,21 @@ fn the_texts_name_the_configured_trigger_key() {
         assert!(done.footer.contains("Right Control"));
     }
 }
+
+#[test]
+fn progress_counts_the_model_and_every_granted_permission() {
+    let partial = report(GRANTED, UNKNOWN, DENIED);
+    let downloading = view_with(
+        Language::English,
+        TriggerKey::RightOption,
+        &partial,
+        true,
+        &ModelStatus::Downloading { done: 1, total: 4 },
+    );
+    assert_eq!((downloading.steps_done, downloading.steps_total), (1, 4));
+    assert_eq!(downloading.progress, "1 of 4 steps ready");
+
+    let ready = view(Language::Thai, &report(GRANTED, GRANTED, GRANTED), true);
+    assert_eq!((ready.steps_done, ready.steps_total), (4, 4));
+    assert_eq!(ready.progress, "พร้อมแล้ว 4 จาก 4 ขั้นตอน");
+}

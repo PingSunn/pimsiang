@@ -14,6 +14,8 @@ use crate::theme;
 
 const ANUPHAN: &[u8] = include_bytes!("../assets/Anuphan[wght].ttf");
 const FONT_NAME: &str = "Anuphan";
+const MIN_WIDTH: f64 = 400.0;
+const MIN_HEIGHT: f64 = 360.0;
 
 pub struct Surface {
     window: Arc<Window>,
@@ -33,6 +35,11 @@ impl Surface {
             .with_title(title)
             .with_inner_size(size)
             .with_resizable(resizable);
+        let attributes = if resizable {
+            attributes.with_min_inner_size(LogicalSize::new(MIN_WIDTH, MIN_HEIGHT))
+        } else {
+            attributes
+        };
         let window = Arc::new(
             event_loop
                 .create_window(attributes)
@@ -122,7 +129,7 @@ impl Surface {
     }
 }
 
-fn fonts() -> FontDefinitions {
+pub(crate) fn fonts() -> FontDefinitions {
     let mut definitions = FontDefinitions::default();
     definitions.font_data.insert(
         FONT_NAME.to_owned(),

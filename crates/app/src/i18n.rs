@@ -298,6 +298,29 @@ impl Language {
         self.pick("Changes apply straight away.", "การเปลี่ยนแปลงมีผลทันที")
     }
 
+    pub fn section_general(self) -> &'static str {
+        self.pick("General", "ทั่วไป")
+    }
+
+    pub fn section_trigger(self) -> &'static str {
+        self.pick("Trigger", "ปุ่มสั่งพูด")
+    }
+
+    pub fn section_sounds_clipboard(self) -> &'static str {
+        self.pick("Sounds & Clipboard", "เสียงและคลิปบอร์ด")
+    }
+
+    pub fn history_heading(self) -> &'static str {
+        self.pick("History", "ประวัติ")
+    }
+
+    pub fn setup_progress(self, done: usize, total: usize) -> String {
+        match self {
+            Self::English => format!("{done} of {total} steps ready"),
+            Self::Thai => format!("พร้อมแล้ว {done} จาก {total} ขั้นตอน"),
+        }
+    }
+
     pub fn settings_trigger_key(self) -> &'static str {
         self.pick("Trigger key", "ปุ่มสั่งพูด")
     }

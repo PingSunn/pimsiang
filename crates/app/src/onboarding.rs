@@ -40,6 +40,9 @@ pub struct View {
     pub model: Option<ModelRow>,
     pub rows: Vec<Row>,
     pub done: bool,
+    pub steps_done: usize,
+    pub steps_total: usize,
+    pub progress: String,
     pub footer: String,
 }
 
@@ -116,6 +119,12 @@ pub fn view(
         })
         .collect();
     let done = report.all_granted() && *model == ModelStatus::Ready;
+    let steps_total = Permission::ALL.len() + 1;
+    let steps_done = Permission::ALL
+        .into_iter()
+        .filter(|permission| report.status(*permission) == PermissionStatus::Granted)
+        .count()
+        + usize::from(*model == ModelStatus::Ready);
     View {
         title: language.window_title(),
         heading: language.heading(),
@@ -128,6 +137,9 @@ pub fn view(
         model: model_row(language, model),
         rows,
         done,
+        steps_done,
+        steps_total,
+        progress: language.setup_progress(steps_done, steps_total),
         footer: if done {
             language.all_set(key)
         } else {

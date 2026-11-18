@@ -9,7 +9,10 @@ use platform::{MicrophoneMenu, PermissionReport, Status};
 use tray_icon::menu::{CheckMenuItem, Menu, MenuId, MenuItem, Submenu};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
 
-const ICON_SIZE: u32 = 44;
+const GLYPH: &[u8] = include_bytes!("../assets/menubar/glyph.png");
+const GLYPH_LISTENING: &[u8] = include_bytes!("../assets/menubar/glyph-listening.png");
+const GLYPH_TRANSCRIBING: &[u8] = include_bytes!("../assets/menubar/glyph-transcribing.png");
+const GLYPH_ATTENTION: &[u8] = include_bytes!("../assets/menubar/glyph-attention.png");
 
 pub struct MenuBar {
     tray: TrayIcon,
@@ -73,7 +76,7 @@ impl MenuBar {
         let tray = TrayIconBuilder::new()
             .with_menu(Box::new(menu.clone()))
             .with_tooltip("PimSiang")
-            .with_icon(icon_for(Status::Ready, false)?)
+            .with_icon_templated(icon_for(Status::Ready, false)?)
             .build()
             .context("creating the menu bar icon")?;
         Ok(Self {
@@ -169,7 +172,8 @@ impl MenuBar {
     fn refresh(&self) -> Result<()> {
         let status = self.status.get();
         let warning = self.warning.get() && status == Status::Ready;
-        self.tray.set_icon(Some(icon_for(status, warning)?))?;
+        self.tray
+            .set_icon_templated(Some(icon_for(status, warning)?))?;
         self.tray
             .set_tooltip(Some(self.language.tooltip(status, warning)))?;
         Ok(())
@@ -215,33 +219,18 @@ pub fn open_folder(path: &PathBuf) -> Result<()> {
 }
 
 fn icon_for(status: Status, warning: bool) -> Result<Icon> {
-    let (r, g, b) = if warning {
-        (255, 204, 0)
+    let bytes = if warning {
+        GLYPH_ATTENTION
     } else {
         match status {
-            Status::Ready => (142, 142, 147),
-            Status::Listening => (255, 59, 48),
-            Status::Transcribing => (255, 159, 10),
+            Status::Ready => GLYPH,
+            Status::Listening => GLYPH_LISTENING,
+            Status::Transcribing => GLYPH_TRANSCRIBING,
         }
     };
-    let centre = (ICON_SIZE as f32 - 1.0) / 2.0;
-    let radius = ICON_SIZE as f32 * 0.32;
-    let mut rgba = Vec::with_capacity((ICON_SIZE * ICON_SIZE * 4) as usize);
-    for y in 0..ICON_SIZE {
-        for x in 0..ICON_SIZE {
-            let distance = ((x as f32 - centre).powi(2) + (y as f32 - centre).powi(2)).sqrt();
-            let coverage = (radius + 0.5 - distance).clamp(0.0, 1.0);
-            let mark = warning && exclamation_mark(x, y);
-            let (r, g, b) = if mark { (60, 40, 0) } else { (r, g, b) };
-            rgba.extend_from_slice(&[r, g, b, (coverage * 255.0) as u8]);
-        }
-    }
-    Icon::from_rgba(rgba, ICON_SIZE, ICON_SIZE).context("building the menu bar icon image")
-}
-
-fn exclamation_mark(x: u32, y: u32) -> bool {
-    let size = ICON_SIZE as f32;
-    let (x, y) = (x as f32 / size, y as f32 / size);
-    let centred = (0.46..=0.54).contains(&x);
-    centred && ((0.28..=0.56).contains(&y) || (0.62..=0.70).contains(&y))
+    let image = image::load_from_memory_with_format(bytes, image::ImageFormat::Png)
+        .context("decoding the menu bar glyph")?
+        .to_rgba8();
+    let (width, height) = image.dimensions();
+    Icon::from_rgba(image.into_raw(), width, height).context("building the menu bar icon image")
 }

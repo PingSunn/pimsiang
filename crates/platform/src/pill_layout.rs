@@ -185,6 +185,26 @@ pub fn notch_frame(
     )
 }
 
+pub fn hint_frame(visible: Rect, pill: Rect, size: Size, gap: f64) -> Rect {
+    let above = pill.top() + gap;
+    let y = if above + size.height <= visible.top() {
+        above
+    } else {
+        pill.y - gap - size.height
+    };
+    Rect::new(
+        fit(
+            pill.centre().0 - size.width / 2.0,
+            size.width,
+            visible.x,
+            visible.width,
+        ),
+        fit(y, size.height, visible.y, visible.height),
+        size.width,
+        size.height,
+    )
+}
+
 pub fn accepts_mouse(placing: bool, click: Option<PillAction>) -> bool {
     placing || click.is_some()
 }
@@ -388,6 +408,26 @@ mod tests {
 
         assert_eq!(frame.centre().0, 1440.0 + 960.0);
         assert_eq!(frame.top(), 950.0);
+    }
+
+    #[test]
+    fn the_hint_sits_above_the_pill_and_flips_below_at_the_top() {
+        let hint = Size::new(380.0, 44.0);
+        let low = Rect::new(620.0, 150.0, 200.0, 44.0);
+        let high = Rect::new(620.0, 826.0, 200.0, 44.0);
+
+        assert_eq!(hint_frame(visible(), low, hint, 10.0).y, 204.0);
+        assert_eq!(hint_frame(visible(), high, hint, 10.0).y, 772.0);
+    }
+
+    #[test]
+    fn the_hint_stays_on_screen_beside_an_edge() {
+        let hint = Size::new(380.0, 44.0);
+        let corner = Rect::new(0.0, 70.0, 200.0, 44.0);
+
+        let frame = hint_frame(visible(), corner, hint, 10.0);
+
+        assert_eq!(frame.x, 0.0);
     }
 
     #[test]

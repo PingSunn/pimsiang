@@ -37,8 +37,14 @@ impl Preferences {
     }
 
     pub fn apply(&self, settings: &mut Settings) {
+        self.apply_keeping_language(settings, false);
+    }
+
+    pub fn apply_keeping_language(&self, settings: &mut Settings, keep_language: bool) {
         settings.trigger_key = Some(self.trigger_key.name().to_owned());
-        settings.language = Some(self.language.name().to_owned());
+        if !keep_language {
+            settings.language = Some(self.language.name().to_owned());
+        }
         settings.sounds = Some(self.sounds);
         settings.clipboard_restore = Some(self.clipboard_restore);
         settings.launch_at_login = Some(self.launch_at_login);

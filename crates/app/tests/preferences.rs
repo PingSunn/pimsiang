@@ -59,3 +59,21 @@ fn applying_preferences_keeps_the_microphone_and_update_state() {
     assert_eq!(settings.microphone.as_deref(), Some("usb"));
     assert_eq!(settings.dismissed_update.as_deref(), Some("0.2.0"));
 }
+
+#[test]
+fn a_language_override_is_not_written_to_the_settings() {
+    let mut settings = Settings {
+        language: Some("th-TH".to_owned()),
+        ..Settings::default()
+    };
+    let preferences = Preferences {
+        language: LanguageMode::ThMix,
+        sounds: false,
+        ..Preferences::default()
+    };
+
+    preferences.apply_keeping_language(&mut settings, true);
+
+    assert_eq!(settings.language.as_deref(), Some("th-TH"));
+    assert_eq!(settings.sounds, Some(false));
+}

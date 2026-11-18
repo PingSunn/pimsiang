@@ -100,6 +100,7 @@ mod macos {
         history: Option<Arc<HistoryService>>,
         history_window: Option<HistoryWindow>,
         preferences: Preferences,
+        language_overridden: bool,
         settings_window: Option<SettingsWindow>,
     }
 
@@ -170,9 +171,16 @@ mod macos {
                     }
                 }
             }
+            let keep_language =
+                self.language_overridden && changed.language == self.preferences.language;
+            if !keep_language {
+                self.language_overridden = false;
+            }
             self.preferences = changed;
             if let Some(path) = &self.settings_path
-                && let Err(error) = Settings::update(path, |settings| changed.apply(settings))
+                && let Err(error) = Settings::update(path, |settings| {
+                    changed.apply_keeping_language(settings, keep_language)
+                })
             {
                 tracing::warn!(%error, "cannot save the settings");
             }
@@ -536,6 +544,7 @@ mod macos {
         let mut preferences = settings_path()
             .map(|path| Preferences::from_settings(&Settings::load(&path)))
             .unwrap_or_default();
+        let language_overridden = args.language.is_some();
         if let Some(language) = args.language {
             preferences.language = language;
         }
@@ -603,6 +612,7 @@ mod macos {
             history: history.clone(),
             history_window: None,
             preferences,
+            language_overridden,
             settings_window: None,
         };
         if model.download {
@@ -666,13 +676,14 @@ mod macos {
 
     fn start_at_login(wanted: bool) -> bool {
         let first_run =
-            settings_path().is_some_and(|path| Settings::load(&path).launch_at_login.is_none());
+            settings_path().is_some_and(|path| !Settings::load(&path).login_item_decided());
         if first_run {
             match login_item::set(wanted) {
                 Ok(()) => {
                     if let Some(path) = settings_path()
                         && let Err(error) = Settings::update(&path, |settings| {
-                            settings.launch_at_login = Some(wanted)
+                            settings.launch_at_login = Some(wanted);
+                            settings.login_item_decided = Some(true);
                         })
                     {
                         tracing::warn!(%error, "cannot save the login item choice");

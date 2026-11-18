@@ -274,3 +274,120 @@ fn the_recorder_stores_the_text_then_tells_the_window_to_reload() {
 
     assert_eq!(wait.recv_timeout(Duration::from_secs(5)).unwrap(), 1);
 }
+
+fn bangkok() -> chrono::FixedOffset {
+    chrono::FixedOffset::east_opt(7 * 3600).unwrap()
+}
+
+fn at(day: u32, hour: u32, minute: u32) -> i64 {
+    use chrono::TimeZone;
+    bangkok()
+        .with_ymd_and_hms(2025, 11, day, hour, minute, 0)
+        .unwrap()
+        .timestamp()
+}
+
+fn dated(id: i64, created: i64) -> store::Entry {
+    store::Entry {
+        id,
+        text: format!("entry {id}"),
+        created,
+        kind: Kind::Pasted,
+        model_id: None,
+    }
+}
+
+#[test]
+fn entries_are_grouped_under_today_yesterday_and_then_dates() {
+    use app::history_view::{Day, group_by_day};
+    let now = at(18, 19, 24);
+    let entries = vec![
+        dated(1, at(18, 13, 13)),
+        dated(2, at(18, 0, 5)),
+        dated(3, at(17, 23, 59)),
+        dated(4, at(17, 9, 31)),
+        dated(5, at(16, 10, 0)),
+    ];
+
+    let groups = group_by_day(&entries, now, bangkok());
+
+    let days: Vec<Day> = groups.iter().map(|group| group.day).collect();
+    let sizes: Vec<usize> = groups.iter().map(|group| group.entries.len()).collect();
+    assert_eq!(
+        days,
+        [
+            Day::Today,
+            Day::Yesterday,
+            Day::On(chrono::NaiveDate::from_ymd_opt(2025, 11, 16).unwrap())
+        ]
+    );
+    assert_eq!(sizes, [2, 2, 1]);
+}
+
+#[test]
+fn the_day_boundary_follows_the_given_zone_not_utc() {
+    use app::history_view::{Day, day_of};
+    let now = at(18, 0, 30);
+
+    assert_eq!(day_of(at(18, 0, 10), now, bangkok()), Some(Day::Today));
+    assert_eq!(day_of(at(17, 23, 50), now, bangkok()), Some(Day::Yesterday));
+    let utc = chrono::FixedOffset::east_opt(0).unwrap();
+    assert_eq!(day_of(at(17, 23, 50), now, utc), Some(Day::Today));
+}
+
+#[test]
+fn no_entries_make_no_groups() {
+    assert!(history_view::group_by_day(&[], at(18, 9, 0), bangkok()).is_empty());
+}
+
+#[test]
+fn a_thai_search_is_highlighted_wherever_it_occurs() {
+    let text = "ช่วยส่งรายงานประจำสัปดาห์ และรายงานผล";
+    let ranges = history_view::match_ranges(text, "รายงาน");
+
+    let found: Vec<&str> = ranges.iter().map(|range| &text[range.clone()]).collect();
+    assert_eq!(found, ["รายงาน", "รายงาน"]);
+}
+
+#[test]
+fn a_highlight_never_splits_a_thai_syllable_from_its_vowel_or_tone_mark() {
+    let text = "ผู้ใช้ที่ไม่มีสิทธิ์";
+    let ranges = history_view::match_ranges(text, "ที");
+    let found: Vec<&str> = ranges.iter().map(|range| &text[range.clone()]).collect();
+    assert_eq!(found, ["ที่"]);
+
+    let ranges = history_view::match_ranges(text, "ผ");
+    let found: Vec<&str> = ranges.iter().map(|range| &text[range.clone()]).collect();
+    assert_eq!(found, ["ผู้"]);
+
+    let ranges = history_view::match_ranges(text, "\u{0E34}");
+    let found: Vec<&str> = ranges.iter().map(|range| &text[range.clone()]).collect();
+    assert_eq!(found, ["สิ", "ธิ์"]);
+}
+
+#[test]
+fn highlighting_ignores_case_and_mixed_scripts() {
+    let text = "ขอ Deploy ขึ้น production";
+    let found: Vec<&str> = history_view::match_ranges(text, "deploy")
+        .iter()
+        .map(|range| &text[range.clone()])
+        .collect();
+    assert_eq!(found, ["Deploy"]);
+    assert!(history_view::match_ranges(text, "").is_empty());
+    assert!(history_view::match_ranges(text, "   ").is_empty());
+    assert!(history_view::match_ranges(text, "ไม่มี").is_empty());
+}
+
+#[test]
+fn highlight_ranges_are_valid_char_boundaries_and_do_not_overlap() {
+    let text = "กกก ก่ก กกกก";
+    for query in ["ก", "กก", "ก่", "่"] {
+        let ranges = history_view::match_ranges(text, query);
+        let mut last_end = 0;
+        for range in ranges {
+            assert!(text.is_char_boundary(range.start) && text.is_char_boundary(range.end));
+            assert!(range.start >= last_end && range.end > range.start);
+            last_end = range.end;
+        }
+    }
+}

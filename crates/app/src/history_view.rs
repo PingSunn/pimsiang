@@ -1,8 +1,10 @@
 use std::sync::Arc;
 
-use chrono::{DateTime, FixedOffset, Local, TimeZone};
+use std::ops::Range;
 
-use store::{HistoryService, Kind};
+use chrono::{DateTime, Datelike, FixedOffset, Local, NaiveDate, Offset, TimeZone};
+
+use store::{Entry, HistoryService, Kind};
 
 pub const PAGE_SIZE: usize = 50;
 
@@ -36,4 +38,138 @@ pub fn recorder(
         let on_recorded = on_recorded.clone();
         service.run(move |_| on_recorded());
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Page {
+    pub entries: Vec<Entry>,
+    pub matched: usize,
+    pub total: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Day {
+    Today,
+    Yesterday,
+    On(NaiveDate),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Group<'a> {
+    pub day: Day,
+    pub entries: &'a [Entry],
+}
+
+pub fn local_offset(at: i64) -> FixedOffset {
+    Local
+        .timestamp_opt(at, 0)
+        .single()
+        .map(|time| time.offset().fix())
+        .unwrap_or_else(|| FixedOffset::east_opt(0).expect("zero is a valid offset"))
+}
+
+fn date_of(created: i64, offset: FixedOffset) -> Option<NaiveDate> {
+    DateTime::from_timestamp(created, 0).map(|time| time.with_timezone(&offset).date_naive())
+}
+
+pub fn day_of(created: i64, now: i64, offset: FixedOffset) -> Option<Day> {
+    let date = date_of(created, offset)?;
+    let today = date_of(now, offset)?;
+    Some(if date == today {
+        Day::Today
+    } else if today.pred_opt() == Some(date) {
+        Day::Yesterday
+    } else {
+        Day::On(date)
+    })
+}
+
+pub fn group_by_day(entries: &[Entry], now: i64, offset: FixedOffset) -> Vec<Group<'_>> {
+    let mut groups: Vec<Group<'_>> = Vec::new();
+    let mut start = 0;
+    let mut current: Option<Day> = None;
+    for (index, entry) in entries.iter().enumerate() {
+        let day = day_of(entry.created, now, offset);
+        if index > 0 && day != current {
+            if let Some(day) = current {
+                groups.push(Group {
+                    day,
+                    entries: &entries[start..index],
+                });
+            }
+            start = index;
+        }
+        current = day;
+    }
+    if let Some(day) = current {
+        groups.push(Group {
+            day,
+            entries: &entries[start..],
+        });
+    }
+    groups
+}
+
+pub fn year_of(now: i64, offset: FixedOffset) -> i32 {
+    date_of(now, offset).map_or(1970, |date| date.year())
+}
+
+pub fn format_time(created: i64, offset: FixedOffset) -> String {
+    DateTime::from_timestamp(created, 0)
+        .map(|time| time.with_timezone(&offset).format("%H:%M").to_string())
+        .unwrap_or_default()
+}
+
+fn is_thai_combining(character: char) -> bool {
+    matches!(character, '\u{0E31}' | '\u{0E34}'..='\u{0E3A}' | '\u{0E47}'..='\u{0E4E}')
+}
+
+fn fold(character: char) -> char {
+    character.to_lowercase().next().unwrap_or(character)
+}
+
+pub fn match_ranges(text: &str, query: &str) -> Vec<Range<usize>> {
+    let needle: Vec<char> = query.trim().chars().map(fold).collect();
+    if needle.is_empty() {
+        return Vec::new();
+    }
+    let hay: Vec<(usize, char)> = text.char_indices().collect();
+    let mut ranges: Vec<Range<usize>> = Vec::new();
+    let mut index = 0;
+    while index + needle.len() <= hay.len() {
+        let hit = needle
+            .iter()
+            .enumerate()
+            .all(|(offset, wanted)| fold(hay[index + offset].1) == *wanted);
+        if !hit {
+            index += 1;
+            continue;
+        }
+        let mut first = index;
+        while first > 0 && is_thai_combining(hay[first].1) {
+            first -= 1;
+        }
+        let mut last = index + needle.len();
+        while last < hay.len() && is_thai_combining(hay[last].1) {
+            last += 1;
+        }
+        let end = hay.get(last).map_or(text.len(), |(byte, _)| *byte);
+        let range = hay[first].0..end;
+        match ranges.last_mut() {
+            Some(previous) if previous.end >= range.start => {
+                previous.end = previous.end.max(range.end);
+            }
+            _ => ranges.push(range),
+        }
+        index = last.max(index + needle.len());
+    }
+    ranges
+}
+
+pub fn thai_month_abbreviation(month: u32) -> &'static str {
+    const MONTHS: [&str; 12] = [
+        "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.",
+        "พ.ย.", "ธ.ค.",
+    ];
+    MONTHS[(month.clamp(1, 12) - 1) as usize]
 }

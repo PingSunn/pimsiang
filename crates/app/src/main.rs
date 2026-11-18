@@ -15,6 +15,7 @@ mod macos {
     use anyhow::{Context, Result};
     use app::controller::{Config, Controller, Input, PermissionCommand};
     use app::i18n::Language;
+    use app::model_download::{self, Manifest, ModelStatus};
     use app::onboarding;
     use app::update;
     use audio::{MicCapture, MicrophoneChoice};
@@ -39,7 +40,7 @@ mod macos {
     #[command(about = "PimSiang: hold Right Option and speak Thai")]
     struct Args {
         #[arg(long, env = "PIMSIANG_MODEL_DIR")]
-        model_dir: PathBuf,
+        model_dir: Option<PathBuf>,
         #[arg(long, default_value = "int8")]
         precision: Precision,
         #[arg(long, default_value = "th-mix")]
@@ -58,6 +59,7 @@ mod macos {
         Sound(Sound),
         Microphones(MicrophoneMenu),
         Update(Option<String>),
+        Model(ModelStatus),
         Menu(MenuEvent),
         Fatal(String),
     }
@@ -70,6 +72,10 @@ mod macos {
         failure: Option<String>,
         language: Language,
         bundled: bool,
+        model: ModelStatus,
+        model_dir: PathBuf,
+        model_prompted: bool,
+        proxy: EventLoopProxy<UserEvent>,
         inputs: Sender<Input>,
         report: Option<PermissionReport>,
         setup: Option<OnboardingWindow>,
@@ -109,7 +115,7 @@ mod macos {
                 accessibility: platform::PermissionStatus::NotDetermined,
                 input_monitoring: platform::PermissionStatus::NotDetermined,
             });
-            onboarding::view(self.language, &report, self.bundled)
+            onboarding::view(self.language, &report, self.bundled, &self.model)
         }
 
         fn on_permissions(&mut self, event_loop: &ActiveEventLoop, report: PermissionReport) {
@@ -123,11 +129,48 @@ mod macos {
             if first && !report.all_granted() {
                 self.open_setup(event_loop);
             }
+            self.refresh_setup();
+        }
+
+        fn refresh_setup(&mut self) {
             if let Some(setup) = &self.setup {
                 setup.request_redraw();
-                self.close_setup_at = report
-                    .all_granted()
-                    .then(|| Instant::now() + SETUP_CLOSE_DELAY);
+                let done = self.report.is_some_and(|report| report.all_granted())
+                    && self.model == ModelStatus::Ready;
+                self.close_setup_at = done.then(|| Instant::now() + SETUP_CLOSE_DELAY);
+            }
+        }
+
+        fn on_model(&mut self, event_loop: &ActiveEventLoop, status: ModelStatus) {
+            let failed = matches!(status, ModelStatus::Failed(_));
+            let ready = status == ModelStatus::Ready;
+            self.model = status;
+            if !ready && (failed || !self.model_prompted) {
+                self.model_prompted = true;
+                self.open_setup(event_loop);
+            }
+            self.refresh_setup();
+        }
+
+        fn start_model_download(&mut self) {
+            self.model = ModelStatus::Downloading {
+                done: 0,
+                total: Manifest::pinned().total_bytes(),
+            };
+            let notify_proxy = self.proxy.clone();
+            let inputs = self.inputs.clone();
+            if let Err(error) =
+                model_download::spawn(self.model_dir.clone(), Manifest::pinned(), move |status| {
+                    if status == ModelStatus::Ready {
+                        let _ = inputs.send(Input::ModelReady);
+                    }
+                    let _ = notify_proxy.send_event(UserEvent::Model(status));
+                })
+            {
+                tracing::error!(%error, "cannot start the Model download");
+                let status = ModelStatus::Failed(error.to_string());
+                self.model = status.clone();
+                let _ = self.proxy.send_event(UserEvent::Model(status));
             }
         }
     }
@@ -171,6 +214,7 @@ mod macos {
                     self.setup = None;
                     self.close_setup_at = None;
                 }
+                Outcome::RetryModel => self.start_model_download(),
                 Outcome::Grant(permission) => {
                     let _ = self
                         .inputs
@@ -205,6 +249,7 @@ mod macos {
                         tracing::warn!(%error, "cannot update the microphone menu");
                     }
                 }
+                UserEvent::Model(status) => self.on_model(event_loop, status),
                 UserEvent::Update(version) => {
                     if let Some(menu_bar) = &self.menu_bar
                         && let Err(error) = menu_bar.show_update(version.as_deref())
@@ -263,7 +308,8 @@ mod macos {
         let args = Args::parse();
         let log_dir = logging::log_dir()?;
         let _guard = logging::init(&log_dir)?;
-        tracing::info!(model_dir = %args.model_dir.display(), "starting PimSiang");
+        let model = ModelSource::choose(&args);
+        tracing::info!(model_dir = %model.dir.display(), download = model.download, "starting PimSiang");
 
         let event_loop = EventLoop::<UserEvent>::with_user_event()
             .with_activation_policy(ActivationPolicy::Accessory)
@@ -281,8 +327,9 @@ mod macos {
             .spawn({
                 let proxy = proxy.clone();
                 let inputs = inputs.clone();
+                let model = model.clone();
                 move || {
-                    if let Err(error) = run_controller(&args, &proxy, inputs, receiver) {
+                    if let Err(error) = run_controller(&args, &model, &proxy, inputs, receiver) {
                         let _ = proxy.send_event(UserEvent::Fatal(format!("{error:#}")));
                     }
                 }
@@ -316,17 +363,53 @@ mod macos {
             bundled: std::env::current_exe()
                 .map(|path| onboarding::is_bundled(&path))
                 .unwrap_or(false),
+            model: ModelStatus::Ready,
+            model_dir: model.dir.clone(),
+            model_prompted: false,
+            proxy: proxy.clone(),
             inputs,
             report: None,
             setup: None,
             close_setup_at: None,
         };
+        if model.download {
+            app.start_model_download();
+        }
         event_loop
             .run_app(&mut app)
             .context("running the event loop")?;
         match app.failure {
             Some(message) => Err(anyhow::anyhow!(message)),
             None => Ok(()),
+        }
+    }
+
+    #[derive(Clone)]
+    struct ModelSource {
+        dir: PathBuf,
+        precision: Precision,
+        download: bool,
+    }
+
+    impl ModelSource {
+        fn choose(args: &Args) -> Self {
+            if let Some(dir) = &args.model_dir {
+                return Self {
+                    dir: dir.clone(),
+                    precision: args.precision,
+                    download: false,
+                };
+            }
+            let home = std::env::var_os("HOME")
+                .map(PathBuf::from)
+                .unwrap_or_default();
+            let dir = model_download::default_dir(&home);
+            let download = !model_download::is_ready(&dir, &Manifest::pinned());
+            Self {
+                dir,
+                precision: Precision::Int8,
+                download,
+            }
         }
     }
 
@@ -337,6 +420,7 @@ mod macos {
 
     fn run_controller(
         args: &Args,
+        model: &ModelSource,
         proxy: &EventLoopProxy<UserEvent>,
         tx: Sender<Input>,
         rx: mpsc::Receiver<Input>,
@@ -363,7 +447,7 @@ mod macos {
                 let _ = microphones_proxy.send_event(UserEvent::Microphones(menu));
             }),
         );
-        let engine = OnnxEngine::new(ModelFiles::new(&args.model_dir, args.precision));
+        let engine = OnnxEngine::new(ModelFiles::new(&model.dir, model.precision));
 
         let trigger_tx = tx.clone();
         let audio_tx = tx.clone();
@@ -391,6 +475,9 @@ mod macos {
                 let _ = trigger_tx.send(Input::Trigger(event));
             })
         });
+        if model.download {
+            controller = controller.model_pending();
+        }
         if let Some(path) = settings_path()
             && let Some(id) = Settings::load(&path).microphone
         {

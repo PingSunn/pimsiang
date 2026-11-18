@@ -135,4 +135,44 @@ impl Language {
     pub fn open_settings(self) -> &'static str {
         self.pick("Open System Settings", "เปิดการตั้งค่าระบบ")
     }
+
+    pub fn model_title(self) -> &'static str {
+        self.pick("Speech model", "โมเดลถอดเสียง")
+    }
+
+    pub fn model_explain(self) -> &'static str {
+        self.pick(
+            "PimSiang downloads its speech model once, about 1 GB. Keep this Mac online. If the download is interrupted it resumes where it stopped.",
+            "PimSiang ดาวน์โหลดโมเดลถอดเสียงครั้งเดียว ขนาดประมาณ 1 GB กรุณาเชื่อมต่ออินเทอร์เน็ตไว้ หากการดาวน์โหลดสะดุดจะต่อจากเดิมได้",
+        )
+    }
+
+    pub fn model_downloading(self, done: u64, total: u64) -> String {
+        let percent = (done * 100).checked_div(total).unwrap_or(0);
+        format!(
+            "{}{} / {} MB ({percent}%)",
+            self.pick("Downloading... ", "กำลังดาวน์โหลด... "),
+            done / 1_000_000,
+            total / 1_000_000,
+        )
+    }
+
+    pub fn model_verifying(self) -> &'static str {
+        self.pick("Checking the download...", "กำลังตรวจสอบไฟล์ที่ดาวน์โหลด...")
+    }
+
+    pub fn model_failed(self, reason: &str) -> String {
+        format!(
+            "{}{reason}",
+            self.pick("Download failed: ", "ดาวน์โหลดไม่สำเร็จ: ")
+        )
+    }
+
+    pub fn model_ready(self) -> &'static str {
+        self.pick("Downloaded and checked", "ดาวน์โหลดและตรวจสอบแล้ว")
+    }
+
+    pub fn model_retry(self) -> &'static str {
+        self.pick("Try again", "ลองอีกครั้ง")
+    }
 }

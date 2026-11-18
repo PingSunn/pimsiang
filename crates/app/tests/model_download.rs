@@ -33,6 +33,8 @@ fn zip_of(entries: &[(&str, &[u8])]) -> Vec<u8> {
     writer.finish().unwrap().into_inner()
 }
 
+type Requests = Mutex<Vec<(String, Option<String>)>>;
+
 #[derive(Default)]
 struct Behaviour {
     fail_next: AtomicUsize,
@@ -42,7 +44,7 @@ struct Behaviour {
 
 struct Server {
     base: String,
-    requests: Arc<Mutex<Vec<(String, Option<String>)>>>,
+    requests: Arc<Requests>,
     behaviour: Arc<Behaviour>,
 }
 
@@ -84,12 +86,7 @@ impl Server {
     }
 }
 
-fn serve(
-    mut stream: TcpStream,
-    files: &[(String, Vec<u8>)],
-    seen: &Mutex<Vec<(String, Option<String>)>>,
-    rules: &Behaviour,
-) {
+fn serve(mut stream: TcpStream, files: &[(String, Vec<u8>)], seen: &Requests, rules: &Behaviour) {
     let mut request = Vec::new();
     let mut buffer = [0u8; 1024];
     while !request.windows(4).any(|window| window == b"\r\n\r\n") {

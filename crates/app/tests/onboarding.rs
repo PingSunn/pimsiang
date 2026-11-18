@@ -1,7 +1,8 @@
 use app::i18n::Language;
 use std::path::Path;
 
-use app::onboarding::{Button, is_bundled, view};
+use app::model_download::ModelStatus;
+use app::onboarding::{Button, is_bundled, view as view_with};
 use platform::{Permission, PermissionReport, PermissionStatus};
 
 fn report(mic: PermissionStatus, ax: PermissionStatus, im: PermissionStatus) -> PermissionReport {
@@ -15,6 +16,10 @@ fn report(mic: PermissionStatus, ax: PermissionStatus, im: PermissionStatus) -> 
 const GRANTED: PermissionStatus = PermissionStatus::Granted;
 const DENIED: PermissionStatus = PermissionStatus::Denied;
 const UNKNOWN: PermissionStatus = PermissionStatus::NotDetermined;
+
+fn view(language: Language, report: &PermissionReport, bundled: bool) -> app::onboarding::View {
+    view_with(language, report, bundled, &ModelStatus::Ready)
+}
 
 fn has_thai(text: &str) -> bool {
     text.chars().any(|c| ('\u{0E00}'..='\u{0E7F}').contains(&c))
@@ -125,4 +130,69 @@ fn a_binary_inside_an_app_bundle_is_bundled() {
         "/Applications/PimSiang.app/Contents/MacOS/pimsiang"
     )));
     assert!(!is_bundled(Path::new("/repo/target/debug/pimsiang")));
+}
+
+fn model_view(language: Language, status: ModelStatus) -> app::onboarding::View {
+    view_with(language, &report(GRANTED, GRANTED, GRANTED), true, &status)
+}
+
+#[test]
+fn a_downloading_model_explains_the_size_and_shows_progress() {
+    let v = model_view(
+        Language::English,
+        ModelStatus::Downloading {
+            done: 250_000_000,
+            total: 1_000_000_000,
+        },
+    );
+    let row = v.model.unwrap();
+    assert!(row.explain.contains("1 GB"));
+    assert!(row.detail.contains("250 / 1000 MB (25%)"));
+    assert_eq!(row.fraction, Some(0.25));
+    assert!(!row.failed);
+    assert!(row.retry.is_none());
+    assert!(!v.done);
+}
+
+#[test]
+fn a_failed_download_shows_the_reason_and_a_retry() {
+    for language in [Language::English, Language::Thai] {
+        let v = model_view(
+            language,
+            ModelStatus::Failed("the server answered 500".to_owned()),
+        );
+        let row = v.model.unwrap();
+        assert!(row.failed);
+        assert!(row.detail.contains("the server answered 500"));
+        assert!(!row.retry.unwrap().is_empty());
+        assert!(!v.done);
+    }
+}
+
+#[test]
+fn onboarding_is_done_only_when_the_model_is_ready_too() {
+    let ready = model_view(Language::English, ModelStatus::Ready);
+    assert!(ready.done);
+    assert!(ready.model.is_none());
+    assert!(!model_view(Language::English, ModelStatus::Verifying).done);
+}
+
+#[test]
+fn model_strings_exist_in_both_languages() {
+    for language in [Language::English, Language::Thai] {
+        let thai = language == Language::Thai;
+        let strings = [
+            language.model_title().to_owned(),
+            language.model_explain().to_owned(),
+            language.model_downloading(1, 2),
+            language.model_verifying().to_owned(),
+            language.model_failed("x"),
+            language.model_ready().to_owned(),
+            language.model_retry().to_owned(),
+        ];
+        for text in strings {
+            assert!(!text.is_empty());
+            assert_eq!(has_thai(&text), thai, "{text}");
+        }
+    }
 }

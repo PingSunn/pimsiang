@@ -18,6 +18,7 @@ pub enum Outcome {
     Idle,
     Close,
     Grant(Permission),
+    RetryModel,
 }
 
 pub struct OnboardingWindow {
@@ -31,7 +32,7 @@ impl OnboardingWindow {
     pub fn open(event_loop: &ActiveEventLoop, title: &str) -> Result<Self> {
         let attributes = Window::default_attributes()
             .with_title(title)
-            .with_inner_size(LogicalSize::new(540.0, 560.0))
+            .with_inner_size(LogicalSize::new(540.0, 680.0))
             .with_resizable(false);
         let window = Arc::new(
             event_loop
@@ -105,9 +106,10 @@ impl OnboardingWindow {
     fn draw(&mut self, view: &View) -> Outcome {
         let raw_input = self.input.take_egui_input(&self.window);
         let mut grant = None;
+        let mut retry = false;
         let output = self
             .context
-            .run_ui(raw_input, |ui| show(ui, view, &mut grant));
+            .run_ui(raw_input, |ui| show(ui, view, &mut grant, &mut retry));
         self.input
             .handle_platform_output(&self.window, output.platform_output);
         let primitives = self
@@ -127,11 +129,12 @@ impl OnboardingWindow {
             .viewport_output
             .get(&ViewportId::ROOT)
             .is_some_and(|viewport| viewport.repaint_delay.is_zero());
-        if repaint_now || grant.is_some() {
+        if repaint_now || grant.is_some() || retry {
             self.window.request_redraw();
         }
         match grant {
             Some(permission) => Outcome::Grant(permission),
+            None if retry => Outcome::RetryModel,
             None => Outcome::Idle,
         }
     }
@@ -153,7 +156,7 @@ fn fonts() -> FontDefinitions {
     definitions
 }
 
-fn show(ui: &mut egui::Ui, view: &View, grant: &mut Option<Permission>) {
+fn show(ui: &mut egui::Ui, view: &View, grant: &mut Option<Permission>, retry: &mut bool) {
     egui::Frame::default().inner_margin(24.0).show(ui, |ui| {
         ui.spacing_mut().item_spacing.y = 10.0;
         ui.label(RichText::new(view.heading).size(26.0).strong());
@@ -166,6 +169,29 @@ fn show(ui: &mut egui::Ui, view: &View, grant: &mut Option<Permission>) {
             );
         }
         ui.add_space(8.0);
+        if let Some(model) = &view.model {
+            egui::Frame::group(ui.style())
+                .inner_margin(14.0)
+                .show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.label(RichText::new(model.title).size(18.0).strong());
+                    ui.label(RichText::new(model.explain).size(14.0));
+                    if let Some(fraction) = model.fraction {
+                        ui.add(egui::ProgressBar::new(fraction));
+                    }
+                    let color = if model.failed {
+                        Color32::from_rgb(255, 69, 58)
+                    } else {
+                        Color32::from_rgb(255, 159, 10)
+                    };
+                    ui.label(RichText::new(&model.detail).size(14.0).color(color));
+                    if let Some(label) = model.retry
+                        && ui.button(RichText::new(label).size(15.0)).clicked()
+                    {
+                        *retry = true;
+                    }
+                });
+        }
         for row in &view.rows {
             egui::Frame::group(ui.style())
                 .inner_margin(14.0)

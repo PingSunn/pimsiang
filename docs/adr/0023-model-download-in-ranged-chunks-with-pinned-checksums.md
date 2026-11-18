@@ -1,0 +1,13 @@
+# Download the Model in ranged chunks, verify before it can load
+
+On first launch (and whenever a file is missing) the app downloads the Model into `~/Library/Application Support/PimSiang/models/int8-9f142a43`, from Hugging Face revision `9f142a43e4d35a422c1c7dac40772ef707387ebc` (ADR 0009) and Silero VAD v5.1.2 from the pinned GitHub commit (ADR 0012). Three items are pinned in `model_download::Manifest::pinned` with URL, size and sha256: `silero_vad.onnx` (2.3 MB), `openthai2.0-asr-streaming-int8.asr.zip` (109 MB, stored, holding `encoder.int8.onnx`, `decoder_joint.onnx`, `tokens.txt`, each pinned too) and `encoder.int8.onnx.data` (883 MB), about 995 MB in all. The zip and data hashes are the Hugging Face LFS `oid`s of that revision; the others were computed from the local copy used for ADR 0009.
+
+Each item is fetched with `Range` requests of 8 MiB into `<name>.part` (so a stalled connection hits a 120 s body timeout instead of hanging, and an interrupted run resumes from the size of the `.part` file), hashed from disk, and only then renamed into place. A mismatch deletes the `.part` and fails; the file is never renamed, so a file under its final name has always been verified. The zip is unzipped by looking up only the pinned entry names (so an entry like `../x` is never read) into `.part` files that are hashed while copied, renamed, and the zip is removed. A server that answers a resume request with the whole file is an error, not appended. Readiness is "every output exists with its pinned size", which is cheap enough to check at each launch.
+
+The download runs on its own thread and reports progress, verifying, failure or ready to the event loop; the Utterance controller starts in a "model pending" state (Pill: "Model not ready", no load attempt) until it receives `Input::ModelReady`, then loads the Model. The onboarding window shows the size, progress and, on failure, the reason with a retry button; it opens again on failure even if closed. `--model-dir` / `PIMSIANG_MODEL_DIR` bypass download and verification and keep `--precision`, so `run-dev.sh` and fp32 comparisons are unchanged.
+
+## Considered options
+
+- **One streaming request per file:** simpler, but a stalled connection has no timeout short of the whole body.
+- **Automatic retries inside the downloader:** hides flaky networks, but the ticket asks for the failure to be shown with a retry; the resume makes a manual retry cheap.
+- **Hashing the Model at every launch:** about 1 GB of hashing per start; sizes are checked instead and a file only gets its final name after verification.

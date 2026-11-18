@@ -38,8 +38,75 @@ pub enum Status {
     Transcribing,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Permission {
+    Microphone,
+    Accessibility,
+    InputMonitoring,
+}
+
+impl Permission {
+    pub const ALL: [Permission; 3] = [
+        Permission::Microphone,
+        Permission::Accessibility,
+        Permission::InputMonitoring,
+    ];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Microphone => "Microphone",
+            Self::Accessibility => "Accessibility",
+            Self::InputMonitoring => "Input Monitoring",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PermissionStatus {
+    Granted,
+    NotDetermined,
+    Denied,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PermissionReport {
+    pub microphone: PermissionStatus,
+    pub accessibility: PermissionStatus,
+    pub input_monitoring: PermissionStatus,
+}
+
+impl PermissionReport {
+    pub fn read(platform: &(impl Platform + ?Sized)) -> Self {
+        Self {
+            microphone: platform.permission_status(Permission::Microphone),
+            accessibility: platform.permission_status(Permission::Accessibility),
+            input_monitoring: platform.permission_status(Permission::InputMonitoring),
+        }
+    }
+
+    pub fn status(&self, permission: Permission) -> PermissionStatus {
+        match permission {
+            Permission::Microphone => self.microphone,
+            Permission::Accessibility => self.accessibility,
+            Permission::InputMonitoring => self.input_monitoring,
+        }
+    }
+
+    pub fn missing(&self) -> Vec<Permission> {
+        Permission::ALL
+            .into_iter()
+            .filter(|permission| self.status(*permission) != PermissionStatus::Granted)
+            .collect()
+    }
+
+    pub fn all_granted(&self) -> bool {
+        self.missing().is_empty()
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PillError {
+    PermissionMissing(Permission),
     ModelNotLoaded,
     MicrophoneUnavailable,
     TranscriptionFailed,
@@ -49,6 +116,13 @@ pub enum PillError {
 impl PillError {
     pub fn message(self) -> &'static str {
         match self {
+            Self::PermissionMissing(Permission::Microphone) => "Microphone permission is missing",
+            Self::PermissionMissing(Permission::Accessibility) => {
+                "Accessibility permission is missing"
+            }
+            Self::PermissionMissing(Permission::InputMonitoring) => {
+                "Input Monitoring permission is missing"
+            }
             Self::ModelNotLoaded => "Model not loaded",
             Self::MicrophoneUnavailable => "No microphone available",
             Self::TranscriptionFailed => "Transcription failed",
@@ -81,4 +155,8 @@ pub trait Platform {
     fn show_status(&mut self, status: Status);
     fn show_pill(&mut self, state: PillState);
     fn paste(&mut self, text: &str) -> Result<(), PlatformError>;
+    fn permission_status(&self, permission: Permission) -> PermissionStatus;
+    fn request_permission(&mut self, permission: Permission);
+    fn open_settings(&mut self, permission: Permission);
+    fn show_permissions(&mut self, report: PermissionReport);
 }

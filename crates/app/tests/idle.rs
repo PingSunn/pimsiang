@@ -52,6 +52,10 @@ fn release(c: &mut TestController, at: Instant) {
     c.handle(Input::Trigger(TriggerEvent::released(at)));
 }
 
+fn press(c: &mut TestController, at: Instant) {
+    c.handle(Input::Trigger(TriggerEvent::pressed(at)));
+}
+
 fn escape(c: &mut TestController, at: Instant) {
     c.handle(Input::Trigger(TriggerEvent::escape(at)));
 }
@@ -118,6 +122,25 @@ fn switching_the_setting_back_on_starts_counting_again() {
 
     c.handle(Input::Tick(t0 + IDLE + MINUTE));
 
+    assert!(!c.engine().is_loaded());
+}
+
+#[test]
+fn switching_the_setting_back_on_restarts_the_idle_clock() {
+    let mut c = loaded("x");
+    let t0 = Instant::now();
+    c.handle(Input::Tick(t0 + 9 * MINUTE));
+    for unload_when_idle in [false, true] {
+        c.handle(Input::Preferences(Preferences {
+            unload_when_idle,
+            ..Preferences::default()
+        }));
+    }
+
+    c.handle(Input::Tick(t0 + 9 * MINUTE + IDLE - MINUTE));
+    assert!(c.engine().is_loaded());
+
+    c.handle(Input::Tick(t0 + 9 * MINUTE + IDLE + MINUTE));
     assert!(!c.engine().is_loaded());
 }
 
@@ -310,4 +333,43 @@ fn the_run_loop_keeps_handling_input_while_the_model_loads() {
     let c = handle.join().unwrap();
     assert_eq!(c.platform().pastes(), ["สวัสดีครับ"]);
     assert_eq!(c.engine().pushed_samples(), 1_600);
+}
+
+#[test]
+fn a_press_while_the_model_still_loads_after_a_release_starts_the_next_utterance_when_it_is_done() {
+    let (mut c, gate) = unloaded_and_gated("สวัสดี");
+    let t0 = Instant::now();
+
+    hold(&mut c, t0);
+    c.handle(Input::Audio(vec![0.0; 1_600]));
+    release(&mut c, t0 + Duration::from_secs(1));
+    press(&mut c, t0 + Duration::from_secs(2));
+    gate.open();
+    c.handle(Input::ModelLoaded);
+
+    assert_eq!(c.platform().pastes(), ["สวัสดี"]);
+    assert!(!c.microphone().is_capturing());
+
+    c.handle(Input::Tick(Instant::now() + HOLD));
+
+    assert!(c.microphone().is_capturing());
+    assert_eq!(c.platform().pills().last(), Some(&PillState::Listening));
+}
+
+#[test]
+fn a_tap_while_the_model_still_loads_is_dropped_once_it_is_done() {
+    let (mut c, gate) = unloaded_and_gated("สวัสดี");
+    let t0 = Instant::now();
+
+    hold(&mut c, t0);
+    c.handle(Input::Audio(vec![0.0; 1_600]));
+    release(&mut c, t0 + Duration::from_secs(1));
+    press(&mut c, t0 + Duration::from_secs(2));
+    release(&mut c, t0 + Duration::from_secs(2) + HOLD / 4);
+    gate.open();
+    c.handle(Input::ModelLoaded);
+    c.handle(Input::Tick(Instant::now() + HOLD));
+
+    assert_eq!(c.platform().pastes(), ["สวัสดี"]);
+    assert!(!c.microphone().is_capturing());
 }

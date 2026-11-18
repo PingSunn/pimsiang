@@ -94,6 +94,7 @@ enum State {
     LoadingModel {
         hands_free: bool,
         ending: bool,
+        held_again: bool,
     },
 }
 
@@ -315,8 +316,9 @@ impl<P: Platform, E: Engine + Send + 'static, M: Microphone> Controller<P, E, M>
         self.config.language = preferences.language;
         self.config.sounds = preferences.sounds;
         self.config.clipboard_restore = preferences.clipboard_restore;
+        let switched_on = preferences.unload_when_idle && !self.config.unload_when_idle;
         self.config.unload_when_idle = preferences.unload_when_idle;
-        if preferences.unload_when_idle && self.idle_since.is_none() {
+        if preferences.unload_when_idle && (switched_on || self.idle_since.is_none()) {
             self.arm_idle();
         }
         if preferences.trigger_key != self.config.trigger_key {
@@ -341,6 +343,11 @@ impl<P: Platform, E: Engine + Send + 'static, M: Microphone> Controller<P, E, M>
             State::LoadingModel {
                 hands_free: true, ..
             } => self.end_loading_capture(),
+            State::LoadingModel {
+                hands_free: false,
+                ending: true,
+                ..
+            } => self.set_held_again(true),
             State::LoadingModel { .. }
             | State::Pending { .. }
             | State::Listening { hands_free: false }
@@ -355,6 +362,14 @@ impl<P: Platform, E: Engine + Send + 'static, M: Microphone> Controller<P, E, M>
             | State::LoadingModel {
                 hands_free: true, ..
             } => Vec::new(),
+            State::LoadingModel {
+                hands_free: false,
+                ending: true,
+                ..
+            } => {
+                self.set_held_again(false);
+                Vec::new()
+            }
             State::LoadingModel {
                 hands_free: false, ..
             } => {
@@ -645,6 +660,7 @@ impl<P: Platform, E: Engine + Send + 'static, M: Microphone> Controller<P, E, M>
         self.state = State::LoadingModel {
             hands_free,
             ending: false,
+            held_again: false,
         };
         self.quick_note = quick_note;
         self.buffered.clear();
@@ -688,6 +704,12 @@ impl<P: Platform, E: Engine + Send + 'static, M: Microphone> Controller<P, E, M>
         }
     }
 
+    fn set_held_again(&mut self, held: bool) {
+        if let State::LoadingModel { held_again, .. } = &mut self.state {
+            *held_again = held;
+        }
+    }
+
     fn on_model_loaded_input(&mut self, queued: Option<&Receiver<Input>>) -> Vec<Input> {
         let Some(result) = self.loading.take() else {
             return Vec::new();
@@ -695,7 +717,12 @@ impl<P: Platform, E: Engine + Send + 'static, M: Microphone> Controller<P, E, M>
         let result = result
             .recv()
             .unwrap_or_else(|_| Err(EngineError::Model("the loading thread stopped".to_owned())));
-        let State::LoadingModel { hands_free, ending } = self.state else {
+        let State::LoadingModel {
+            hands_free,
+            ending,
+            held_again,
+        } = self.state
+        else {
             if let Err(error) = result {
                 tracing::error!(%error, "cannot load the Model");
             } else {
@@ -721,7 +748,15 @@ impl<P: Platform, E: Engine + Send + 'static, M: Microphone> Controller<P, E, M>
             if let Err(error) = self.with_engine(|engine| engine.push_tail(&buffered)) {
                 tracing::warn!(%error, "decoding failed while draining the buffered audio");
             }
-            return self.end(queued, None);
+            let waiting = self.end(queued, None);
+            if held_again && matches!(self.state, State::Idle) {
+                self.state = State::Pending {
+                    since: Instant::now(),
+                    second_tap: false,
+                    shift: false,
+                };
+            }
+            return waiting;
         }
         self.on_audio(&buffered);
         Vec::new()

@@ -53,11 +53,7 @@ impl EditCommand {
             Self::Cut => vec![Event::Cut],
             Self::Copy => vec![Event::Copy],
             Self::Paste => clipboard
-                .map(|text| {
-                    text.replace("\r\n", " ")
-                        .replace('\r', " ")
-                        .replace('\n', " ")
-                })
+                .map(|text| text.replace("\r\n", " ").replace(['\r', '\n'], " "))
                 .filter(|text| !text.is_empty())
                 .map(Event::Paste)
                 .into_iter()

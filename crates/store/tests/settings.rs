@@ -311,3 +311,19 @@ fn the_pill_placement_and_position_round_trip_in_the_settings_file() {
     assert_eq!(loaded.pill_placement.as_deref(), Some("floating"));
     assert_eq!(loaded.pill_position.as_deref(), Some("0.5000,0.1200"));
 }
+
+#[test]
+fn show_in_dock_round_trips_in_the_settings_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("settings");
+    assert_eq!(Settings::load(&path).show_in_dock, None);
+
+    Settings::update(&path, |settings| {
+        settings.show_in_dock = Some("never".to_owned());
+    })
+    .unwrap();
+
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(text.contains("show_in_dock=never\n"));
+    assert_eq!(Settings::load(&path).show_in_dock.as_deref(), Some("never"));
+}

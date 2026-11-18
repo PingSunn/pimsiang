@@ -733,6 +733,36 @@ impl Language {
         )
     }
 
+    pub fn settings_dock_group(self) -> &'static str {
+        self.pick("Show in Dock", "แสดงใน Dock")
+    }
+
+    pub fn settings_dock_always(self) -> &'static str {
+        self.pick("Always", "เสมอ")
+    }
+
+    pub fn settings_dock_while_open(self) -> &'static str {
+        self.pick("While a window is open", th!("ตอนมี" | "หน้าต่าง" | "เปิดอยู่"))
+    }
+
+    pub fn settings_dock_never(self) -> &'static str {
+        self.pick("Never", "ไม่แสดง")
+    }
+
+    pub fn settings_dock_help(self) -> &'static str {
+        self.pick(
+            "The Dock icon lets you reach an open window. The menu bar icon stays in every mode.",
+            th!("ไอคอนใน Dock"
+                | "ช่วยให้"
+                | "กลับไปที่"
+                | "หน้าต่างที่เปิดอยู่"
+                | "ส่วนไอคอน"
+                | "บนแถบเมนู"
+                | "อยู่ครบ"
+                | "ทุกโหมด"),
+        )
+    }
+
     pub fn settings_pill_group(self) -> &'static str {
         self.pick("Pill position", "ตำแหน่ง Pill")
     }

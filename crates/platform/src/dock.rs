@@ -6,6 +6,26 @@ pub enum ShowInDock {
     Never,
 }
 
+impl ShowInDock {
+    pub const ALL: [ShowInDock; 3] = [
+        ShowInDock::Always,
+        ShowInDock::WhileWindowOpen,
+        ShowInDock::Never,
+    ];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Always => "always",
+            Self::WhileWindowOpen => "while-window-open",
+            Self::Never => "never",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|show| show.name() == name)
+    }
+}
+
 pub fn dock_visible(show: ShowInDock, any_window_open: bool) -> bool {
     match show {
         ShowInDock::Always => true,
@@ -36,6 +56,15 @@ mod tests {
     #[test]
     fn default_is_while_window_open() {
         assert_eq!(ShowInDock::default(), ShowInDock::WhileWindowOpen);
+    }
+
+    #[test]
+    fn names_round_trip_and_unknown_names_are_rejected() {
+        for show in ShowInDock::ALL {
+            assert_eq!(ShowInDock::from_name(show.name()), Some(show));
+        }
+        assert_eq!(ShowInDock::from_name("sometimes"), None);
+        assert_eq!(ShowInDock::from_name(""), None);
     }
 
     #[test]

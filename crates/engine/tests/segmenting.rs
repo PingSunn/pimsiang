@@ -2,8 +2,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use engine::{
-    Engine, EngineError, LanguageMode, MAX_SEGMENT_SAMPLES, MIN_SILENCE_SAMPLES, Recognizer,
-    SPEECH_PAD_SAMPLES, SpeechDetector, StreamingEngine, UtteranceOptions, WINDOW_SAMPLES,
+    Engine, EngineError, MAX_SEGMENT_SAMPLES, MIN_SILENCE_SAMPLES, Recognizer, SPEECH_PAD_SAMPLES,
+    SpeechDetector, StreamingEngine, UtteranceOptions, WINDOW_SAMPLES,
 };
 
 const SECOND: usize = 16_000;
@@ -50,7 +50,7 @@ impl Recognizer for TaggingRecognizer {
         self.loaded
     }
 
-    fn recognize(&mut self, samples: &[f32], _: LanguageMode) -> Result<String, EngineError> {
+    fn recognize(&mut self, samples: &[f32], _: UtteranceOptions) -> Result<String, EngineError> {
         if self.failure.take() {
             return Err(EngineError::Model("injected failure".into()));
         }
@@ -300,7 +300,7 @@ impl Recognizer for SpanRecognizer {
         true
     }
 
-    fn recognize(&mut self, samples: &[f32], _: LanguageMode) -> Result<String, EngineError> {
+    fn recognize(&mut self, samples: &[f32], _: UtteranceOptions) -> Result<String, EngineError> {
         self.calls.0.lock().unwrap().push(samples.len());
         let index = |sample: f32| (sample / INDEX_STEP).round() as usize - 1;
         Ok(match (samples.first(), samples.last()) {
@@ -475,7 +475,7 @@ impl Recognizer for LengthRecognizer {
         true
     }
 
-    fn recognize(&mut self, samples: &[f32], _: LanguageMode) -> Result<String, EngineError> {
+    fn recognize(&mut self, samples: &[f32], _: UtteranceOptions) -> Result<String, EngineError> {
         Ok("a".repeat(samples.len() / 64))
     }
 }

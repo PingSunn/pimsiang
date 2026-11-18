@@ -6,6 +6,7 @@ fn drive(engine: &mut dyn Engine, pushes: usize) -> (Vec<String>, String) {
     engine
         .start_utterance(UtteranceOptions {
             language: LanguageMode::ThTh,
+            ..UtteranceOptions::default()
         })
         .unwrap();
     let partials = (0..pushes)

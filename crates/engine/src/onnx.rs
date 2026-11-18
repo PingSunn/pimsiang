@@ -7,14 +7,11 @@ use ort::session::Session;
 use ort::value::Tensor;
 
 use crate::features::MelFrontEnd;
-use crate::{EngineError, LanguageMode, Recognizer, SileroVad, StreamingEngine};
+use crate::{EngineError, LanguageMode, Recognizer, SileroVad, StreamingEngine, UtteranceOptions};
 
 const ENCODER_WIDTH: usize = 1024;
 const STATE_SIZE: usize = 2 * 640;
 const MAX_SYMBOLS_PER_FRAME: usize = 10;
-const SHORT_CLIP_SAMPLES: usize = 2 * 16_000;
-const BLANK_BIAS: f32 = -1.0;
-const SHORT_CLIP_BLANK_BIAS: f32 = -2.5;
 
 pub type OnnxEngine = StreamingEngine<OnnxRecognizer, SileroVad>;
 
@@ -153,21 +150,20 @@ impl Recognizer for OnnxRecognizer {
     fn recognize(
         &mut self,
         samples: &[f32],
-        language: LanguageMode,
+        options: UtteranceOptions,
     ) -> Result<String, EngineError> {
         let model = self.model.as_mut().ok_or(EngineError::NotLoaded)?;
         if samples.is_empty() {
             return Ok(String::new());
         }
         let features = self.front_end.compute(samples);
-        let encoded = model.encode(features.values, features.frames, language)?;
-        let blank_bias = if samples.len() < SHORT_CLIP_SAMPLES {
-            SHORT_CLIP_BLANK_BIAS
-        } else {
-            BLANK_BIAS
-        };
-        let ids = model.greedy_decode(&encoded, blank_bias)?;
-        Ok(model.detokenize(&ids))
+        let encoded = model.encode(features.values, features.frames, options.language)?;
+        options
+            .recognition_mode
+            .decode(samples.len(), |blank_bias| {
+                let ids = model.greedy_decode(&encoded, blank_bias)?;
+                Ok(model.detokenize(&ids))
+            })
     }
 }
 

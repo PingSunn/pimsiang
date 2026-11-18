@@ -1,4 +1,7 @@
-use engine::{Engine, EngineError, LanguageMode, Recognizer, StreamingEngine, UtteranceOptions};
+use engine::{
+    Engine, EngineError, LanguageMode, RecognitionMode, Recognizer, StreamingEngine,
+    UtteranceOptions,
+};
 
 #[derive(Default)]
 struct CountingRecognizer {
@@ -22,9 +25,9 @@ impl Recognizer for CountingRecognizer {
     fn recognize(
         &mut self,
         samples: &[f32],
-        language: LanguageMode,
+        options: UtteranceOptions,
     ) -> Result<String, EngineError> {
-        Ok(format!("{language} {}", samples.len()))
+        Ok(format!("{} {}", options.language, samples.len()))
     }
 }
 
@@ -71,6 +74,7 @@ fn language_mode_is_an_utterance_option() {
     engine
         .start_utterance(UtteranceOptions {
             language: LanguageMode::ThTh,
+            ..UtteranceOptions::default()
         })
         .unwrap();
     engine.push_audio(&[0.0; 100]).unwrap();
@@ -152,4 +156,37 @@ fn language_modes_parse_from_their_names() {
     assert_eq!(LanguageMode::default(), LanguageMode::ThMix);
     assert_eq!(LanguageMode::ThMix.prompt_index(), 63);
     assert_eq!(LanguageMode::ThTh.prompt_index(), 32);
+}
+
+#[test]
+fn recognition_mode_is_an_utterance_option() {
+    let mut engine = StreamingEngine::with_recognizer(ModeRecognizer);
+    engine.load().unwrap();
+    engine
+        .start_utterance(UtteranceOptions {
+            recognition_mode: RecognitionMode::Conversation,
+            ..UtteranceOptions::default()
+        })
+        .unwrap();
+    engine.push_audio(&[0.0; 100]).unwrap();
+
+    assert_eq!(engine.finish_utterance().unwrap(), "conversation");
+}
+
+struct ModeRecognizer;
+
+impl Recognizer for ModeRecognizer {
+    fn load(&mut self) -> Result<(), EngineError> {
+        Ok(())
+    }
+
+    fn unload(&mut self) {}
+
+    fn is_loaded(&self) -> bool {
+        true
+    }
+
+    fn recognize(&mut self, _: &[f32], options: UtteranceOptions) -> Result<String, EngineError> {
+        Ok(options.recognition_mode.to_string())
+    }
 }

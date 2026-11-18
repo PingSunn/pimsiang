@@ -104,8 +104,7 @@ impl OpenUtterance {
     }
 
     fn close_segment<R: Recognizer>(&mut self, recognizer: &mut R) -> Result<(), EngineError> {
-        let text =
-            recognizer.recognize(&self.audio[..self.segment_end()], self.options.language)?;
+        let text = recognizer.recognize(&self.audio[..self.segment_end()], self.options)?;
         self.lock(text, false);
         self.audio.drain(..self.scanned);
         self.scanned = 0;
@@ -125,7 +124,7 @@ impl OpenUtterance {
                 end.saturating_sub(WINDOW_SAMPLES / 2).max(1)
             })
             .min(self.scanned);
-        let text = recognizer.recognize(&self.audio[..cut], self.options.language)?;
+        let text = recognizer.recognize(&self.audio[..cut], self.options)?;
         self.lock(text, true);
         let in_pause = self.silent > 0 && cut > self.scanned.saturating_sub(self.silent);
         self.audio.drain(..cut);
@@ -262,7 +261,7 @@ impl<R: Recognizer, D: SpeechDetector> StreamingEngine<R, D> {
             utterance.since_partial = 0;
             let open = self
                 .recognizer
-                .recognize(&utterance.audio, utterance.options.language)?;
+                .recognize(&utterance.audio, utterance.options)?;
             return Ok(Some(utterance.text_with(&open)));
         }
         Ok(closed.then(|| utterance.text_with("")))

@@ -672,6 +672,7 @@ mod macos {
             {
                 if *focused {
                     self.key_window = Some(kind);
+                    self.recent_window = Some(kind);
                 } else if self.key_window == Some(kind) {
                     self.key_window = None;
                 }

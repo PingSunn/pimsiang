@@ -1,3 +1,4 @@
+use app::app_menu::EditCommand;
 use app::history_view::Page;
 use app::i18n::Language;
 use app::model_chip::ModelChip;
@@ -145,6 +146,42 @@ fn command_w_closes_history() {
     harness.key_press_modifiers(Modifiers::COMMAND, Key::W);
     harness.step();
     assert!(harness.state().closed);
+}
+
+fn run_edit(harness: &mut Harness<'static, HistoryFixture>, command: EditCommand, text: &str) {
+    for event in command.events(Some(text)) {
+        harness.event(event);
+    }
+    harness.run();
+}
+
+#[test]
+fn the_paste_menu_item_puts_thai_text_in_the_history_search_box() {
+    let mut harness = history(fixture());
+    run_edit(&mut harness, EditCommand::Paste, "สวัสดีครับ");
+    assert_eq!(harness.state().query, "สวัสดีครับ");
+}
+
+#[test]
+fn the_cut_menu_item_removes_the_selection_and_select_all_selects_it() {
+    let mut harness = history(HistoryFixture {
+        query: "สวัสดี".to_owned(),
+        ..fixture()
+    });
+    run_edit(&mut harness, EditCommand::SelectAll, "");
+    run_edit(&mut harness, EditCommand::Cut, "");
+    assert_eq!(harness.state().query, "");
+}
+
+#[test]
+fn the_undo_and_redo_menu_items_step_through_the_search_box_edits() {
+    let mut harness = history(fixture());
+    run_edit(&mut harness, EditCommand::Paste, "abc");
+    harness.step();
+    run_edit(&mut harness, EditCommand::Undo, "");
+    assert_eq!(harness.state().query, "");
+    run_edit(&mut harness, EditCommand::Redo, "");
+    assert_eq!(harness.state().query, "abc");
 }
 
 #[test]

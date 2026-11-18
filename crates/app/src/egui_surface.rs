@@ -100,6 +100,14 @@ impl Surface {
         }
     }
 
+    pub fn inject(&mut self, events: Vec<egui::Event>) {
+        if events.is_empty() {
+            return;
+        }
+        self.input.egui_input_mut().events.extend(events);
+        self.window.request_redraw();
+    }
+
     pub fn forward(&mut self, event: &WindowEvent) {
         let response = self.input.on_window_event(&self.window, event);
         if response.repaint {
@@ -110,6 +118,13 @@ impl Surface {
     pub fn frame(&mut self, show: impl FnMut(&mut egui::Ui)) -> bool {
         let raw_input = self.input.take_egui_input(&self.window);
         let output = self.context.run_ui(raw_input, show);
+        for command in &output.platform_output.commands {
+            if let egui::OutputCommand::CopyText(text) = command
+                && let Err(error) = platform_macos::copy_text(text)
+            {
+                tracing::warn!(%error, "cannot copy to the clipboard");
+            }
+        }
         self.input
             .handle_platform_output(&self.window, output.platform_output);
         let primitives = self

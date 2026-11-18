@@ -95,7 +95,7 @@ impl Language {
             .collect();
         format!(
             "{}{}",
-            self.pick("Missing permissions: ", "ขาดสิทธิ์: "),
+            self.pick("Missing permissions: ", "ยังไม่ได้ให้สิทธิ์: "),
             names.join(", ")
         )
     }
@@ -198,7 +198,7 @@ impl Language {
 
     pub fn tooltip(self, status: Status, permission_missing: bool) -> &'static str {
         if permission_missing {
-            return self.pick("PimSiang: permission missing", "PimSiang: ขาดสิทธิ์");
+            return self.pick("PimSiang: permission missing", "PimSiang: ยังไม่ได้ให้สิทธิ์");
         }
         match status {
             Status::Ready => self.pick("PimSiang: ready", "PimSiang: พร้อมใช้งาน"),
@@ -225,7 +225,7 @@ impl Language {
                 let name = self.permission_name(permission);
                 match self {
                     Self::English => format!("{name} permission is missing"),
-                    Self::Thai => format!("ขาดสิทธิ์{name}"),
+                    Self::Thai => format!("ยังไม่ได้ให้สิทธิ์ {name}"),
                 }
             }
             PillError::ModelNotLoaded => {

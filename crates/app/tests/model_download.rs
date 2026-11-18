@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use app::model_download::{
-    Downloader, Error, Event, Extracted, Item, Manifest, ModelStatus, is_ready,
+    Downloader, Error, Event, Extracted, Item, Manifest, ModelStatus, is_ready, space_needed,
 };
 use sha2::{Digest, Sha256};
 
@@ -40,6 +40,7 @@ struct Behaviour {
     fail_next: AtomicUsize,
     cut_next_at: Mutex<Option<usize>>,
     ignore_range: Mutex<bool>,
+    skew_resumed_range: AtomicUsize,
 }
 
 struct Server {
@@ -130,8 +131,14 @@ fn serve(mut stream: TcpStream, files: &[(String, Vec<u8>)], seen: &Requests, ru
         None => ("200 OK", 0, content.len() - 1),
     };
     let body = &content[from..=to];
+    let skewed = from > 0
+        && rules
+            .skew_resumed_range
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
+            .is_ok();
+    let claimed = if skewed { 0 } else { from };
     let head = format!(
-        "HTTP/1.1 {status}\r\nContent-Length: {}\r\nContent-Range: bytes {from}-{to}/{}\r\nConnection: close\r\n\r\n",
+        "HTTP/1.1 {status}\r\nContent-Length: {}\r\nContent-Range: bytes {claimed}-{to}/{}\r\nConnection: close\r\n\r\n",
         body.len(),
         content.len()
     );
@@ -153,7 +160,10 @@ fn plain(server: &Server, name: &str, content: &[u8]) -> Item {
 }
 
 fn downloader() -> Downloader {
-    Downloader { chunk: 1000 }
+    Downloader {
+        chunk: 1000,
+        ..Downloader::default()
+    }
 }
 
 fn run(dir: &Path, manifest: &Manifest) -> (Result<(), Error>, Vec<Event>) {
@@ -375,7 +385,7 @@ fn an_unknown_file_is_a_status_error() {
 }
 
 #[test]
-fn a_server_that_ignores_resume_requests_is_an_error_not_corruption() {
+fn a_server_that_ignores_resume_requests_restarts_the_file_and_completes() {
     let content = bytes(12, 3000);
     let server = Server::start(vec![("a.bin", content.clone())]);
     *server.behaviour.cut_next_at.lock().unwrap() = Some(300);
@@ -388,8 +398,114 @@ fn a_server_that_ignores_resume_requests_is_an_error_not_corruption() {
 
     let (result, _) = run(dir.path(), &manifest);
 
+    result.unwrap();
+    assert_eq!(std::fs::read(dir.path().join("a.bin")).unwrap(), content);
+    assert!(leftovers(dir.path()).is_empty());
+}
+
+#[test]
+fn a_resume_answered_from_the_wrong_offset_restarts_the_file() {
+    let content = bytes(13, 3500);
+    let server = Server::start(vec![("a.bin", content.clone())]);
+    *server.behaviour.cut_next_at.lock().unwrap() = Some(400);
+    let manifest = Manifest {
+        items: vec![plain(&server, "a.bin", &content)],
+    };
+    let dir = tempfile::tempdir().unwrap();
+    assert!(run(dir.path(), &manifest).0.is_err());
+    server
+        .behaviour
+        .skew_resumed_range
+        .store(1, Ordering::SeqCst);
+
+    let (result, _) = run(dir.path(), &manifest);
+
+    result.unwrap();
+    assert_eq!(std::fs::read(dir.path().join("a.bin")).unwrap(), content);
+    let ranges = server.ranges();
+    let resumed = ranges.iter().position(|r| r.starts_with("400-")).unwrap();
+    assert!(ranges[resumed + 1..].iter().any(|r| r.starts_with("0-")));
+}
+
+#[test]
+fn a_server_that_always_misreports_the_offset_fails_instead_of_looping() {
+    let content = bytes(14, 3000);
+    let server = Server::start(vec![("a.bin", content.clone())]);
+    server
+        .behaviour
+        .skew_resumed_range
+        .store(usize::MAX, Ordering::SeqCst);
+    let manifest = Manifest {
+        items: vec![plain(&server, "a.bin", &content)],
+    };
+    let dir = tempfile::tempdir().unwrap();
+
+    let (result, _) = run(dir.path(), &manifest);
+
     assert!(matches!(result, Err(Error::RangeIgnored(_))));
-    assert!(!dir.path().join("a.bin").exists());
+}
+
+#[test]
+fn a_volume_without_room_fails_before_any_request() {
+    let content = bytes(15, 3000);
+    let server = Server::start(vec![("a.bin", content.clone())]);
+    let manifest = Manifest {
+        items: vec![plain(&server, "a.bin", &content)],
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let downloader = Downloader {
+        chunk: 1000,
+        free_space: |_| Ok(2999),
+    };
+
+    let result = downloader.run(dir.path(), &manifest, &mut |_| {});
+
+    assert!(matches!(
+        result,
+        Err(Error::NoSpace {
+            needed: 3000,
+            free: 2999
+        })
+    ));
+    assert!(server.ranges().is_empty());
+    assert!(result.unwrap_err().to_string().contains("พื้นที่ว่างไม่เพียงพอ"));
+}
+
+#[test]
+fn space_needed_counts_only_what_is_still_missing_plus_extraction() {
+    let encoder = bytes(16, 700);
+    let tokens = bytes(17, 90);
+    let archive = zip_of(&[("encoder.onnx", &encoder), ("tokens.txt", &tokens)]);
+    let manifest = Manifest {
+        items: vec![Item {
+            name: "model.asr.zip".to_owned(),
+            url: "http://unused.invalid/model.asr.zip".to_owned(),
+            size: archive.len() as u64,
+            sha256: sha(&archive),
+            unzip: vec![
+                Extracted {
+                    name: "encoder.onnx".to_owned(),
+                    size: 700,
+                    sha256: sha(&encoder),
+                },
+                Extracted {
+                    name: "tokens.txt".to_owned(),
+                    size: 90,
+                    sha256: sha(&tokens),
+                },
+            ],
+        }],
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let size = archive.len() as u64;
+
+    assert_eq!(space_needed(dir.path(), &manifest), size + 790);
+
+    std::fs::write(dir.path().join("model.asr.zip.part"), vec![0u8; 100]).unwrap();
+    assert_eq!(space_needed(dir.path(), &manifest), size - 100 + 790);
+
+    std::fs::write(dir.path().join("encoder.onnx"), &encoder).unwrap();
+    assert_eq!(space_needed(dir.path(), &manifest), size - 100 + 90);
 }
 
 #[test]

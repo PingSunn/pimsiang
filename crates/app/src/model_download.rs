@@ -24,6 +24,11 @@ pub enum Error {
     Network(String),
     #[error("the server ignored the resume request for {0}")]
     RangeIgnored(String),
+    #[error(
+        "not enough free disk space: {} needed, {} free / พื้นที่ว่างไม่เพียงพอ: ต้องการ {} เหลือ {}",
+        mib(*needed), mib(*free), mib(*needed), mib(*free)
+    )]
+    NoSpace { needed: u64, free: u64 },
     #[error("{0} ended before its expected size")]
     Incomplete(String),
     #[error("{0} does not match its pinned checksum")]
@@ -161,12 +166,53 @@ pub enum ModelStatus {
 
 pub struct Downloader {
     pub chunk: u64,
+    pub free_space: fn(&Path) -> io::Result<u64>,
 }
 
 impl Default for Downloader {
     fn default() -> Self {
-        Self { chunk: CHUNK }
+        Self {
+            chunk: CHUNK,
+            free_space,
+        }
     }
+}
+
+fn mib(bytes: u64) -> String {
+    format!("{} MB", bytes.div_ceil(1024 * 1024))
+}
+
+fn free_space(dir: &Path) -> io::Result<u64> {
+    let stat = rustix::fs::statvfs(dir)?;
+    Ok(stat.f_bavail.saturating_mul(stat.f_frsize))
+}
+
+pub fn space_needed(dir: &Path, manifest: &Manifest) -> u64 {
+    manifest
+        .items
+        .iter()
+        .filter(|item| !item.present(dir))
+        .map(|item| {
+            let archive_ready =
+                fs::metadata(dir.join(&item.name)).is_ok_and(|meta| meta.len() == item.size);
+            let download = if archive_ready {
+                0
+            } else {
+                let have = fs::metadata(dir.join(format!("{}.part", item.name)))
+                    .map_or(0, |meta| meta.len());
+                item.size.saturating_sub(have.min(item.size))
+            };
+            let extract: u64 = item
+                .unzip
+                .iter()
+                .filter(|entry| {
+                    !fs::metadata(dir.join(&entry.name)).is_ok_and(|meta| meta.len() == entry.size)
+                })
+                .map(|entry| entry.size)
+                .sum();
+            download + extract
+        })
+        .sum()
 }
 
 struct Tracker<'a> {
@@ -210,6 +256,11 @@ impl Downloader {
             }
         }
         fs::create_dir_all(dir)?;
+        let needed = space_needed(dir, manifest);
+        let free = (self.free_space)(dir)?;
+        if free < needed {
+            return Err(Error::NoSpace { needed, free });
+        }
         let agent: ureq::Agent = ureq::Agent::config_builder()
             .timeout_connect(Some(CONNECT_TIMEOUT))
             .timeout_recv_response(Some(RESPONSE_TIMEOUT))
@@ -276,6 +327,7 @@ impl Downloader {
             fs::remove_file(part)?;
             have = 0;
         }
+        let mut restarted = false;
         tracker.set(finished + have, true);
         let mut buffer = vec![0u8; BUFFER];
         while have < item.size {
@@ -286,13 +338,39 @@ impl Downloader {
                 .header("User-Agent", "PimSiang")
                 .call()
                 .map_err(|error| Error::Network(error.to_string()))?;
+            let mut wanted = end + 1 - have;
             match response.status().as_u16() {
-                206 => {}
-                200 if have == 0 => {}
-                200 => return Err(Error::RangeIgnored(item.name.clone())),
+                206 => {
+                    let start = response
+                        .headers()
+                        .get("Content-Range")
+                        .and_then(|value| value.to_str().ok())
+                        .and_then(content_range_start);
+                    if start != Some(have) {
+                        if restarted || have == 0 {
+                            return Err(Error::RangeIgnored(item.name.clone()));
+                        }
+                        restarted = true;
+                        File::create(part)?;
+                        have = 0;
+                        tracker.set(finished, true);
+                        continue;
+                    }
+                }
+                200 => {
+                    if have > 0 {
+                        if restarted {
+                            return Err(Error::RangeIgnored(item.name.clone()));
+                        }
+                        restarted = true;
+                        File::create(part)?;
+                        have = 0;
+                        tracker.set(finished, true);
+                    }
+                    wanted = item.size;
+                }
                 other => return Err(Error::Status(other)),
             }
-            let wanted = end + 1 - have;
             let mut file = OpenOptions::new().create(true).append(true).open(part)?;
             let mut reader = response.body_mut().as_reader().take(wanted);
             let mut got = 0u64;
@@ -315,6 +393,16 @@ impl Downloader {
         }
         Ok(())
     }
+}
+
+fn content_range_start(value: &str) -> Option<u64> {
+    value
+        .strip_prefix("bytes ")?
+        .split_once('-')?
+        .0
+        .trim()
+        .parse()
+        .ok()
 }
 
 fn safe_name(name: &str) -> Result<(), Error> {

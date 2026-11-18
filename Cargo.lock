@@ -164,6 +164,7 @@ dependencies = [
  "platform",
  "platform-macos",
  "pollster",
+ "rustix 1.1.6",
  "semver",
  "serde_json",
  "sha2",

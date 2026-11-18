@@ -10,6 +10,8 @@ use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::{Window, WindowId};
 
+use crate::theme;
+
 const ANUPHAN: &[u8] = include_bytes!("../assets/Anuphan[wght].ttf");
 const FONT_NAME: &str = "Anuphan";
 
@@ -38,6 +40,7 @@ impl Surface {
         );
         let context = egui::Context::default();
         context.set_fonts(fonts());
+        theme::apply(&context);
         let input = egui_winit::State::new(
             context.clone(),
             ViewportId::ROOT,
@@ -101,10 +104,12 @@ impl Surface {
             .context
             .tessellate(output.shapes, output.pixels_per_point);
         let mut textures = output.textures_delta;
+        let background = theme::palette(self.context.theme()).background;
+        let clear = egui::Rgba::from(background).to_array();
         self.painter.paint_and_update_textures(
             ViewportId::ROOT,
             output.pixels_per_point,
-            [0.1, 0.1, 0.1, 1.0],
+            clear,
             &primitives,
             &mut textures,
             Vec::new(),

@@ -1,6 +1,5 @@
 use anyhow::Result;
 use app::onboarding::View;
-use egui::{Color32, RichText};
 use platform::{Permission, PermissionStatus};
 use winit::dpi::LogicalSize;
 use winit::event::WindowEvent;
@@ -8,6 +7,7 @@ use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowId;
 
 use crate::egui_surface::Surface;
+use crate::theme::{self, Badge, Variant};
 
 pub enum Outcome {
     Idle,
@@ -67,76 +67,63 @@ impl OnboardingWindow {
 }
 
 fn show(ui: &mut egui::Ui, view: &View, grant: &mut Option<Permission>, retry: &mut bool) {
-    egui::Frame::default().inner_margin(24.0).show(ui, |ui| {
-        ui.spacing_mut().item_spacing.y = 10.0;
-        ui.label(RichText::new(view.heading).size(26.0).strong());
-        ui.label(RichText::new(view.intro).size(15.0));
+    theme::page(ui, |ui| {
+        ui.spacing_mut().item_spacing.y = theme::SPACE_3;
+        theme::title(ui, view.heading);
+        theme::description(ui, view.intro);
         if !view.note.is_empty() {
-            ui.label(
-                RichText::new(view.note)
-                    .size(14.0)
-                    .color(Color32::from_rgb(255, 159, 10)),
-            );
+            theme::warning(ui, view.note);
         }
-        ui.add_space(8.0);
+        ui.add_space(theme::SPACE_1);
         if let Some(model) = &view.model {
-            egui::Frame::group(ui.style())
-                .inner_margin(14.0)
-                .show(ui, |ui| {
-                    ui.set_width(ui.available_width());
-                    ui.label(RichText::new(model.title).size(18.0).strong());
-                    ui.label(RichText::new(model.explain).size(14.0));
-                    if let Some(fraction) = model.fraction {
-                        ui.add(egui::ProgressBar::new(fraction));
-                    }
-                    let color = if model.failed {
-                        Color32::from_rgb(255, 69, 58)
-                    } else {
-                        Color32::from_rgb(255, 159, 10)
-                    };
-                    ui.label(RichText::new(&model.detail).size(14.0).color(color));
-                    if let Some(label) = model.retry
-                        && ui.button(RichText::new(label).size(15.0)).clicked()
-                    {
-                        *retry = true;
-                    }
-                });
+            theme::card(ui, |ui| {
+                theme::heading(ui, model.title);
+                theme::description(ui, model.explain);
+                if let Some(fraction) = model.fraction {
+                    ui.add_space(theme::SPACE_1);
+                    theme::progress(ui, fraction);
+                }
+                if model.failed {
+                    theme::destructive(ui, &model.detail);
+                } else {
+                    theme::description(ui, &model.detail);
+                }
+                if let Some(label) = model.retry
+                    && theme::button(ui, Variant::Primary, label).clicked()
+                {
+                    *retry = true;
+                }
+            });
         }
         for row in &view.rows {
-            egui::Frame::group(ui.style())
-                .inner_margin(14.0)
-                .show(ui, |ui| {
-                    ui.set_width(ui.available_width());
-                    ui.horizontal(|ui| {
-                        ui.label(RichText::new(row.title).size(18.0).strong());
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.label(RichText::new(row.status_label).size(14.0).color(
-                                match row.status {
-                                    PermissionStatus::Granted => Color32::from_rgb(52, 199, 89),
-                                    PermissionStatus::NotDetermined => {
-                                        Color32::from_rgb(255, 159, 10)
-                                    }
-                                    PermissionStatus::Denied => Color32::from_rgb(255, 69, 58),
-                                },
-                            ));
-                        });
+            theme::card(ui, |ui| {
+                ui.horizontal(|ui| {
+                    theme::heading(ui, row.title);
+                    theme::row_end(ui, |ui| {
+                        let kind = match row.status {
+                            PermissionStatus::Granted => Badge::Success,
+                            PermissionStatus::NotDetermined => Badge::Neutral,
+                            PermissionStatus::Denied => Badge::Destructive,
+                        };
+                        theme::badge(ui, kind, row.status_label);
                     });
-                    ui.label(RichText::new(&row.why).size(14.0));
-                    if let Some(button) = row.button
-                        && ui.button(RichText::new(button.label).size(15.0)).clicked()
-                    {
+                });
+                theme::description(ui, &row.why);
+                if let Some(button) = row.button {
+                    ui.add_space(theme::SPACE_1);
+                    let variant = match row.status {
+                        PermissionStatus::Granted => Variant::Outline,
+                        _ => Variant::Primary,
+                    };
+                    if theme::button(ui, variant, button.label).clicked() {
                         *grant = Some(button.permission);
                     }
-                });
+                }
+            });
         }
         if !view.footer.is_empty() {
-            ui.add_space(8.0);
-            ui.label(
-                RichText::new(&view.footer)
-                    .size(16.0)
-                    .strong()
-                    .color(Color32::from_rgb(52, 199, 89)),
-            );
+            ui.add_space(theme::SPACE_2);
+            theme::success(ui, &view.footer);
         }
     });
 }

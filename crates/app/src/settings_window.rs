@@ -1,7 +1,6 @@
 use anyhow::Result;
 use app::i18n::Language;
 use app::preferences::Preferences;
-use egui::{Color32, RichText};
 use engine::LanguageMode;
 use platform::TriggerKey;
 use platform_macos::login_item::LoginItem;
@@ -11,6 +10,7 @@ use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowId;
 
 use crate::egui_surface::Surface;
+use crate::theme::{self, Variant};
 
 pub enum Outcome {
     Idle,
@@ -117,9 +117,6 @@ impl SettingsWindow {
     }
 }
 
-const MUTED: Color32 = Color32::from_rgb(152, 152, 157);
-const WARNING: Color32 = Color32::from_rgb(255, 159, 10);
-
 fn show(
     ui: &mut egui::Ui,
     language: Language,
@@ -129,101 +126,81 @@ fn show(
     error: Option<&str>,
     open_login_items: &mut bool,
 ) {
-    egui::Frame::default().inner_margin(20.0).show(ui, |ui| {
-        ui.spacing_mut().item_spacing.y = 10.0;
-        ui.label(RichText::new(language.settings_title()).size(22.0).strong());
-        ui.label(
-            RichText::new(language.settings_applies_now())
-                .size(13.0)
-                .color(MUTED),
-        );
-        ui.add_space(8.0);
+    theme::page(ui, |ui| {
+        theme::title(ui, language.settings_title());
+        theme::description(ui, language.settings_applies_now());
+        ui.add_space(theme::SPACE_1);
 
-        ui.label(
-            RichText::new(language.settings_trigger_key())
-                .size(15.0)
-                .strong(),
-        );
-        egui::ComboBox::from_id_salt("trigger-key")
-            .selected_text(RichText::new(preferences.trigger_key.label()).size(15.0))
-            .show_ui(ui, |ui| {
+        theme::card(ui, |ui| {
+            theme::heading(ui, language.settings_trigger_key());
+            theme::select(ui, "trigger-key", preferences.trigger_key.label(), |ui| {
                 for key in TriggerKey::ALL {
-                    ui.selectable_value(
-                        &mut preferences.trigger_key,
-                        key,
-                        RichText::new(key.label()).size(15.0),
-                    );
+                    theme::option(ui, &mut preferences.trigger_key, key, key.label());
                 }
             });
-        ui.label(
-            RichText::new(language.settings_trigger_key_help())
-                .size(13.0)
-                .color(MUTED),
-        );
-        ui.add_space(8.0);
+            theme::description(ui, language.settings_trigger_key_help());
+        });
 
-        ui.label(
-            RichText::new(language.settings_language_mode())
-                .size(15.0)
-                .strong(),
-        );
-        ui.radio_value(
-            &mut preferences.language,
-            LanguageMode::ThMix,
-            RichText::new(language.settings_language_mix()).size(14.0),
-        );
-        ui.radio_value(
-            &mut preferences.language,
-            LanguageMode::ThTh,
-            RichText::new(language.settings_language_thai()).size(14.0),
-        );
-        ui.label(
-            RichText::new(language.settings_language_help())
-                .size(13.0)
-                .color(MUTED),
-        );
-        ui.add_space(8.0);
+        theme::card(ui, |ui| {
+            theme::heading(ui, language.settings_language_mode());
+            theme::radio(
+                ui,
+                &mut preferences.language,
+                LanguageMode::ThMix,
+                language.settings_language_mix(),
+            );
+            theme::radio(
+                ui,
+                &mut preferences.language,
+                LanguageMode::ThTh,
+                language.settings_language_thai(),
+            );
+            theme::description(ui, language.settings_language_help());
+        });
 
-        ui.checkbox(
-            &mut preferences.sounds,
-            RichText::new(language.settings_sounds()).size(14.0),
-        );
-        ui.checkbox(
-            &mut preferences.clipboard_restore,
-            RichText::new(language.settings_clipboard_restore()).size(14.0),
-        );
-        ui.checkbox(
-            &mut preferences.unload_when_idle,
-            RichText::new(language.settings_unload_when_idle()).size(14.0),
-        );
-        ui.add_enabled(
-            bundled,
-            egui::Checkbox::new(
+        theme::card(ui, |ui| {
+            ui.spacing_mut().item_spacing.y = theme::SPACE_3;
+            theme::switch(
+                ui,
+                &mut preferences.sounds,
+                true,
+                language.settings_sounds(),
+            );
+            theme::switch(
+                ui,
+                &mut preferences.clipboard_restore,
+                true,
+                language.settings_clipboard_restore(),
+            );
+            theme::switch(
+                ui,
+                &mut preferences.unload_when_idle,
+                true,
+                language.settings_unload_when_idle(),
+            );
+            theme::switch(
+                ui,
                 &mut preferences.launch_at_login,
-                RichText::new(language.settings_launch_at_login()).size(14.0),
-            ),
-        );
-        if !bundled {
-            ui.label(
-                RichText::new(language.settings_login_unbundled())
-                    .size(13.0)
-                    .color(MUTED),
+                bundled,
+                language.settings_launch_at_login(),
             );
-        } else if login == LoginItem::RequiresApproval {
-            ui.label(
-                RichText::new(language.settings_login_needs_approval())
-                    .size(13.0)
-                    .color(WARNING),
-            );
-            if ui
-                .button(RichText::new(language.settings_login_open_settings()).size(13.0))
+            if !bundled {
+                theme::description(ui, language.settings_login_unbundled());
+            } else if login == LoginItem::RequiresApproval {
+                theme::warning(ui, language.settings_login_needs_approval());
+                if theme::button(
+                    ui,
+                    Variant::Outline,
+                    language.settings_login_open_settings(),
+                )
                 .clicked()
-            {
-                *open_login_items = true;
+                {
+                    *open_login_items = true;
+                }
             }
-        }
+        });
         if let Some(error) = error {
-            ui.label(RichText::new(error).size(13.0).color(WARNING));
+            theme::warning(ui, error);
         }
     });
 }

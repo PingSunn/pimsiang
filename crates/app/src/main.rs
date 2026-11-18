@@ -9,6 +9,8 @@ mod onboarding_window;
 #[cfg(target_os = "macos")]
 mod settings_window;
 #[cfg(target_os = "macos")]
+mod theme;
+#[cfg(target_os = "macos")]
 mod tray;
 
 #[cfg(target_os = "macos")]

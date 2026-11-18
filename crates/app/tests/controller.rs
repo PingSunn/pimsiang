@@ -1309,3 +1309,55 @@ fn two_paste_last_shortcuts_with_the_trigger_key_do_not_start_hands_free() {
     assert_eq!(c.platform().pastes(), ["ข้อความล่าสุด", "ข้อความล่าสุด"]);
     assert!(!c.microphone().is_capturing());
 }
+
+#[test]
+fn escape_after_a_double_tap_with_real_key_timings_cancels_hands_free() {
+    let mut c = controller("ไม่ควรถูกวาง");
+    let t0 = Instant::now();
+
+    press(&mut c, t0);
+    release(&mut c, t0 + ms(80));
+    press(&mut c, t0 + ms(200));
+    release(&mut c, t0 + ms(280));
+    assert!(c.microphone().is_capturing());
+    c.handle(Input::Audio(vec![0.0; 1_600]));
+    escape(&mut c, t0 + ms(580));
+
+    assert!(!c.microphone().is_capturing());
+    assert!(is_hidden(&c));
+    assert_eq!(c.engine().cancel_count(), 1);
+    assert!(c.platform().pastes().is_empty());
+
+    tap(&mut c, t0 + ms(3000));
+    assert!(c.platform().pastes().is_empty());
+    assert_eq!(c.microphone().start_count(), 1);
+}
+
+#[test]
+fn escape_queued_behind_audio_cancels_without_decoding_it_first() {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let mut engine = FakeEngine::new(["a", "ab"], "ไม่ควรถูกวาง");
+    engine.load().unwrap();
+    let c = Controller::new(FakePlatform::new(), engine, FakeMicrophone::new(), config());
+    let t0 = Instant::now();
+
+    tx.send(Input::Trigger(TriggerEvent::pressed(t0))).unwrap();
+    tx.send(Input::Trigger(TriggerEvent::released(t0 + ms(80))))
+        .unwrap();
+    tx.send(Input::Trigger(TriggerEvent::pressed(t0 + ms(200))))
+        .unwrap();
+    tx.send(Input::Trigger(TriggerEvent::released(t0 + ms(280))))
+        .unwrap();
+    tx.send(Input::Audio(vec![0.0; 1_600])).unwrap();
+    tx.send(Input::Audio(vec![0.0; 1_600])).unwrap();
+    tx.send(Input::Trigger(TriggerEvent::escape(t0 + ms(580))))
+        .unwrap();
+    drop(tx);
+    let c = c.run(rx);
+
+    assert_eq!(c.engine().push_count(), 0);
+    assert_eq!(c.engine().cancel_count(), 1);
+    assert!(!c.microphone().is_capturing());
+    assert!(is_hidden(&c));
+    assert!(c.platform().pastes().is_empty());
+}

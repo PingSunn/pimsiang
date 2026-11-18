@@ -81,6 +81,7 @@ struct PermissionWatch {
     listening: bool,
 }
 
+#[derive(Debug)]
 enum State {
     Idle,
     Pending {
@@ -266,10 +267,16 @@ impl<P: Platform, E: Engine + Send + 'static, M: Microphone> Controller<P, E, M>
                 Input::Quit => return self,
                 Input::Audio(samples) => {
                     let (samples, next) = coalesce(samples, &inputs);
-                    if let Some(next) = next {
-                        carried.push_front(next);
+                    match next {
+                        Some(Input::Trigger(event)) if event.state == TriggerState::Escape => {
+                            Input::Trigger(event)
+                        }
+                        Some(next) => {
+                            carried.push_front(next);
+                            Input::Audio(samples)
+                        }
+                        None => Input::Audio(samples),
                     }
-                    Input::Audio(samples)
                 }
                 other => other,
             };
@@ -432,6 +439,7 @@ impl<P: Platform, E: Engine + Send + 'static, M: Microphone> Controller<P, E, M>
     }
 
     fn cancel(&mut self) {
+        tracing::info!(state = ?self.state, "cancelled the Utterance");
         self.microphone.stop();
         self.held_partial = None;
         self.notice_until = None;

@@ -7,7 +7,7 @@ const SINC_ZERO_CROSSINGS: f64 = 16.0;
 
 #[derive(Debug, thiserror::Error)]
 pub enum AudioError {
-    #[error("cannot read WAV file: {0}")]
+    #[error("cannot read WAV file")]
     Wav(#[from] hound::Error),
     #[error("WAV file has no channels")]
     NoChannels,

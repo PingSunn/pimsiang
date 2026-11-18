@@ -45,10 +45,11 @@ fn main() -> Result<()> {
     let mut pushed = 0usize;
     for chunk in samples.chunks(CHUNK_SAMPLES) {
         pushed += chunk.len();
-        if let Some(partial) = engine.push_audio(chunk)?
-            && args.verbose
-        {
-            eprintln!("[partial {:6.2} s] {partial}", pushed as f64 / SAMPLE_RATE);
+        let at = pushed as f64 / SAMPLE_RATE;
+        match engine.push_audio(chunk) {
+            Ok(Some(partial)) if args.verbose => eprintln!("[partial {at:6.2} s] {partial}"),
+            Ok(_) => {}
+            Err(error) => eprintln!("warning: Partial text failed at {at:.2} s: {error}"),
         }
     }
     let final_started = Instant::now();

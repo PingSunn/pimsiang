@@ -6,6 +6,14 @@ use std::time::Instant;
 pub enum TriggerState {
     Pressed,
     Released,
+    Combined,
+    Escape,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Sound {
+    Start,
+    Stop,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -25,6 +33,20 @@ impl TriggerEvent {
     pub fn released(at: Instant) -> Self {
         Self {
             state: TriggerState::Released,
+            at,
+        }
+    }
+
+    pub fn combined(at: Instant) -> Self {
+        Self {
+            state: TriggerState::Combined,
+            at,
+        }
+    }
+
+    pub fn escape(at: Instant) -> Self {
+        Self {
+            state: TriggerState::Escape,
             at,
         }
     }
@@ -155,6 +177,7 @@ pub trait Platform {
     fn stop_trigger(&mut self);
     fn show_status(&mut self, status: Status);
     fn show_pill(&mut self, state: PillState);
+    fn play_sound(&mut self, sound: Sound);
     fn paste(&mut self, text: &str) -> Result<(), PlatformError>;
     fn permission_status(&self, permission: Permission) -> PermissionStatus;
     fn request_permission(&mut self, permission: Permission);

@@ -1,10 +1,11 @@
+use std::collections::VecDeque;
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant};
 
 use audio::Microphone;
 use engine::{Engine, LanguageMode, UtteranceOptions};
 use platform::{
-    Permission, PermissionReport, PermissionStatus, PillError, PillState, Platform, Status,
+    Permission, PermissionReport, PermissionStatus, PillError, PillState, Platform, Sound, Status,
     TriggerEvent, TriggerSink, TriggerState,
 };
 
@@ -14,6 +15,8 @@ pub struct Config {
     pub language: LanguageMode,
     pub pill_linger: Duration,
     pub error_linger: Duration,
+    pub double_tap_window: Duration,
+    pub sounds: bool,
 }
 
 impl Default for Config {
@@ -23,6 +26,8 @@ impl Default for Config {
             language: LanguageMode::default(),
             pill_linger: Duration::from_millis(400),
             error_linger: Duration::from_secs(3),
+            double_tap_window: Duration::from_millis(400),
+            sounds: true,
         }
     }
 }
@@ -52,8 +57,8 @@ struct PermissionWatch {
 
 enum State {
     Idle,
-    Pending { since: Instant },
-    Listening,
+    Pending { since: Instant, second_tap: bool },
+    Listening { hands_free: bool },
 }
 
 pub struct Controller<P, E, M> {
@@ -62,6 +67,7 @@ pub struct Controller<P, E, M> {
     microphone: M,
     config: Config,
     state: State,
+    last_tap: Option<Instant>,
     hide_at: Option<Instant>,
     shown_partial: Option<String>,
     watch: Option<PermissionWatch>,
@@ -76,6 +82,7 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
             microphone,
             config,
             state: State::Idle,
+            last_tap: None,
             hide_at: None,
             shown_partial: None,
             watch: None,
@@ -123,17 +130,17 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
 
     pub fn next_deadline(&self) -> Option<Instant> {
         let pending = match self.state {
-            State::Pending { since } => Some(since + self.config.hold_threshold),
-            State::Idle | State::Listening => None,
+            State::Pending { since, .. } => Some(since + self.config.hold_threshold),
+            State::Idle | State::Listening { .. } => None,
         };
         let polling = self.watch.as_ref().map(|watch| watch.next_poll);
         [pending, self.hide_at, polling].into_iter().flatten().min()
     }
 
     pub fn run(mut self, inputs: Receiver<Input>) -> Self {
-        let mut carried = None;
+        let mut carried: VecDeque<Input> = VecDeque::new();
         loop {
-            let input = match carried.take() {
+            let input = match carried.pop_front() {
                 Some(input) => input,
                 None => match self.next_deadline() {
                     Some(deadline) => {
@@ -154,14 +161,14 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
             let input = match input {
                 Input::Audio(samples) => {
                     let (samples, next) = coalesce(samples, &inputs);
-                    carried = next;
+                    if let Some(next) = next {
+                        carried.push_front(next);
+                    }
                     Input::Audio(samples)
                 }
                 other => other,
             };
-            if let Some(next) = self.dispatch(input, Some(&inputs)) {
-                carried = Some(next);
-            }
+            carried.extend(self.dispatch(input, Some(&inputs)));
         }
     }
 
@@ -169,33 +176,85 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
         self.dispatch(input, None);
     }
 
-    fn dispatch(&mut self, input: Input, queued: Option<&Receiver<Input>>) -> Option<Input> {
+    fn dispatch(&mut self, input: Input, queued: Option<&Receiver<Input>>) -> Vec<Input> {
         match input {
             Input::Trigger(event) => match event.state {
-                TriggerState::Pressed => self.on_pressed(event.at),
-                TriggerState::Released => return self.on_released(queued),
+                TriggerState::Pressed => return self.on_pressed(event.at, queued),
+                TriggerState::Released => return self.on_released(event.at, queued),
+                TriggerState::Combined => self.on_combined(),
+                TriggerState::Escape => self.on_escape(),
             },
             Input::Audio(samples) => self.on_audio(&samples),
             Input::Tick(now) => self.on_tick(now),
             Input::Permission(PermissionCommand::Grant(permission)) => self.grant(permission),
         }
-        None
+        Vec::new()
     }
 
-    fn on_pressed(&mut self, at: Instant) {
-        if matches!(self.state, State::Idle) {
-            self.state = State::Pending { since: at };
+    fn on_pressed(&mut self, at: Instant, queued: Option<&Receiver<Input>>) -> Vec<Input> {
+        match self.state {
+            State::Idle => {
+                let second_tap = self.last_tap.take().is_some_and(|tap| {
+                    at.saturating_duration_since(tap) <= self.config.double_tap_window
+                });
+                self.state = State::Pending {
+                    since: at,
+                    second_tap,
+                };
+                Vec::new()
+            }
+            State::Listening { hands_free: true } => self.finish(queued),
+            State::Pending { .. } | State::Listening { hands_free: false } => Vec::new(),
         }
     }
 
-    fn on_released(&mut self, queued: Option<&Receiver<Input>>) -> Option<Input> {
+    fn on_released(&mut self, at: Instant, queued: Option<&Receiver<Input>>) -> Vec<Input> {
         match self.state {
-            State::Idle => None,
-            State::Pending { .. } => {
+            State::Idle | State::Listening { hands_free: true } => Vec::new(),
+            State::Pending { second_tap, .. } => {
                 self.state = State::Idle;
-                None
+                if second_tap {
+                    self.begin(true);
+                } else {
+                    self.last_tap = Some(at);
+                }
+                Vec::new()
             }
-            State::Listening => self.finish(queued),
+            State::Listening { hands_free: false } => self.finish(queued),
+        }
+    }
+
+    fn on_combined(&mut self) {
+        self.last_tap = None;
+        match self.state {
+            State::Pending { .. } => self.state = State::Idle,
+            State::Listening { hands_free: false } => self.cancel(),
+            State::Idle | State::Listening { hands_free: true } => {}
+        }
+    }
+
+    fn on_escape(&mut self) {
+        self.last_tap = None;
+        match self.state {
+            State::Pending { .. } => self.state = State::Idle,
+            State::Listening { .. } => self.cancel(),
+            State::Idle => {}
+        }
+    }
+
+    fn cancel(&mut self) {
+        self.microphone.stop();
+        self.engine.cancel_utterance();
+        self.play(Sound::Stop);
+        self.state = State::Idle;
+        self.hide_at = None;
+        self.platform.show_status(Status::Ready);
+        self.platform.show_pill(PillState::Hidden);
+    }
+
+    fn play(&mut self, sound: Sound) {
+        if self.config.sounds {
+            self.platform.play_sound(sound);
         }
     }
 
@@ -206,10 +265,11 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
             self.hide_at = None;
             self.platform.show_pill(PillState::Hidden);
         }
-        if let State::Pending { since } = self.state
+        if let State::Pending { since, .. } = self.state
             && now >= since + self.config.hold_threshold
         {
-            self.begin();
+            self.state = State::Idle;
+            self.begin(false);
         }
         if let Some(watch) = &self.watch
             && now >= watch.next_poll
@@ -272,7 +332,7 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
     }
 
     fn on_audio(&mut self, samples: &[f32]) {
-        if !matches!(self.state, State::Listening) {
+        if !matches!(self.state, State::Listening { .. }) {
             return;
         }
         match self.engine.push_audio(samples) {
@@ -296,8 +356,7 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
         self.platform.show_pill(PillState::Error(error));
     }
 
-    fn begin(&mut self) {
-        self.state = State::Idle;
+    fn begin(&mut self, hands_free: bool) {
         if let Some(permission) = self.missing_permission() {
             tracing::warn!(permission = permission.name(), "permission is missing");
             self.fail(PillError::PermissionMissing(permission));
@@ -324,19 +383,21 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
             self.fail(PillError::MicrophoneUnavailable);
             return;
         }
-        self.state = State::Listening;
+        self.state = State::Listening { hands_free };
         self.hide_at = None;
         self.shown_partial = None;
+        self.play(Sound::Start);
         self.platform.show_status(Status::Listening);
         self.platform.show_pill(PillState::Listening);
     }
 
-    fn finish(&mut self, queued: Option<&Receiver<Input>>) -> Option<Input> {
+    fn finish(&mut self, queued: Option<&Receiver<Input>>) -> Vec<Input> {
         self.microphone.stop();
-        let mut next = None;
+        self.play(Sound::Stop);
+        let mut waiting = Vec::new();
         if let Some(queued) = queued {
             let (tail, other) = coalesce(Vec::new(), queued);
-            next = other;
+            waiting.extend(other);
             if !tail.is_empty()
                 && let Err(error) = self.engine.push_tail(&tail)
             {
@@ -346,7 +407,22 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
         self.state = State::Idle;
         self.platform.show_status(Status::Transcribing);
         self.platform.show_pill(PillState::Transcribing);
-        let delivered = match self.engine.finish_utterance() {
+        let result = self.engine.finish_utterance();
+        if let Some(queued) = queued {
+            waiting.extend(std::iter::from_fn(|| queued.try_recv().ok()));
+        }
+        let cancelled = waiting.iter().any(
+            |input| matches!(input, Input::Trigger(event) if event.state == TriggerState::Escape),
+        );
+        waiting.retain(|input| matches!(input, Input::Tick(_) | Input::Permission(_)));
+        self.last_tap = None;
+        if cancelled {
+            tracing::info!("Utterance cancelled while transcribing");
+            self.platform.show_status(Status::Ready);
+            self.platform.show_pill(PillState::Hidden);
+            return waiting;
+        }
+        let delivered = match result {
             Ok(text) => self.deliver(text.trim()),
             Err(error) => {
                 tracing::error!(%error, "cannot finish the Utterance");
@@ -358,7 +434,7 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
             Ok(()) => self.hide_at = Some(Instant::now() + self.config.pill_linger),
             Err(error) => self.fail(error),
         }
-        next
+        waiting
     }
 
     fn deliver(&mut self, text: &str) -> Result<(), PillError> {

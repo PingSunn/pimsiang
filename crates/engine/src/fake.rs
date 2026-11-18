@@ -11,6 +11,7 @@ pub struct FakeEngine {
     last_options: Option<UtteranceOptions>,
     pushed_samples: usize,
     push_count: usize,
+    cancel_count: usize,
     load_fails: bool,
 }
 
@@ -28,6 +29,7 @@ impl FakeEngine {
             last_options: None,
             pushed_samples: 0,
             push_count: 0,
+            cancel_count: 0,
             load_fails: false,
         }
     }
@@ -39,6 +41,10 @@ impl FakeEngine {
 
     pub fn push_count(&self) -> usize {
         self.push_count
+    }
+
+    pub fn cancel_count(&self) -> usize {
+        self.cancel_count
     }
 
     pub fn last_options(&self) -> Option<UtteranceOptions> {
@@ -97,6 +103,7 @@ impl Engine for FakeEngine {
     }
 
     fn cancel_utterance(&mut self) {
+        self.cancel_count += 1;
         self.pending = None;
     }
 }

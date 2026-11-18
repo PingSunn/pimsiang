@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 
 mod permissions;
 mod pill;
+mod sound;
 
 pub use pill::PillPanel;
 
@@ -19,8 +20,8 @@ use core_graphics::event::{
 };
 use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
 use platform::{
-    Permission, PermissionReport, PermissionStatus, PillState, Platform, PlatformError, Status,
-    TriggerEvent, TriggerSink,
+    Permission, PermissionReport, PermissionStatus, PillState, Platform, PlatformError, Sound,
+    Status, TriggerEvent, TriggerSink,
 };
 
 const RIGHT_OPTION_DEVICE_MASK: u64 = 0x40;
@@ -77,6 +78,10 @@ impl Platform for MacPlatform {
 
     fn show_pill(&mut self, state: PillState) {
         (self.pill)(state);
+    }
+
+    fn play_sound(&mut self, sound: Sound) {
+        sound::play(sound);
     }
 
     fn permission_status(&self, permission: Permission) -> PermissionStatus {
@@ -140,7 +145,7 @@ fn run_event_tap(
         CGEventTapLocation::Session,
         CGEventTapPlacement::HeadInsertEventTap,
         CGEventTapOptions::ListenOnly,
-        vec![CGEventType::FlagsChanged],
+        vec![CGEventType::FlagsChanged, CGEventType::KeyDown],
         move |_proxy, event_type, event| {
             match event_type {
                 CGEventType::TapDisabledByTimeout | CGEventType::TapDisabledByUserInput => {
@@ -161,6 +166,15 @@ fn run_event_tap(
                                 },
                             );
                         }
+                    }
+                }
+                CGEventType::KeyDown => {
+                    let keycode = event.get_integer_value_field(EventField::KEYBOARD_EVENT_KEYCODE);
+                    let at = Instant::now();
+                    if keycode == i64::from(KeyCode::ESCAPE) {
+                        emit(&callback_sink, TriggerEvent::escape(at));
+                    } else if callback_down.load(Ordering::SeqCst) {
+                        emit(&callback_sink, TriggerEvent::combined(at));
                     }
                 }
                 _ => {}

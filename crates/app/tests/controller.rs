@@ -5,9 +5,10 @@ use audio::fake::FakeMicrophone;
 use engine::fake::FakeEngine;
 use engine::{Engine, LanguageMode, UtteranceOptions};
 use platform::fake::FakePlatform;
-use platform::{PillError, PillState, Status, TriggerEvent};
+use platform::{PillError, PillState, Sound, Status, TriggerEvent};
 
 const HOLD: Duration = Duration::from_millis(200);
+const TAP_WINDOW: Duration = Duration::from_millis(300);
 const LINGER: Duration = Duration::from_millis(400);
 const ERROR_LINGER: Duration = Duration::from_secs(3);
 
@@ -17,6 +18,8 @@ fn config() -> Config {
         language: LanguageMode::ThMix,
         pill_linger: LINGER,
         error_linger: ERROR_LINGER,
+        double_tap_window: TAP_WINDOW,
+        sounds: true,
     }
 }
 
@@ -442,25 +445,410 @@ fn backlog_of_audio_costs_one_decode_and_does_not_delay_the_release() {
     assert_eq!(c.platform().pills()[1], PillState::Partial("a".to_owned()));
 }
 
+fn escape(c: &mut TestController, at: Instant) {
+    c.handle(Input::Trigger(TriggerEvent::escape(at)));
+}
+
+fn combined(c: &mut TestController, at: Instant) {
+    c.handle(Input::Trigger(TriggerEvent::combined(at)));
+}
+
+fn tap(c: &mut TestController, at: Instant) {
+    press(c, at);
+    release(c, at + Duration::from_millis(60));
+}
+
+fn ms(n: u64) -> Duration {
+    Duration::from_millis(n)
+}
+
+fn is_hidden(c: &TestController) -> bool {
+    c.platform().pills().last() == Some(&PillState::Hidden)
+}
+
 #[test]
-fn a_trigger_press_queued_behind_the_release_starts_the_next_utterance() {
-    let (tx, rx) = std::sync::mpsc::channel();
-    let mut engine = FakeEngine::new(["a"], "one");
+fn double_tap_starts_hands_free_and_the_next_tap_pastes() {
+    let mut c = controller("สวัสดีครับ");
+    let t0 = Instant::now();
+
+    tap(&mut c, t0);
+    tap(&mut c, t0 + ms(200));
+
+    assert!(c.microphone().is_capturing());
+    assert_eq!(c.platform().statuses(), [Status::Listening]);
+    assert_eq!(c.next_deadline(), None);
+
+    c.handle(Input::Audio(vec![0.0; 1_600]));
+    c.handle(Input::Tick(t0 + Duration::from_secs(5)));
+    assert!(c.microphone().is_capturing());
+    assert!(c.platform().pastes().is_empty());
+
+    let t1 = t0 + Duration::from_secs(6);
+    press(&mut c, t1);
+
+    assert!(!c.microphone().is_capturing());
+    assert_eq!(c.platform().pastes(), ["สวัสดีครับ"]);
+
+    release(&mut c, t1 + ms(60));
+    assert_eq!(c.microphone().start_count(), 1);
+    assert_eq!(c.platform().pastes().len(), 1);
+}
+
+#[test]
+fn taps_too_far_apart_are_not_hands_free() {
+    let mut c = controller("x");
+    let t0 = Instant::now();
+
+    tap(&mut c, t0);
+    tap(&mut c, t0 + ms(60) + TAP_WINDOW + ms(10));
+
+    assert_eq!(c.microphone().start_count(), 0);
+    assert!(c.platform().statuses().is_empty());
+}
+
+#[test]
+fn tap_then_hold_is_push_to_talk() {
+    let mut c = controller("ถือค้าง");
+    let t0 = Instant::now();
+
+    tap(&mut c, t0);
+    let t1 = t0 + ms(200);
+    press(&mut c, t1);
+    assert_eq!(c.microphone().start_count(), 0);
+    c.handle(Input::Tick(t1 + HOLD));
+    assert!(c.microphone().is_capturing());
+
+    release(&mut c, t1 + Duration::from_secs(2));
+
+    assert!(!c.microphone().is_capturing());
+    assert_eq!(c.platform().pastes(), ["ถือค้าง"]);
+}
+
+#[test]
+fn a_tap_after_hands_free_ended_starts_counting_afresh() {
+    let mut c = controller("x");
+    let t0 = Instant::now();
+
+    tap(&mut c, t0);
+    tap(&mut c, t0 + ms(200));
+    tap(&mut c, t0 + ms(400));
+    assert_eq!(c.platform().pastes().len(), 1);
+
+    tap(&mut c, t0 + ms(600));
+
+    assert_eq!(c.microphone().start_count(), 1);
+    assert!(!c.microphone().is_capturing());
+}
+
+#[test]
+fn a_triple_tap_starts_and_ends_one_hands_free_utterance() {
+    let mut c = controller("สาม");
+    let t0 = Instant::now();
+
+    tap(&mut c, t0);
+    tap(&mut c, t0 + ms(150));
+    tap(&mut c, t0 + ms(300));
+
+    assert_eq!(c.microphone().start_count(), 1);
+    assert_eq!(c.platform().pastes(), ["สาม"]);
+}
+
+#[test]
+fn hands_free_survives_very_long_speech() {
+    let mut c = controller("ยาวมาก");
+    let t0 = Instant::now();
+
+    tap(&mut c, t0);
+    tap(&mut c, t0 + ms(200));
+    for minute in 1..=30 {
+        c.handle(Input::Audio(vec![0.0; 16_000]));
+        c.handle(Input::Tick(t0 + Duration::from_secs(60 * minute)));
+    }
+
+    assert!(c.microphone().is_capturing());
+    assert_eq!(
+        c.platform().pills().last(),
+        Some(&PillState::Partial("สวัส".to_owned()))
+    );
+    assert!(c.platform().pastes().is_empty());
+
+    tap(&mut c, t0 + Duration::from_secs(60 * 31));
+    assert_eq!(c.platform().pastes(), ["ยาวมาก"]);
+}
+
+#[test]
+fn escape_cancels_push_to_talk_and_the_release_does_nothing() {
+    let mut c = controller("ไม่ควรถูกวาง");
+    let t0 = Instant::now();
+
+    hold(&mut c, t0);
+    c.handle(Input::Audio(vec![0.0; 1_600]));
+    escape(&mut c, t0 + Duration::from_secs(1));
+
+    assert!(!c.microphone().is_capturing());
+    assert_eq!(c.engine().cancel_count(), 1);
+    assert!(is_hidden(&c));
+    assert_eq!(c.platform().statuses().last(), Some(&Status::Ready));
+    assert_eq!(c.next_deadline(), None);
+
+    release(&mut c, t0 + Duration::from_secs(2));
+    assert!(c.platform().pastes().is_empty());
+    assert!(!c.platform().statuses().contains(&Status::Transcribing));
+}
+
+#[test]
+fn escape_cancels_hands_free() {
+    let mut c = controller("ไม่ควรถูกวาง");
+    let t0 = Instant::now();
+
+    tap(&mut c, t0);
+    tap(&mut c, t0 + ms(200));
+    escape(&mut c, t0 + Duration::from_secs(3));
+
+    assert!(!c.microphone().is_capturing());
+    assert!(is_hidden(&c));
+    assert!(c.platform().pastes().is_empty());
+
+    tap(&mut c, t0 + Duration::from_secs(5));
+    assert_eq!(c.microphone().start_count(), 1);
+    assert!(c.platform().pastes().is_empty());
+}
+
+#[test]
+fn escape_while_waiting_for_the_threshold_prevents_the_utterance() {
+    let mut c = controller("x");
+    let t0 = Instant::now();
+
+    press(&mut c, t0);
+    escape(&mut c, t0 + HOLD / 2);
+    c.handle(Input::Tick(t0 + HOLD * 2));
+
+    assert_eq!(c.microphone().start_count(), 0);
+    assert_eq!(c.next_deadline(), None);
+}
+
+#[test]
+fn escape_between_two_taps_breaks_the_double_tap() {
+    let mut c = controller("x");
+    let t0 = Instant::now();
+
+    tap(&mut c, t0);
+    escape(&mut c, t0 + ms(100));
+    tap(&mut c, t0 + ms(200));
+
+    assert_eq!(c.microphone().start_count(), 0);
+}
+
+#[test]
+fn escape_when_idle_changes_nothing() {
+    let mut c = controller("x");
+
+    escape(&mut c, Instant::now());
+
+    assert!(c.platform().pills().is_empty());
+    assert!(c.platform().statuses().is_empty());
+    assert!(c.platform().sounds().is_empty());
+}
+
+#[test]
+fn escape_after_the_final_text_arrived_cannot_undo_the_paste() {
+    let mut c = controller("วางแล้ว");
+    let t0 = Instant::now();
+
+    hold(&mut c, t0);
+    release(&mut c, t0 + Duration::from_secs(1));
+    escape(&mut c, t0 + Duration::from_secs(2));
+
+    assert_eq!(c.platform().pastes(), ["วางแล้ว"]);
+}
+
+#[test]
+fn trigger_with_another_key_before_the_threshold_is_not_an_utterance() {
+    let mut c = controller("x");
+    let t0 = Instant::now();
+
+    press(&mut c, t0);
+    combined(&mut c, t0 + HOLD / 2);
+    c.handle(Input::Tick(t0 + HOLD * 2));
+    release(&mut c, t0 + HOLD * 3);
+
+    assert_eq!(c.microphone().start_count(), 0);
+    assert!(c.platform().statuses().is_empty());
+    assert!(c.platform().pills().is_empty());
+    assert!(c.platform().sounds().is_empty());
+    assert!(c.platform().pastes().is_empty());
+}
+
+#[test]
+fn a_shortcut_does_not_count_as_the_first_tap_of_a_double_tap() {
+    let mut c = controller("x");
+    let t0 = Instant::now();
+
+    press(&mut c, t0);
+    combined(&mut c, t0 + ms(20));
+    release(&mut c, t0 + ms(60));
+    tap(&mut c, t0 + ms(150));
+
+    assert_eq!(c.microphone().start_count(), 0);
+}
+
+#[test]
+fn another_key_while_holding_past_the_threshold_cancels_push_to_talk() {
+    let mut c = controller("ไม่ควรถูกวาง");
+    let t0 = Instant::now();
+
+    hold(&mut c, t0);
+    combined(&mut c, t0 + HOLD * 2);
+    release(&mut c, t0 + HOLD * 3);
+
+    assert!(!c.microphone().is_capturing());
+    assert!(is_hidden(&c));
+    assert!(c.platform().pastes().is_empty());
+}
+
+#[test]
+fn start_and_stop_sounds_play_around_push_to_talk() {
+    let mut c = controller("x");
+    let t0 = Instant::now();
+
+    press(&mut c, t0);
+    assert!(c.platform().sounds().is_empty());
+    c.handle(Input::Tick(t0 + HOLD));
+    assert_eq!(c.platform().sounds(), [Sound::Start]);
+
+    release(&mut c, t0 + Duration::from_secs(1));
+    assert_eq!(c.platform().sounds(), [Sound::Start, Sound::Stop]);
+}
+
+#[test]
+fn start_and_stop_sounds_play_around_hands_free() {
+    let mut c = controller("x");
+    let t0 = Instant::now();
+
+    tap(&mut c, t0);
+    assert!(c.platform().sounds().is_empty());
+    tap(&mut c, t0 + ms(200));
+    assert_eq!(c.platform().sounds(), [Sound::Start]);
+    tap(&mut c, t0 + Duration::from_secs(2));
+
+    assert_eq!(c.platform().sounds(), [Sound::Start, Sound::Stop]);
+}
+
+#[test]
+fn cancelling_plays_the_stop_sound() {
+    let mut c = controller("x");
+    let t0 = Instant::now();
+
+    hold(&mut c, t0);
+    escape(&mut c, t0 + Duration::from_secs(1));
+
+    assert_eq!(c.platform().sounds(), [Sound::Start, Sound::Stop]);
+}
+
+#[test]
+fn no_sound_plays_when_the_utterance_cannot_start() {
+    let mut engine = FakeEngine::new(Vec::<String>::new(), "x");
     engine.load().unwrap();
-    let c = Controller::new(FakePlatform::new(), engine, FakeMicrophone::new(), config());
+    let mut c = Controller::new(
+        FakePlatform::new(),
+        engine,
+        FakeMicrophone::failing(),
+        config(),
+    );
+
+    hold(&mut c, Instant::now());
+
+    assert!(c.platform().sounds().is_empty());
+}
+
+#[test]
+fn sounds_can_be_switched_off() {
+    let mut engine = FakeEngine::new(Vec::<String>::new(), "x");
+    engine.load().unwrap();
+    let mut c = Controller::new(
+        FakePlatform::new(),
+        engine,
+        FakeMicrophone::new(),
+        Config {
+            sounds: false,
+            ..config()
+        },
+    );
+    let t0 = Instant::now();
+
+    hold(&mut c, t0);
+    release(&mut c, t0 + Duration::from_secs(1));
+
+    assert_eq!(c.platform().pastes(), ["x"]);
+    assert!(c.platform().sounds().is_empty());
+}
+
+fn run_script(inputs: Vec<Input>) -> TestController {
+    let (tx, rx) = std::sync::mpsc::channel();
+    for input in inputs {
+        tx.send(input).unwrap();
+    }
+    drop(tx);
+    controller("วางแล้ว").run(rx)
+}
+
+fn trigger(event: TriggerEvent) -> Input {
+    Input::Trigger(event)
+}
+
+#[test]
+fn escape_while_transcribing_discards_the_final_text() {
+    let t0 = Instant::now();
+    let c = run_script(vec![
+        trigger(TriggerEvent::pressed(t0)),
+        Input::Tick(t0 + HOLD),
+        trigger(TriggerEvent::released(t0 + Duration::from_secs(1))),
+        trigger(TriggerEvent::escape(t0 + Duration::from_secs(1) + ms(100))),
+    ]);
+
+    assert!(c.platform().pastes().is_empty());
+    assert!(is_hidden(&c));
+    assert_eq!(c.platform().statuses().last(), Some(&Status::Ready));
+}
+
+#[test]
+fn a_new_utterance_cannot_start_while_the_previous_one_is_transcribing() {
     let t0 = Instant::now();
     let t1 = t0 + Duration::from_secs(1);
+    let c = run_script(vec![
+        trigger(TriggerEvent::pressed(t0)),
+        Input::Tick(t0 + HOLD),
+        trigger(TriggerEvent::released(t1)),
+        trigger(TriggerEvent::pressed(t1 + ms(50))),
+        Input::Tick(t1 + ms(50) + HOLD),
+        Input::Tick(t1 + Duration::from_secs(5)),
+    ]);
 
-    tx.send(Input::Trigger(TriggerEvent::pressed(t0))).unwrap();
-    tx.send(Input::Tick(t0 + HOLD)).unwrap();
-    tx.send(Input::Audio(vec![0.0; 1_600])).unwrap();
-    tx.send(Input::Trigger(TriggerEvent::released(t1))).unwrap();
-    tx.send(Input::Audio(vec![0.0; 800])).unwrap();
-    tx.send(Input::Trigger(TriggerEvent::pressed(t1))).unwrap();
-    tx.send(Input::Tick(t1 + HOLD)).unwrap();
+    assert_eq!(c.microphone().start_count(), 1);
+    assert!(!c.microphone().is_capturing());
+    assert_eq!(c.platform().pastes(), ["วางแล้ว"]);
+}
+
+#[test]
+fn trigger_events_after_transcribing_work_normally() {
+    let t0 = Instant::now();
+    let t1 = t0 + Duration::from_secs(1);
+    let t2 = t1 + Duration::from_secs(5);
+    let c = run_script(vec![
+        trigger(TriggerEvent::pressed(t0)),
+        Input::Tick(t0 + HOLD),
+        trigger(TriggerEvent::released(t1)),
+    ]);
+    let (tx, rx) = std::sync::mpsc::channel();
+    for input in [
+        trigger(TriggerEvent::pressed(t2)),
+        Input::Tick(t2 + HOLD),
+        trigger(TriggerEvent::released(t2 + Duration::from_secs(1))),
+    ] {
+        tx.send(input).unwrap();
+    }
     drop(tx);
     let c = c.run(rx);
 
-    assert_eq!(c.microphone().start_count(), 2);
-    assert!(c.microphone().is_capturing());
+    assert_eq!(c.platform().pastes(), ["วางแล้ว", "วางแล้ว"]);
 }

@@ -1,4 +1,5 @@
 pub mod clipboard;
+pub mod dock;
 pub mod fake;
 pub mod focus;
 pub mod pill_layout;
@@ -299,6 +300,7 @@ pub enum PlatformError {
 }
 
 pub use focus::Focus;
+pub use dock::{DockState, ShowInDock, dock_visible};
 pub use pill_layout::{PillPlacement, PillPosition};
 
 pub type TriggerSink = Box<dyn FnMut(TriggerEvent) + Send>;

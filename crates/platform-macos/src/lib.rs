@@ -2,7 +2,7 @@
 
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::mpsc;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -26,6 +26,9 @@ use platform::{
     MicrophoneMenu, Permission, PermissionReport, PermissionStatus, PillState, Platform,
     PlatformError, Sound, Status, TriggerEvent, TriggerKey, TriggerSink, clipboard,
 };
+
+static CLIPBOARD: LazyLock<clipboard::Clipboard<Vec<clipboard::Item>>> =
+    LazyLock::new(clipboard::Clipboard::new);
 
 const RESTORE_DELAY: Duration = Duration::from_millis(400);
 const TAP_POLL: Duration = Duration::from_millis(500);
@@ -128,17 +131,19 @@ impl Platform for MacPlatform {
 
     fn paste(&mut self, text: &str, restore_clipboard: bool) -> Result<(), PlatformError> {
         let mut pasteboard = pasteboard::GeneralPasteboard::new();
-        let pending = clipboard::put_text(&mut pasteboard, text, restore_clipboard)
+        let pending = CLIPBOARD
+            .put_text(&mut pasteboard, text, restore_clipboard)
             .map_err(PlatformError::Paste)?;
         send_command_v().map_err(PlatformError::Paste)?;
-        if let Some(pending) = pending {
+        if let Some(ticket) = pending {
             let spawned = thread::Builder::new()
                 .name("clipboard-restore".to_owned())
                 .spawn(move || {
                     thread::sleep(RESTORE_DELAY);
                     let mut pasteboard = pasteboard::GeneralPasteboard::new();
-                    match pending.restore(&mut pasteboard) {
+                    match CLIPBOARD.restore(&mut pasteboard, ticket) {
                         clipboard::Restore::Restored => {}
+                        clipboard::Restore::Superseded => {}
                         clipboard::Restore::ClipboardChanged => {
                             tracing::info!("the clipboard changed after the paste; not restoring");
                         }

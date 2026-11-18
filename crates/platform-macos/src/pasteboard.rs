@@ -2,9 +2,7 @@ use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2_app_kit::{NSPasteboard, NSPasteboardItem, NSPasteboardTypeString, NSPasteboardWriting};
 use objc2_foundation::{NSArray, NSData, NSString};
-use platform::clipboard::Pasteboard;
-
-pub type Item = Vec<(String, Vec<u8>)>;
+use platform::clipboard::{Gathered, Item, Limits, Pasteboard, gather};
 
 pub struct GeneralPasteboard {
     pasteboard: Retained<NSPasteboard>,
@@ -29,20 +27,27 @@ impl Pasteboard for GeneralPasteboard {
         let Some(items) = self.pasteboard.pasteboardItems() else {
             return Some(Vec::new());
         };
-        Some(
-            items
-                .iter()
-                .map(|item| {
-                    item.types()
-                        .iter()
-                        .filter_map(|kind| {
-                            item.dataForType(&kind)
-                                .map(|data| (kind.to_string(), data.to_vec()))
-                        })
-                        .collect()
-                })
-                .collect(),
-        )
+        let items: Vec<_> = items.iter().collect();
+        let types: Vec<Vec<String>> = items
+            .iter()
+            .map(|item| item.types().iter().map(|kind| kind.to_string()).collect())
+            .collect();
+        let gathered = gather(&types, &Limits::default(), |index, kind| {
+            items[index]
+                .dataForType(&NSString::from_str(kind))
+                .map(|data| data.to_vec())
+        });
+        match gathered {
+            Gathered::Items(items) => Some(items),
+            Gathered::Sensitive => {
+                tracing::info!("the clipboard holds a concealed item; not restoring it");
+                Some(Vec::new())
+            }
+            Gathered::OverBudget => {
+                tracing::info!("the clipboard is too large to save; not restoring it");
+                None
+            }
+        }
     }
 
     fn write_text(&mut self, text: &str) -> Result<(), String> {

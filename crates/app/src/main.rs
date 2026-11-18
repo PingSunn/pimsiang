@@ -20,8 +20,8 @@ mod macos {
     use clap::Parser;
     use engine::{LanguageMode, ModelFiles, OnnxEngine, Precision};
     use objc2::MainThreadMarker;
-    use platform::{PermissionReport, PillState, Status};
-    use platform_macos::{MacPlatform, PillPanel};
+    use platform::{PermissionReport, PillState, Sound, Status};
+    use platform_macos::{MacPlatform, PillPanel, play_sound};
     use tray_icon::menu::MenuEvent;
     use winit::application::ApplicationHandler;
     use winit::event::{StartCause, WindowEvent};
@@ -53,6 +53,7 @@ mod macos {
         Status(Status),
         Permissions(PermissionReport),
         Pill(PillState),
+        Sound(Sound),
         Menu(MenuEvent),
         Fatal(String),
     }
@@ -176,6 +177,7 @@ mod macos {
                         pill.show(&state);
                     }
                 }
+                UserEvent::Sound(sound) => play_sound(sound),
                 UserEvent::Menu(event) => {
                     let action = self.menu_bar.as_ref().and_then(|bar| bar.action(&event.id));
                     match action {
@@ -260,6 +262,7 @@ mod macos {
         let status_proxy = proxy.clone();
         let pill_proxy = proxy.clone();
         let permissions_proxy = proxy.clone();
+        let sound_proxy = proxy.clone();
         let platform = MacPlatform::new(
             Box::new(move |status| {
                 let _ = status_proxy.send_event(UserEvent::Status(status));
@@ -269,6 +272,9 @@ mod macos {
             }),
             Box::new(move |report| {
                 let _ = permissions_proxy.send_event(UserEvent::Permissions(report));
+            }),
+            Box::new(move |sound| {
+                let _ = sound_proxy.send_event(UserEvent::Sound(sound));
             }),
         );
         let engine = OnnxEngine::new(ModelFiles::new(&args.model_dir, args.precision));

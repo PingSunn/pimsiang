@@ -11,6 +11,7 @@ mod pill;
 mod sound;
 
 pub use pill::PillPanel;
+pub use sound::play as play_sound;
 
 use core_foundation::runloop::{CFRunLoop, kCFRunLoopCommonModes, kCFRunLoopDefaultMode};
 use core_foundation::string::CFStringRef;
@@ -30,20 +31,28 @@ const TAP_POLL: Duration = Duration::from_millis(500);
 pub type StatusSink = Box<dyn Fn(Status) + Send>;
 pub type PillSink = Box<dyn Fn(PillState) + Send>;
 pub type PermissionSink = Box<dyn Fn(PermissionReport) + Send>;
+pub type SoundSink = Box<dyn Fn(Sound) + Send>;
 
 pub struct MacPlatform {
     status: StatusSink,
     pill: PillSink,
     permissions: PermissionSink,
+    sound: SoundSink,
     tap_stop: Option<Arc<AtomicBool>>,
 }
 
 impl MacPlatform {
-    pub fn new(status: StatusSink, pill: PillSink, permissions: PermissionSink) -> Self {
+    pub fn new(
+        status: StatusSink,
+        pill: PillSink,
+        permissions: PermissionSink,
+        sound: SoundSink,
+    ) -> Self {
         Self {
             status,
             pill,
             permissions,
+            sound,
             tap_stop: None,
         }
     }
@@ -81,7 +90,7 @@ impl Platform for MacPlatform {
     }
 
     fn play_sound(&mut self, sound: Sound) {
-        sound::play(sound);
+        (self.sound)(sound);
     }
 
     fn permission_status(&self, permission: Permission) -> PermissionStatus {

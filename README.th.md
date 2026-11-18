@@ -65,3 +65,7 @@ brew uninstall --cask --zap PingSunn/tap/pimsiang
 ## สัญญาอนุญาต
 
 PimSiang ใช้สัญญาอนุญาต MIT (ดูไฟล์ `LICENSE`) ส่วนประกอบที่รวมมาหรือดาวน์โหลดมาใช้สัญญาอนุญาตของตัวเอง: Model OpenThai 2.0 ASR (iApp) ภายใต้ OpenMDW-1.1, Silero VAD ภายใต้ MIT และฟอนต์ Anuphan ภายใต้ SIL Open Font License 1.1
+
+## การพัฒนา
+
+`scripts/check.sh` รัน format, build, clippy และ test ส่วน `scripts/make-signing-cert.sh` สร้าง certificate สำหรับ sign บนเครื่องครั้งเดียว และ `scripts/release.sh X.Y.Z --dry-run` จะ build, sign และ zip release ไว้ใน `target/release-dist/` โดยไม่เผยแพร่

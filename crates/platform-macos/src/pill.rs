@@ -91,6 +91,7 @@ impl PillPanel {
                 return;
             }
             PillState::Listening => "Listening…".to_owned(),
+            PillState::LoadingModel => "Loading the Model… · กำลังโหลดโมเดล".to_owned(),
             PillState::Partial(text) => text.clone(),
             PillState::Transcribing => "Transcribing…".to_owned(),
             PillState::Notice(notice) => notice.message().to_owned(),

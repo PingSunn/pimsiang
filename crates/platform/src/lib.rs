@@ -245,6 +245,7 @@ pub struct MicrophoneMenu {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PillState {
     Listening,
+    LoadingModel,
     Partial(String),
     Transcribing,
     Notice(PillNotice),

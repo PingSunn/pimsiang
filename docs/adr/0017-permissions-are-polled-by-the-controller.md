@@ -4,10 +4,10 @@ PimSiang needs three macOS permissions: Microphone (capture), Accessibility (pos
 
 When the Trigger key is pressed with Microphone or Accessibility missing, the Pill shows which one. With Input Monitoring missing the key cannot be observed at all, so the menu bar warning (amber icon, a line naming what is missing, and a "Set up permissions" item) is the only signal.
 
-The setup window opens at launch whenever a permission is missing, not only on the very first launch, because there is no settings store yet to remember a first run; it closes itself shortly after everything is granted and can be reopened from the menu while something is missing. Microphone is asked for with the system prompt while undetermined and with its Settings pane once denied; Accessibility and Input Monitoring request access first, which makes macOS list PimSiang, and then open their pane. macOS ties each grant to the process that is responsible for the app: today that is the terminal it was started from, later the signed PimSiang.app (ADR 0007).
+The setup window opens at launch whenever a permission is missing, not only on the very first launch, because there is no settings store yet to remember a first run; it closes itself shortly after everything is granted and can be reopened from the menu while something is missing. Microphone is asked for with the system prompt while undetermined and with its Settings pane once denied; Accessibility shows the system prompt on the first click and opens its pane on the next; Input Monitoring requests access, which makes macOS list PimSiang, and then opens its pane. macOS ties each grant to the signed PimSiang.app bundle (ADR 0019, ADR 0007); a bare binary run from a terminal is attributed to the terminal instead. A revoked Input Monitoring grant stops the event tap, and the next grant creates a new one.
 
 ## Considered options
 
 - **Poll in the main thread or a separate supervisor:** needs a second owner of the platform; the controller already owns it and has a deadline loop.
 - **Show the window only on a stored first run:** needs persisted settings that do not exist yet.
-- **Prompt for Accessibility with `AXIsProcessTrustedWithOptions`:** the system dialog duplicates our own guidance and the button already opens the right pane.
+- **Open the pane and prompt together:** two windows appear at once for Accessibility, so the prompt comes first and the pane on a later click.

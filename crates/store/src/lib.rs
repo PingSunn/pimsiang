@@ -1,4 +1,4 @@
-use std::io;
+use std::io::{self, Write};
 use std::path::Path;
 
 const MICROPHONE_KEY: &str = "microphone=";
@@ -13,6 +13,7 @@ impl Settings {
         let text = std::fs::read_to_string(path).unwrap_or_default();
         let microphone = text
             .lines()
+            .map(|line| line.trim_end_matches('\r'))
             .find_map(|line| line.strip_prefix(MICROPHONE_KEY))
             .filter(|id| !id.is_empty())
             .map(str::to_owned);
@@ -29,8 +30,17 @@ impl Settings {
             text.push_str(id);
             text.push('\n');
         }
+        let existing = std::fs::read_to_string(path).unwrap_or_default();
+        for line in existing.lines().map(|line| line.trim_end_matches('\r')) {
+            if !line.is_empty() && !line.starts_with(MICROPHONE_KEY) {
+                text.push_str(line);
+                text.push('\n');
+            }
+        }
         let temporary = path.with_extension("tmp");
-        std::fs::write(&temporary, text)?;
+        let mut file = std::fs::File::create(&temporary)?;
+        file.write_all(text.as_bytes())?;
+        file.sync_all()?;
         std::fs::rename(&temporary, path)
     }
 }

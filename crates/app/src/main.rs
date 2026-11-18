@@ -51,7 +51,7 @@ mod macos {
     use crate::tray::{MenuAction, MenuBar, copy_to_clipboard, open_folder};
 
     #[derive(Parser)]
-    #[command(about = "PimSiang: hold Right Option and speak Thai")]
+    #[command(about = "PimSiang: hold the trigger key and speak Thai")]
     struct Args {
         #[arg(long, env = "PIMSIANG_MODEL_DIR")]
         model_dir: Option<PathBuf>,
@@ -287,7 +287,13 @@ mod macos {
                 accessibility: platform::PermissionStatus::NotDetermined,
                 input_monitoring: platform::PermissionStatus::NotDetermined,
             });
-            onboarding::view(self.language, &report, self.bundled, &self.model)
+            onboarding::view(
+                self.language,
+                self.preferences.trigger_key,
+                &report,
+                self.bundled,
+                &self.model,
+            )
         }
 
         fn on_permissions(&mut self, event_loop: &ActiveEventLoop, report: PermissionReport) {

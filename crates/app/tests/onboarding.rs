@@ -3,7 +3,7 @@ use std::path::Path;
 
 use app::model_download::ModelStatus;
 use app::onboarding::{Button, is_bundled, view as view_with};
-use platform::{Permission, PermissionReport, PermissionStatus};
+use platform::{Permission, PermissionReport, PermissionStatus, TriggerKey};
 
 fn report(mic: PermissionStatus, ax: PermissionStatus, im: PermissionStatus) -> PermissionReport {
     PermissionReport {
@@ -18,7 +18,13 @@ const DENIED: PermissionStatus = PermissionStatus::Denied;
 const UNKNOWN: PermissionStatus = PermissionStatus::NotDetermined;
 
 fn view(language: Language, report: &PermissionReport, bundled: bool) -> app::onboarding::View {
-    view_with(language, report, bundled, &ModelStatus::Ready)
+    view_with(
+        language,
+        TriggerKey::RightOption,
+        report,
+        bundled,
+        &ModelStatus::Ready,
+    )
 }
 
 fn has_thai(text: &str) -> bool {
@@ -44,12 +50,13 @@ fn every_string_exists_in_both_languages() {
         let thai = language == Language::Thai;
         let rows = view(language, &report(DENIED, DENIED, UNKNOWN), false).rows;
         assert_eq!(rows.len(), 3);
+        let all_set = language.all_set(TriggerKey::RightOption);
         let mut texts = vec![
             language.terminal_note(),
             language.window_title(),
             language.heading(),
             language.intro(),
-            language.all_set(),
+            all_set.as_str(),
             language.menu_setup(),
             language.menu_all_granted(),
             language.menu_microphone(),
@@ -57,7 +64,7 @@ fn every_string_exists_in_both_languages() {
         ];
         for row in &rows {
             texts.push(row.title);
-            texts.push(row.why);
+            texts.push(row.why.as_str());
             texts.push(row.status_label);
             texts.push(row.button.map(|b| b.label).unwrap_or("x"));
         }
@@ -133,7 +140,13 @@ fn a_binary_inside_an_app_bundle_is_bundled() {
 }
 
 fn model_view(language: Language, status: ModelStatus) -> app::onboarding::View {
-    view_with(language, &report(GRANTED, GRANTED, GRANTED), true, &status)
+    view_with(
+        language,
+        TriggerKey::RightOption,
+        &report(GRANTED, GRANTED, GRANTED),
+        true,
+        &status,
+    )
 }
 
 #[test]
@@ -194,5 +207,30 @@ fn model_strings_exist_in_both_languages() {
             assert!(!text.is_empty());
             assert_eq!(has_thai(&text), thai, "{text}");
         }
+    }
+}
+
+#[test]
+fn the_texts_name_the_configured_trigger_key() {
+    let granted = report(GRANTED, GRANTED, GRANTED);
+    for language in [Language::English, Language::Thai] {
+        let v = view_with(
+            language,
+            TriggerKey::RightCommand,
+            &report(DENIED, DENIED, DENIED),
+            true,
+            &ModelStatus::Ready,
+        );
+        assert!(v.rows[0].why.contains("Right Command"));
+        assert!(v.rows[2].why.contains("Right Command"));
+        assert!(!v.rows[0].why.contains("Right Option"));
+        let done = view_with(
+            language,
+            TriggerKey::RightControl,
+            &granted,
+            true,
+            &ModelStatus::Ready,
+        );
+        assert!(done.footer.contains("Right Control"));
     }
 }

@@ -121,7 +121,7 @@ fn show(ui: &mut egui::Ui, view: &View, grant: &mut Option<Permission>, retry: &
                             ));
                         });
                     });
-                    ui.label(RichText::new(row.why).size(14.0));
+                    ui.label(RichText::new(&row.why).size(14.0));
                     if let Some(button) = row.button
                         && ui.button(RichText::new(button.label).size(15.0)).clicked()
                     {
@@ -132,7 +132,7 @@ fn show(ui: &mut egui::Ui, view: &View, grant: &mut Option<Permission>, retry: &
         if !view.footer.is_empty() {
             ui.add_space(8.0);
             ui.label(
-                RichText::new(view.footer)
+                RichText::new(&view.footer)
                     .size(16.0)
                     .strong()
                     .color(Color32::from_rgb(52, 199, 89)),

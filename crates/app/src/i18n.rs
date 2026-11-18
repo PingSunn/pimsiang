@@ -1,4 +1,4 @@
-use platform::{Permission, PermissionReport, PermissionStatus};
+use platform::{Permission, PermissionReport, PermissionStatus, TriggerKey};
 use store::Kind;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -44,11 +44,12 @@ impl Language {
         )
     }
 
-    pub fn all_set(self) -> &'static str {
-        self.pick(
-            "All set. Hold Right Option and speak.",
-            "พร้อมใช้งานแล้ว กด Right Option ค้างไว้แล้วพูดได้เลย",
-        )
+    pub fn all_set(self, key: TriggerKey) -> String {
+        let key = key.label();
+        match self {
+            Self::English => format!("All set. Hold {key} and speak."),
+            Self::Thai => format!("พร้อมใช้งานแล้ว กด {key} ค้างไว้แล้วพูดได้เลย"),
+        }
     }
 
     pub fn menu_setup(self) -> &'static str {
@@ -104,20 +105,27 @@ impl Language {
         }
     }
 
-    pub fn permission_why(self, permission: Permission) -> &'static str {
-        match permission {
-            Permission::Microphone => self.pick(
-                "Hears you while you hold Right Option. Audio never leaves this Mac.",
-                "ใช้ฟังเสียงของคุณขณะกด Right Option ค้างไว้ เสียงจะไม่ถูกส่งออกจากเครื่องนี้",
-            ),
-            Permission::Accessibility => self.pick(
-                "Pastes the transcribed text into the app you are typing in.",
-                "ใช้วางข้อความที่ถอดเสียงได้ลงในแอปที่คุณกำลังพิมพ์",
-            ),
-            Permission::InputMonitoring => self.pick(
-                "Notices when you hold Right Option so PimSiang knows when to listen.",
-                "ใช้ตรวจว่าคุณกด Right Option ค้างไว้ เพื่อให้ PimSiang รู้ว่าต้องเริ่มฟังเมื่อไร",
-            ),
+    pub fn permission_why(self, permission: Permission, key: TriggerKey) -> String {
+        let key = key.label();
+        match (permission, self) {
+            (Permission::Microphone, Self::English) => {
+                format!("Hears you while you hold {key}. Audio never leaves this Mac.")
+            }
+            (Permission::Microphone, Self::Thai) => {
+                format!("ใช้ฟังเสียงของคุณขณะกด {key} ค้างไว้ เสียงจะไม่ถูกส่งออกจากเครื่องนี้")
+            }
+            (Permission::Accessibility, _) => self
+                .pick(
+                    "Pastes the transcribed text into the app you are typing in.",
+                    "ใช้วางข้อความที่ถอดเสียงได้ลงในแอปที่คุณกำลังพิมพ์",
+                )
+                .to_owned(),
+            (Permission::InputMonitoring, Self::English) => {
+                format!("Notices when you hold {key} so PimSiang knows when to listen.")
+            }
+            (Permission::InputMonitoring, Self::Thai) => {
+                format!("ใช้ตรวจว่าคุณกด {key} ค้างไว้ เพื่อให้ PimSiang รู้ว่าต้องเริ่มฟังเมื่อไร")
+            }
         }
     }
 
@@ -203,8 +211,8 @@ impl Language {
 
     pub fn settings_trigger_key_help(self) -> &'static str {
         self.pick(
-            "Hold it to talk, double-tap it for hands-free. Hold Shift with it for a Quick note.",
-            "กดค้างเพื่อพูด แตะสองครั้งเพื่อพูดต่อเนื่อง กด Shift ค้างพร้อมกันเพื่อจดโน้ตด่วน",
+            "Hold it to talk, double-tap it for hands-free.",
+            "กดค้างเพื่อพูด แตะสองครั้งเพื่อพูดต่อเนื่อง",
         )
     }
 

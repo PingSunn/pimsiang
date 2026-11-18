@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use platform::{Permission, PermissionReport, PermissionStatus};
+use platform::{Permission, PermissionReport, PermissionStatus, TriggerKey};
 
 use crate::i18n::Language;
 use crate::model_download::ModelStatus;
@@ -15,7 +15,7 @@ pub struct Button {
 pub struct Row {
     pub permission: Permission,
     pub title: &'static str,
-    pub why: &'static str,
+    pub why: String,
     pub status: PermissionStatus,
     pub status_label: &'static str,
     pub button: Option<Button>,
@@ -40,7 +40,7 @@ pub struct View {
     pub model: Option<ModelRow>,
     pub rows: Vec<Row>,
     pub done: bool,
-    pub footer: &'static str,
+    pub footer: String,
 }
 
 pub fn is_bundled(executable: &Path) -> bool {
@@ -87,6 +87,7 @@ fn model_row(language: Language, status: &ModelStatus) -> Option<ModelRow> {
 
 pub fn view(
     language: Language,
+    key: TriggerKey,
     report: &PermissionReport,
     bundled: bool,
     model: &ModelStatus,
@@ -107,7 +108,7 @@ pub fn view(
             Row {
                 permission,
                 title: language.permission_name(permission),
-                why: language.permission_why(permission),
+                why: language.permission_why(permission, key),
                 status,
                 status_label: language.status_label(status),
                 button,
@@ -127,6 +128,10 @@ pub fn view(
         model: model_row(language, model),
         rows,
         done,
-        footer: if done { language.all_set() } else { "" },
+        footer: if done {
+            language.all_set(key)
+        } else {
+            String::new()
+        },
     }
 }

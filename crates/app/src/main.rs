@@ -33,6 +33,7 @@ mod macos {
     use app::model_download::{self, Manifest, ModelStatus};
     use app::onboarding;
     use app::preferences::Preferences;
+    use app::shortcuts::{self, PasteLastShortcut};
     use app::single_instance::InstanceLock;
     use app::update;
     use audio::{MicCapture, MicrophoneChoice};
@@ -88,6 +89,7 @@ mod macos {
         ModelLoading(bool),
         HistoryChanged,
         Menu(MenuEvent),
+        PasteLastShortcut,
         Fatal(String),
     }
 
@@ -96,6 +98,7 @@ mod macos {
         settings_path: Option<PathBuf>,
         menu_bar: Option<MenuBar>,
         pill: Option<PillPanel>,
+        paste_shortcut: Option<PasteLastShortcut>,
         failure: Option<String>,
         language: Language,
         bundled: bool,
@@ -202,6 +205,11 @@ mod macos {
                 self.language_overridden = false;
             }
             self.preferences = changed;
+            if let Some(menu_bar) = &self.menu_bar
+                && let Err(error) = menu_bar.show_trigger_key(changed.trigger_key)
+            {
+                tracing::warn!(%error, "cannot show the Trigger key in the menu");
+            }
             if let Some(path) = &self.settings_path
                 && let Err(error) = Settings::update(path, |settings| {
                     changed.apply_keeping_language(settings, keep_language)
@@ -408,12 +416,22 @@ mod macos {
         fn new_events(&mut self, event_loop: &ActiveEventLoop, cause: StartCause) {
             if cause == StartCause::Init {
                 match MenuBar::new(self.language) {
-                    Ok(menu_bar) => self.menu_bar = Some(menu_bar),
+                    Ok(menu_bar) => {
+                        if let Err(error) = menu_bar.show_trigger_key(self.preferences.trigger_key)
+                        {
+                            tracing::warn!(%error, "cannot show the Trigger key in the menu");
+                        }
+                        self.menu_bar = Some(menu_bar);
+                    }
                     Err(error) => {
                         tracing::error!(%error, "cannot create the menu bar icon");
                         self.failure = Some(format!("{error:#}"));
                         event_loop.exit();
                     }
+                }
+                match PasteLastShortcut::register() {
+                    Ok(shortcut) => self.paste_shortcut = Some(shortcut),
+                    Err(error) => tracing::warn!(%error, "the paste-last shortcut is unavailable"),
                 }
             }
         }
@@ -519,6 +537,7 @@ mod macos {
                         tracing::warn!(%error, "cannot update the update notice");
                     }
                 }
+                UserEvent::PasteLastShortcut => self.paste_last(event_loop),
                 UserEvent::Menu(event) => {
                     let action = self.menu_bar.as_ref().and_then(|bar| bar.action(&event.id));
                     match action {
@@ -597,6 +616,10 @@ mod macos {
         MenuEvent::set_event_handler(Some(move |event| {
             let _ = menu_proxy.send_event(UserEvent::Menu(event));
         }));
+        let shortcut_proxy = proxy.clone();
+        shortcuts::on_paste_last(move || {
+            let _ = shortcut_proxy.send_event(UserEvent::PasteLastShortcut);
+        });
 
         let history = history_path().and_then(|path| match HistoryService::spawn(&path) {
             Ok(service) => Some(Arc::new(service)),
@@ -669,6 +692,7 @@ mod macos {
             settings_path: settings_path(),
             menu_bar: None,
             pill: None,
+            paste_shortcut: None,
             failure: None,
             language: Language::from_tags(&platform_macos::system_languages()),
             bundled,

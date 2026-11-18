@@ -250,7 +250,7 @@ impl Language {
     }
 
     pub fn menu_quit(self) -> &'static str {
-        self.pick("Quit PimSiang", "ออกจาก PimSiang")
+        self.pick("Quit PimSiang", "ออกจากพิมพ์เสียง")
     }
 
     pub fn tooltip(self, status: Status, permission_missing: bool) -> &'static str {
@@ -371,16 +371,66 @@ impl Language {
         })
     }
 
+    pub fn trigger_key_symbol(key: TriggerKey) -> &'static str {
+        match key {
+            TriggerKey::RightOption => "⌥",
+            TriggerKey::RightCommand => "⌘",
+            TriggerKey::RightControl => "⌃",
+        }
+    }
+
+    pub fn menu_header(
+        self,
+        status: Status,
+        missing: Option<&PermissionReport>,
+        key: TriggerKey,
+    ) -> (String, String) {
+        let key_name = format!("{} {}", Self::trigger_key_symbol(key), key.label());
+        if let Some(report) = missing {
+            let names: Vec<&str> = report
+                .missing()
+                .into_iter()
+                .map(|permission| self.permission_name(permission))
+                .collect();
+            return (
+                self.pick("Permission missing", "ยังไม่ได้ให้สิทธิ์").to_owned(),
+                names.join(", "),
+            );
+        }
+        match status {
+            Status::Ready => (
+                self.pick("Ready to listen", "พร้อมฟังแล้ว").to_owned(),
+                match self {
+                    Self::English => format!("Hold {key_name} and speak"),
+                    Self::Thai => format!("กด {key_name} ค้างแล้วพูด"),
+                },
+            ),
+            Status::Listening => (
+                self.pick("Listening", "กำลังฟัง").to_owned(),
+                self.pick("Release the key when you finish", "ปล่อยปุ่มเมื่อพูดจบ")
+                    .to_owned(),
+            ),
+            Status::Transcribing => (
+                self.pick("Writing it up…", "กำลังเขียนให้…").to_owned(),
+                self.pick(
+                    "The text will land at the cursor",
+                    "ข้อความจะไปอยู่ตรงเคอร์เซอร์",
+                )
+                .to_owned(),
+            ),
+        }
+    }
+
     pub fn menu_history(self) -> &'static str {
-        self.pick("History...", "ประวัติ...")
+        self.pick("History…", "ประวัติ…")
     }
 
     pub fn menu_paste_last(self) -> &'static str {
-        self.pick("Paste last transcript", "วางข้อความล่าสุดอีกครั้ง")
+        self.pick("Paste last transcript", "วางข้อความล่าสุด")
     }
 
     pub fn menu_settings(self) -> &'static str {
-        self.pick("Settings...", "ตั้งค่า...")
+        self.pick("Settings…", "ตั้งค่า…")
     }
 
     pub fn settings_title(self) -> &'static str {

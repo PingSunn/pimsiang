@@ -5,5 +5,6 @@ pub mod model_chip;
 pub mod model_download;
 pub mod onboarding;
 pub mod preferences;
+pub mod shortcuts;
 pub mod single_instance;
 pub mod update;

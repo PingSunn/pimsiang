@@ -6,6 +6,7 @@ use std::sync::{Arc, LazyLock, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
+mod focus;
 pub mod login_item;
 mod pasteboard;
 mod permissions;
@@ -23,7 +24,7 @@ use core_graphics::event::{
 };
 use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
 use platform::{
-    MicrophoneMenu, Permission, PermissionReport, PermissionStatus, PillState, Platform,
+    Focus, MicrophoneMenu, Permission, PermissionReport, PermissionStatus, PillState, Platform,
     PlatformError, Sound, Status, TriggerEvent, TriggerKey, TriggerSink, clipboard,
 };
 
@@ -127,6 +128,18 @@ impl Platform for MacPlatform {
 
     fn set_trigger_key(&mut self, key: TriggerKey) {
         self.trigger_key.store(key_index(key), Ordering::SeqCst);
+    }
+
+    fn focus_probe(&mut self) -> Focus {
+        focus::probe()
+    }
+
+    fn copy(&mut self, text: &str) -> Result<(), PlatformError> {
+        let mut pasteboard = pasteboard::GeneralPasteboard::new();
+        CLIPBOARD
+            .put_text(&mut pasteboard, text, false)
+            .map(|_| ())
+            .map_err(PlatformError::Copy)
     }
 
     fn paste(&mut self, text: &str, restore_clipboard: bool) -> Result<(), PlatformError> {
@@ -239,9 +252,12 @@ fn run_event_tap(
                         let pressed = event.get_flags().bits() & device_mask(trigger) != 0;
                         if callback_down.swap(pressed, Ordering::SeqCst) != pressed {
                             let at = Instant::now();
+                            let shift = event.get_flags().contains(CGEventFlags::CGEventFlagShift);
                             emit(
                                 &callback_sink,
-                                if pressed {
+                                if pressed && shift {
+                                    TriggerEvent::pressed(at).with_shift()
+                                } else if pressed {
                                     TriggerEvent::pressed(at)
                                 } else {
                                     TriggerEvent::released(at)

@@ -1,5 +1,5 @@
 use crate::{
-    MicrophoneMenu, Permission, PermissionReport, PermissionStatus, PillState, Platform,
+    Focus, MicrophoneMenu, Permission, PermissionReport, PermissionStatus, PillState, Platform,
     PlatformError, Sound, Status, TriggerEvent, TriggerKey, TriggerSink,
 };
 
@@ -13,6 +13,10 @@ pub struct FakePlatform {
     trigger_key_changes: usize,
     sounds: Vec<Sound>,
     paste_fails: bool,
+    copy_fails: bool,
+    copies: Vec<String>,
+    focus: Focus,
+    probes: usize,
     permissions: PermissionReport,
     reports: Vec<PermissionReport>,
     microphones: Vec<MicrophoneMenu>,
@@ -34,6 +38,10 @@ impl Default for FakePlatform {
             trigger_key_changes: 0,
             sounds: Vec::new(),
             paste_fails: false,
+            copy_fails: false,
+            copies: Vec::new(),
+            focus: Focus::TextField,
+            probes: 0,
             permissions: PermissionReport {
                 microphone: PermissionStatus::Granted,
                 accessibility: PermissionStatus::Granted,
@@ -99,6 +107,28 @@ impl FakePlatform {
     pub fn failing_paste(mut self) -> Self {
         self.paste_fails = true;
         self
+    }
+
+    pub fn failing_copy(mut self) -> Self {
+        self.copy_fails = true;
+        self
+    }
+
+    pub fn with_focus(mut self, focus: Focus) -> Self {
+        self.focus = focus;
+        self
+    }
+
+    pub fn set_focus(&mut self, focus: Focus) {
+        self.focus = focus;
+    }
+
+    pub fn copies(&self) -> &[String] {
+        &self.copies
+    }
+
+    pub fn probes(&self) -> usize {
+        self.probes
     }
 
     pub fn emit(&mut self, event: TriggerEvent) -> bool {
@@ -178,6 +208,19 @@ impl Platform for FakePlatform {
         self.pastes.push(text.to_owned());
         self.paste_restores.push(restore_clipboard);
         Ok(())
+    }
+
+    fn copy(&mut self, text: &str) -> Result<(), PlatformError> {
+        if self.copy_fails {
+            return Err(PlatformError::Copy("scripted failure".to_owned()));
+        }
+        self.copies.push(text.to_owned());
+        Ok(())
+    }
+
+    fn focus_probe(&mut self) -> Focus {
+        self.probes += 1;
+        self.focus
     }
 
     fn permission_status(&self, permission: Permission) -> PermissionStatus {

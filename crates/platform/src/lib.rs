@@ -1,5 +1,6 @@
 pub mod clipboard;
 pub mod fake;
+pub mod focus;
 
 use std::time::Instant;
 
@@ -57,6 +58,7 @@ pub enum Sound {
 pub struct TriggerEvent {
     pub state: TriggerState,
     pub at: Instant,
+    pub shift: bool,
 }
 
 impl TriggerEvent {
@@ -64,13 +66,20 @@ impl TriggerEvent {
         Self {
             state: TriggerState::Pressed,
             at,
+            shift: false,
         }
+    }
+
+    pub fn with_shift(mut self) -> Self {
+        self.shift = true;
+        self
     }
 
     pub fn released(at: Instant) -> Self {
         Self {
             state: TriggerState::Released,
             at,
+            shift: false,
         }
     }
 
@@ -78,6 +87,7 @@ impl TriggerEvent {
         Self {
             state: TriggerState::Combined,
             at,
+            shift: false,
         }
     }
 
@@ -85,6 +95,7 @@ impl TriggerEvent {
         Self {
             state: TriggerState::Escape,
             at,
+            shift: false,
         }
     }
 }
@@ -197,6 +208,9 @@ pub enum PillNotice {
     MicrophoneFellBack,
     MicrophoneLost,
     NoTranscriptYet,
+    QuickNoteSaved,
+    NoTextFieldKeptAsNote,
+    PasteFailedKeptAsNote,
 }
 
 impl PillNotice {
@@ -205,6 +219,13 @@ impl PillNotice {
             Self::MicrophoneFellBack => "Microphone not found, using the system default",
             Self::MicrophoneLost => "Microphone disconnected",
             Self::NoTranscriptYet => "No transcript yet · ยังไม่มีข้อความ",
+            Self::QuickNoteSaved => "Saved as a Note · บันทึกเป็นโน้ตแล้ว",
+            Self::NoTextFieldKeptAsNote => {
+                "No text field focused. Saved as a Note and copied · ไม่มีช่องข้อความ บันทึกเป็นโน้ตและคัดลอกแล้ว"
+            }
+            Self::PasteFailedKeptAsNote => {
+                "Could not paste. Saved as a Note and copied · วางไม่ได้ บันทึกเป็นโน้ตและคัดลอกแล้ว"
+            }
         }
     }
 }
@@ -237,7 +258,11 @@ pub enum PlatformError {
     TriggerKey(String),
     #[error("cannot paste: {0}")]
     Paste(String),
+    #[error("cannot copy: {0}")]
+    Copy(String),
 }
+
+pub use focus::Focus;
 
 pub type TriggerSink = Box<dyn FnMut(TriggerEvent) + Send>;
 
@@ -249,6 +274,8 @@ pub trait Platform {
     fn play_sound(&mut self, sound: Sound);
     fn set_trigger_key(&mut self, key: TriggerKey);
     fn paste(&mut self, text: &str, restore_clipboard: bool) -> Result<(), PlatformError>;
+    fn copy(&mut self, text: &str) -> Result<(), PlatformError>;
+    fn focus_probe(&mut self) -> Focus;
     fn permission_status(&self, permission: Permission) -> PermissionStatus;
     fn request_permission(&mut self, permission: Permission);
     fn open_settings(&mut self, permission: Permission);

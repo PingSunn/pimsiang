@@ -7,6 +7,8 @@ mod logging;
 #[cfg(target_os = "macos")]
 mod onboarding_window;
 #[cfg(target_os = "macos")]
+mod settings_window;
+#[cfg(target_os = "macos")]
 mod tray;
 
 #[cfg(target_os = "macos")]
@@ -22,6 +24,7 @@ mod macos {
     use app::i18n::Language;
     use app::model_download::{self, Manifest, ModelStatus};
     use app::onboarding;
+    use app::preferences::Preferences;
     use app::single_instance::InstanceLock;
     use app::update;
     use audio::{MicCapture, MicrophoneChoice};
@@ -29,6 +32,7 @@ mod macos {
     use engine::{LanguageMode, ModelFiles, OnnxEngine, Precision};
     use objc2::MainThreadMarker;
     use platform::{MicrophoneMenu, PermissionReport, PillState, Sound, Status};
+    use platform_macos::login_item::{self, LoginItem};
     use platform_macos::{MacPlatform, PillPanel, play_sound};
     use store::{Entry, HistoryService, Settings};
     use tray_icon::menu::MenuEvent;
@@ -43,6 +47,7 @@ mod macos {
     use crate::history_window::{HistoryWindow, Outcome as HistoryOutcome};
     use crate::logging;
     use crate::onboarding_window::{OnboardingWindow, Outcome};
+    use crate::settings_window::{Outcome as SettingsOutcome, SettingsWindow};
     use crate::tray::{MenuAction, MenuBar, copy_to_clipboard, open_folder};
 
     #[derive(Parser)]
@@ -52,8 +57,8 @@ mod macos {
         model_dir: Option<PathBuf>,
         #[arg(long, default_value = "int8")]
         precision: Precision,
-        #[arg(long, default_value = "th-mix")]
-        language: LanguageMode,
+        #[arg(long)]
+        language: Option<LanguageMode>,
         #[arg(long, default_value_t = 250)]
         hold_ms: u64,
     }
@@ -94,6 +99,8 @@ mod macos {
         close_setup_at: Option<Instant>,
         history: Option<Arc<HistoryService>>,
         history_window: Option<HistoryWindow>,
+        preferences: Preferences,
+        settings_window: Option<SettingsWindow>,
     }
 
     impl App {
@@ -119,6 +126,59 @@ mod macos {
                     self.refresh_history();
                 }
                 Err(error) => tracing::error!(%error, "cannot open the History window"),
+            }
+        }
+
+        fn open_settings(&mut self, event_loop: &ActiveEventLoop) {
+            if let Some(window) = &self.settings_window {
+                window.focus();
+                return;
+            }
+            match SettingsWindow::open(
+                event_loop,
+                self.language,
+                self.preferences,
+                self.bundled,
+                login_item::status(),
+            ) {
+                Ok(window) => self.settings_window = Some(window),
+                Err(error) => tracing::error!(%error, "cannot open the settings window"),
+            }
+        }
+
+        fn on_settings_window(&mut self, event: &WindowEvent) {
+            let Some(window) = self.settings_window.as_mut() else {
+                return;
+            };
+            match window.handle(event) {
+                SettingsOutcome::Idle => {}
+                SettingsOutcome::Close => self.settings_window = None,
+                SettingsOutcome::OpenLoginItems => login_item::open_login_items_settings(),
+                SettingsOutcome::Changed(changed) => self.change_preferences(changed),
+            }
+        }
+
+        fn change_preferences(&mut self, mut changed: Preferences) {
+            let mut error = None;
+            if changed.launch_at_login != self.preferences.launch_at_login {
+                match login_item::set(changed.launch_at_login) {
+                    Ok(()) => {}
+                    Err(reason) => {
+                        tracing::warn!(%reason, "cannot change the login item");
+                        changed.launch_at_login = self.preferences.launch_at_login;
+                        error = Some(self.language.settings_login_failed(&reason));
+                    }
+                }
+            }
+            self.preferences = changed;
+            if let Some(path) = &self.settings_path
+                && let Err(error) = Settings::update(path, |settings| changed.apply(settings))
+            {
+                tracing::warn!(%error, "cannot save the settings");
+            }
+            let _ = self.inputs.send(Input::Preferences(changed));
+            if let Some(window) = self.settings_window.as_mut() {
+                window.show_result(changed, login_item::status(), error);
             }
         }
 
@@ -316,6 +376,14 @@ mod macos {
                 self.on_history_window(&event);
                 return;
             }
+            if self
+                .settings_window
+                .as_ref()
+                .is_some_and(|window| window.id() == id)
+            {
+                self.on_settings_window(&event);
+                return;
+            }
             let view = self.setup_view();
             let Some(setup) = self.setup.as_mut().filter(|setup| setup.id() == id) else {
                 return;
@@ -382,6 +450,7 @@ mod macos {
                         Some(MenuAction::SetupPermissions) => self.open_setup(event_loop),
                         Some(MenuAction::OpenHistory) => self.open_history(event_loop),
                         Some(MenuAction::PasteLast) => self.paste_last(event_loop),
+                        Some(MenuAction::OpenSettings) => self.open_settings(event_loop),
                         Some(MenuAction::CopyUpgradeCommand) => {
                             match copy_to_clipboard(update::UPGRADE_COMMAND) {
                                 Ok(()) => {
@@ -461,6 +530,19 @@ mod macos {
             }
         });
 
+        let bundled = std::env::current_exe()
+            .map(|path| onboarding::is_bundled(&path))
+            .unwrap_or(false);
+        let mut preferences = settings_path()
+            .map(|path| Preferences::from_settings(&Settings::load(&path)))
+            .unwrap_or_default();
+        if let Some(language) = args.language {
+            preferences.language = language;
+        }
+        if bundled {
+            preferences.launch_at_login = start_at_login(preferences.launch_at_login);
+        }
+
         let (inputs, receiver) = mpsc::channel::<Input>();
         std::thread::Builder::new()
             .name("utterance-controller".to_owned())
@@ -470,9 +552,15 @@ mod macos {
                 let model = model.clone();
                 let history = history.clone();
                 move || {
-                    if let Err(error) =
-                        run_controller(&args, &model, &proxy, inputs, receiver, history)
-                    {
+                    if let Err(error) = run_controller(
+                        &args,
+                        &model,
+                        preferences,
+                        &proxy,
+                        inputs,
+                        receiver,
+                        history,
+                    ) {
                         let _ = proxy.send_event(UserEvent::Fatal(format!("{error:#}")));
                     }
                 }
@@ -503,9 +591,7 @@ mod macos {
             pill: None,
             failure: None,
             language: Language::from_tags(&platform_macos::system_languages()),
-            bundled: std::env::current_exe()
-                .map(|path| onboarding::is_bundled(&path))
-                .unwrap_or(false),
+            bundled,
             model: ModelStatus::Ready,
             model_dir: model.dir.clone(),
             model_prompted: false,
@@ -516,6 +602,8 @@ mod macos {
             close_setup_at: None,
             history: history.clone(),
             history_window: None,
+            preferences,
+            settings_window: None,
         };
         if model.download {
             app.start_model_download();
@@ -576,9 +664,33 @@ mod macos {
         Some(PathBuf::from(home).join("Library/Application Support/PimSiang/history.sqlite"))
     }
 
+    fn start_at_login(wanted: bool) -> bool {
+        let first_run =
+            settings_path().is_some_and(|path| Settings::load(&path).launch_at_login.is_none());
+        if first_run {
+            match login_item::set(wanted) {
+                Ok(()) => {
+                    if let Some(path) = settings_path()
+                        && let Err(error) = Settings::update(&path, |settings| {
+                            settings.launch_at_login = Some(wanted)
+                        })
+                    {
+                        tracing::warn!(%error, "cannot save the login item choice");
+                    }
+                }
+                Err(reason) => tracing::warn!(%reason, "cannot set the login item"),
+            }
+        }
+        matches!(
+            login_item::status(),
+            LoginItem::Enabled | LoginItem::RequiresApproval
+        )
+    }
+
     fn run_controller(
         args: &Args,
         model: &ModelSource,
+        preferences: Preferences,
         proxy: &EventLoopProxy<UserEvent>,
         tx: Sender<Input>,
         rx: mpsc::Receiver<Input>,
@@ -624,7 +736,6 @@ mod macos {
             microphone,
             Config {
                 hold_threshold: Duration::from_millis(args.hold_ms),
-                language: args.language,
                 ..Config::default()
             },
         )
@@ -653,6 +764,7 @@ mod macos {
         {
             controller.handle(Input::Microphone(MicrophoneChoice::Device(id)));
         }
+        controller.handle(Input::Preferences(preferences));
         controller.handle(Input::Tick(Instant::now()));
         controller.preload_model();
         controller.run(rx);

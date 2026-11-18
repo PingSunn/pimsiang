@@ -23,6 +23,7 @@ pub struct MenuBar {
     microphone_ids: RefCell<Vec<(MenuId, MicrophoneChoice)>>,
     history_id: MenuId,
     paste_last_id: MenuId,
+    settings_id: MenuId,
     update_notice: MenuItem,
     update_notice_id: MenuId,
     dismiss_update: MenuItem,
@@ -38,6 +39,7 @@ pub enum MenuAction {
     SetupPermissions,
     OpenHistory,
     PasteLast,
+    OpenSettings,
     CopyUpgradeCommand,
     DismissUpdate,
     OpenLogFolder,
@@ -53,6 +55,7 @@ impl MenuBar {
         let dismiss_update = MenuItem::new(language.menu_dismiss_update(), true, None);
         let history = MenuItem::new(language.menu_history(), true, None);
         let paste_last = MenuItem::new(language.menu_paste_last(), true, None);
+        let settings = MenuItem::new(language.menu_settings(), true, None);
         let open_logs = MenuItem::new("Open log folder", true, None);
         let quit = MenuItem::new("Quit PimSiang", true, None);
         let menu = Menu::new();
@@ -62,6 +65,7 @@ impl MenuBar {
             &microphones,
             &history,
             &paste_last,
+            &settings,
             &open_logs,
             &quit,
         ])
@@ -84,6 +88,7 @@ impl MenuBar {
             setup_permissions,
             history_id: history.id().clone(),
             paste_last_id: paste_last.id().clone(),
+            settings_id: settings.id().clone(),
             update_notice_id: update_notice.id().clone(),
             update_notice,
             dismiss_update_id: dismiss_update.id().clone(),
@@ -192,6 +197,8 @@ impl MenuBar {
             Some(MenuAction::OpenHistory)
         } else if *id == self.paste_last_id {
             Some(MenuAction::PasteLast)
+        } else if *id == self.settings_id {
+            Some(MenuAction::OpenSettings)
         } else if *id == self.update_notice_id {
             Some(MenuAction::CopyUpgradeCommand)
         } else if *id == self.dismiss_update_id {

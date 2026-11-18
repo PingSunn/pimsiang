@@ -185,6 +185,97 @@ impl Language {
         self.pick("Paste last transcript", "วางข้อความล่าสุดอีกครั้ง")
     }
 
+    pub fn menu_settings(self) -> &'static str {
+        self.pick("Settings...", "ตั้งค่า...")
+    }
+
+    pub fn settings_title(self) -> &'static str {
+        self.pick("PimSiang settings", "การตั้งค่า PimSiang")
+    }
+
+    pub fn settings_applies_now(self) -> &'static str {
+        self.pick("Changes apply straight away.", "การเปลี่ยนแปลงมีผลทันที")
+    }
+
+    pub fn settings_trigger_key(self) -> &'static str {
+        self.pick("Trigger key", "ปุ่มสั่งพูด")
+    }
+
+    pub fn settings_trigger_key_help(self) -> &'static str {
+        self.pick(
+            "Hold it to talk, double-tap it for hands-free. Hold Shift with it for a Quick note.",
+            "กดค้างเพื่อพูด แตะสองครั้งเพื่อพูดต่อเนื่อง กด Shift ค้างพร้อมกันเพื่อจดโน้ตด่วน",
+        )
+    }
+
+    pub fn settings_language_mode(self) -> &'static str {
+        self.pick("Language mode", "โหมดภาษา")
+    }
+
+    pub fn settings_language_mix(self) -> &'static str {
+        self.pick(
+            "th-mix: Thai, with English words written in English",
+            "th-mix: ภาษาไทย คำอังกฤษเขียนเป็นตัวอักษรอังกฤษ",
+        )
+    }
+
+    pub fn settings_language_thai(self) -> &'static str {
+        self.pick(
+            "th-TH: Thai only, English words written in Thai",
+            "th-TH: ภาษาไทยล้วน คำอังกฤษเขียนทับศัพท์เป็นไทย",
+        )
+    }
+
+    pub fn settings_language_help(self) -> &'static str {
+        self.pick("Takes effect on your next Utterance.", "มีผลกับการพูดครั้งถัดไป")
+    }
+
+    pub fn settings_sounds(self) -> &'static str {
+        self.pick(
+            "Play a sound when listening starts and stops",
+            "เล่นเสียงเมื่อเริ่มและหยุดฟัง",
+        )
+    }
+
+    pub fn settings_clipboard_restore(self) -> &'static str {
+        self.pick(
+            "Restore the clipboard after pasting",
+            "คืนค่าคลิปบอร์ดเดิมหลังวางข้อความ",
+        )
+    }
+
+    pub fn settings_launch_at_login(self) -> &'static str {
+        self.pick("Open PimSiang at login", "เปิด PimSiang เมื่อเข้าสู่ระบบ")
+    }
+
+    pub fn settings_login_unbundled(self) -> &'static str {
+        self.pick(
+            "Only works from the installed PimSiang app, not when it runs from a terminal.",
+            "ใช้ได้เฉพาะแอป PimSiang ที่ติดตั้งแล้ว ไม่รองรับเมื่อรันจากเทอร์มินัล",
+        )
+    }
+
+    pub fn settings_login_needs_approval(self) -> &'static str {
+        self.pick(
+            "Allow PimSiang in System Settings > General > Login Items.",
+            "อนุญาต PimSiang ที่ System Settings > General > Login Items",
+        )
+    }
+
+    pub fn settings_login_open_settings(self) -> &'static str {
+        self.pick("Open Login Items", "เปิด Login Items")
+    }
+
+    pub fn settings_login_failed(self, reason: &str) -> String {
+        format!(
+            "{}{reason}",
+            self.pick(
+                "Could not change the login item: ",
+                "เปลี่ยนการเปิดตอนเข้าสู่ระบบไม่สำเร็จ: "
+            )
+        )
+    }
+
     pub fn history_title(self) -> &'static str {
         self.pick("PimSiang history", "ประวัติ PimSiang")
     }

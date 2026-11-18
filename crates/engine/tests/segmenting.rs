@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use engine::{
@@ -16,9 +17,23 @@ impl Calls {
     }
 }
 
+#[derive(Clone, Default)]
+struct FailOnce(Arc<AtomicBool>);
+
+impl FailOnce {
+    fn arm(&self) {
+        self.0.store(true, Ordering::SeqCst);
+    }
+
+    fn take(&self) -> bool {
+        self.0.swap(false, Ordering::SeqCst)
+    }
+}
+
 struct TaggingRecognizer {
     loaded: bool,
     calls: Calls,
+    failure: FailOnce,
 }
 
 impl Recognizer for TaggingRecognizer {
@@ -36,6 +51,9 @@ impl Recognizer for TaggingRecognizer {
     }
 
     fn recognize(&mut self, samples: &[f32], _: LanguageMode) -> Result<String, EngineError> {
+        if self.failure.take() {
+            return Err(EngineError::Model("injected failure".into()));
+        }
         self.calls.0.lock().unwrap().push(samples.len());
         let loudest = samples.iter().fold(0.0f32, |m, s| m.max(s.abs()));
         Ok(if loudest > 0.0 {
@@ -48,6 +66,7 @@ impl Recognizer for TaggingRecognizer {
 
 struct EnergyDetector {
     loaded: bool,
+    failure: FailOnce,
 }
 
 impl SpeechDetector for EnergyDetector {
@@ -67,6 +86,9 @@ impl SpeechDetector for EnergyDetector {
     fn reset(&mut self) {}
 
     fn speech_probability(&mut self, window: &[f32]) -> Result<f32, EngineError> {
+        if self.failure.take() {
+            return Err(EngineError::Model("injected failure".into()));
+        }
         Ok(if window.iter().any(|s| s.abs() > 0.05) {
             1.0
         } else {
@@ -75,17 +97,33 @@ impl SpeechDetector for EnergyDetector {
     }
 }
 
-fn engine() -> (StreamingEngine<TaggingRecognizer, EnergyDetector>, Calls) {
+fn flaky_engine() -> (
+    StreamingEngine<TaggingRecognizer, EnergyDetector>,
+    Calls,
+    FailOnce,
+    FailOnce,
+) {
     let calls = Calls::default();
+    let recognizer_failure = FailOnce::default();
+    let detector_failure = FailOnce::default();
     let mut engine = StreamingEngine::with_detector(
         TaggingRecognizer {
             loaded: false,
             calls: calls.clone(),
+            failure: recognizer_failure.clone(),
         },
-        EnergyDetector { loaded: false },
+        EnergyDetector {
+            loaded: false,
+            failure: detector_failure.clone(),
+        },
     );
     engine.load().unwrap();
     engine.start_utterance(UtteranceOptions::default()).unwrap();
+    (engine, calls, recognizer_failure, detector_failure)
+}
+
+fn engine() -> (StreamingEngine<TaggingRecognizer, EnergyDetector>, Calls) {
+    let (engine, calls, _, _) = flaky_engine();
     (engine, calls)
 }
 
@@ -195,4 +233,38 @@ fn a_short_pause_inside_a_phrase_does_not_split_it() {
     engine.finish_utterance().unwrap();
 
     assert!(calls.lengths().into_iter().any(|n| n >= 2 * SECOND));
+}
+
+#[test]
+fn finish_recovers_after_a_failed_detector_call_mid_push() {
+    let (mut engine, _, _, detector_failure) = flaky_engine();
+    detector_failure.arm();
+
+    let result = engine.push_audio(&[speech(0.2, 1.0), silence(2.0)].concat());
+
+    assert!(result.is_err());
+    assert_eq!(engine.finish_utterance().unwrap(), "w20");
+}
+
+#[test]
+fn finish_recovers_after_a_failed_segment_close_mid_push() {
+    let (mut engine, _, recognizer_failure, _) = flaky_engine();
+    recognizer_failure.arm();
+
+    let result = engine.push_audio(&[speech(0.2, 1.0), silence(2.0)].concat());
+
+    assert!(result.is_err());
+    assert_eq!(engine.finish_utterance().unwrap(), "w20");
+}
+
+#[test]
+fn audio_after_a_failed_push_is_neither_lost_nor_duplicated() {
+    let (mut engine, _, recognizer_failure, _) = flaky_engine();
+    recognizer_failure.arm();
+
+    let first = engine.push_audio(&[speech(0.2, 1.0), silence(2.0)].concat());
+    stream(&mut engine, &[speech(0.3, 1.0), silence(1.0)].concat());
+
+    assert!(first.is_err());
+    assert_eq!(engine.finish_utterance().unwrap(), "w20 w30");
 }

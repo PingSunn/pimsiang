@@ -169,6 +169,14 @@ impl<R: Recognizer, D: SpeechDetector> Engine for StreamingEngine<R, D> {
 
     fn finish_utterance(&mut self) -> Result<String, EngineError> {
         let mut utterance = self.utterance.take().ok_or(EngineError::NoUtterance)?;
+        while utterance.audio.len() - utterance.scanned >= WINDOW_SAMPLES {
+            let start = utterance.scanned;
+            let window_end = start + WINDOW_SAMPLES;
+            let probability = self
+                .detector
+                .speech_probability(&utterance.audio[start..window_end])?;
+            utterance.advance(&mut self.recognizer, probability, window_end)?;
+        }
         let remaining = utterance.audio.len() - utterance.scanned;
         if remaining > 0 {
             let mut window = [0.0f32; WINDOW_SAMPLES];

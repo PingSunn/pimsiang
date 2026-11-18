@@ -585,7 +585,6 @@ mod macos {
         fn resumed(&mut self, _event_loop: &ActiveEventLoop) {}
 
         fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-            self.sync_dock();
             match self.close_setup_at {
                 Some(at) if Instant::now() >= at => {
                     self.close_setup_at = None;
@@ -595,6 +594,7 @@ mod macos {
                 Some(at) => event_loop.set_control_flow(ControlFlow::WaitUntil(at)),
                 None => event_loop.set_control_flow(ControlFlow::Wait),
             }
+            self.sync_dock();
         }
 
         fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {

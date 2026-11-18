@@ -1,30 +1,36 @@
 #[cfg(target_os = "macos")]
 mod logging;
 #[cfg(target_os = "macos")]
+mod onboarding_window;
+#[cfg(target_os = "macos")]
 mod tray;
 
 #[cfg(target_os = "macos")]
 mod macos {
     use std::path::PathBuf;
+    use std::sync::mpsc::Sender;
     use std::sync::{Arc, mpsc};
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use anyhow::{Context, Result};
-    use app::controller::{Config, Controller, Input};
+    use app::controller::{Config, Controller, Input, PermissionCommand};
+    use app::i18n::Language;
+    use app::onboarding;
     use audio::MicCapture;
     use clap::Parser;
     use engine::{Engine, LanguageMode, ModelFiles, OnnxEngine, Precision};
     use objc2::MainThreadMarker;
-    use platform::{PillState, Platform, Status};
+    use platform::{PermissionReport, PillState, Status};
     use platform_macos::{MacPlatform, PillPanel};
     use tray_icon::menu::MenuEvent;
     use winit::application::ApplicationHandler;
     use winit::event::{StartCause, WindowEvent};
-    use winit::event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy};
+    use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
     use winit::platform::macos::{ActivationPolicy, EventLoopBuilderExtMacOS};
     use winit::window::WindowId;
 
     use crate::logging;
+    use crate::onboarding_window::{OnboardingWindow, Outcome};
     use crate::tray::{MenuAction, MenuBar, open_folder};
 
     #[derive(Parser)]
@@ -40,8 +46,12 @@ mod macos {
         hold_ms: u64,
     }
 
+    const PERMISSION_POLL: Duration = Duration::from_secs(1);
+    const SETUP_CLOSE_DELAY: Duration = Duration::from_millis(1_500);
+
     enum UserEvent {
         Status(Status),
+        Permissions(PermissionReport),
         Pill(PillState),
         Menu(MenuEvent),
         Fatal(String),
@@ -52,12 +62,59 @@ mod macos {
         menu_bar: Option<MenuBar>,
         pill: Option<PillPanel>,
         failure: Option<String>,
+        language: Language,
+        bundled: bool,
+        inputs: Sender<Input>,
+        report: Option<PermissionReport>,
+        setup: Option<OnboardingWindow>,
+        close_setup_at: Option<Instant>,
+    }
+
+    impl App {
+        fn open_setup(&mut self, event_loop: &ActiveEventLoop) {
+            if let Some(setup) = &self.setup {
+                setup.focus();
+                return;
+            }
+            match OnboardingWindow::open(event_loop, self.language.window_title()) {
+                Ok(setup) => self.setup = Some(setup),
+                Err(error) => tracing::error!(%error, "cannot open the setup window"),
+            }
+        }
+
+        fn setup_view(&self) -> onboarding::View {
+            let report = self.report.unwrap_or(PermissionReport {
+                microphone: platform::PermissionStatus::NotDetermined,
+                accessibility: platform::PermissionStatus::NotDetermined,
+                input_monitoring: platform::PermissionStatus::NotDetermined,
+            });
+            onboarding::view(self.language, &report, self.bundled)
+        }
+
+        fn on_permissions(&mut self, event_loop: &ActiveEventLoop, report: PermissionReport) {
+            let first = self.report.is_none();
+            self.report = Some(report);
+            if let Some(menu_bar) = &self.menu_bar
+                && let Err(error) = menu_bar.show_permissions(&report)
+            {
+                tracing::warn!(%error, "cannot update the menu bar permissions");
+            }
+            if first && !report.all_granted() {
+                self.open_setup(event_loop);
+            }
+            if let Some(setup) = &self.setup {
+                setup.request_redraw();
+                self.close_setup_at = report
+                    .all_granted()
+                    .then(|| Instant::now() + SETUP_CLOSE_DELAY);
+            }
+        }
     }
 
     impl ApplicationHandler<UserEvent> for App {
         fn new_events(&mut self, event_loop: &ActiveEventLoop, cause: StartCause) {
             if cause == StartCause::Init {
-                match MenuBar::new() {
+                match MenuBar::new(self.language) {
                     Ok(menu_bar) => self.menu_bar = Some(menu_bar),
                     Err(error) => {
                         tracing::error!(%error, "cannot create the menu bar icon");
@@ -70,7 +127,36 @@ mod macos {
 
         fn resumed(&mut self, _event_loop: &ActiveEventLoop) {}
 
-        fn window_event(&mut self, _: &ActiveEventLoop, _: WindowId, _: WindowEvent) {}
+        fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+            match self.close_setup_at {
+                Some(at) if Instant::now() >= at => {
+                    self.close_setup_at = None;
+                    self.setup = None;
+                    event_loop.set_control_flow(ControlFlow::Wait);
+                }
+                Some(at) => event_loop.set_control_flow(ControlFlow::WaitUntil(at)),
+                None => event_loop.set_control_flow(ControlFlow::Wait),
+            }
+        }
+
+        fn window_event(&mut self, _: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
+            let view = self.setup_view();
+            let Some(setup) = self.setup.as_mut().filter(|setup| setup.id() == id) else {
+                return;
+            };
+            match setup.handle(&event, &view) {
+                Outcome::Idle => {}
+                Outcome::Close => {
+                    self.setup = None;
+                    self.close_setup_at = None;
+                }
+                Outcome::Grant(permission) => {
+                    let _ = self
+                        .inputs
+                        .send(Input::Permission(PermissionCommand::Grant(permission)));
+                }
+            }
+        }
 
         fn user_event(&mut self, event_loop: &ActiveEventLoop, event: UserEvent) {
             match event {
@@ -81,6 +167,7 @@ mod macos {
                         tracing::warn!(%error, "cannot update the menu bar icon");
                     }
                 }
+                UserEvent::Permissions(report) => self.on_permissions(event_loop, report),
                 UserEvent::Pill(state) => {
                     if self.pill.is_none() {
                         self.pill = MainThreadMarker::new().map(PillPanel::new);
@@ -92,6 +179,7 @@ mod macos {
                 UserEvent::Menu(event) => {
                     let action = self.menu_bar.as_ref().and_then(|bar| bar.action(&event.id));
                     match action {
+                        Some(MenuAction::SetupPermissions) => self.open_setup(event_loop),
                         Some(MenuAction::OpenLogFolder) => {
                             if let Err(error) = open_folder(&self.log_dir) {
                                 tracing::warn!(%error, "cannot open the log folder");
@@ -126,12 +214,14 @@ mod macos {
             let _ = menu_proxy.send_event(UserEvent::Menu(event));
         }));
 
+        let (inputs, receiver) = mpsc::channel::<Input>();
         std::thread::Builder::new()
             .name("utterance-controller".to_owned())
             .spawn({
                 let proxy = proxy.clone();
+                let inputs = inputs.clone();
                 move || {
-                    if let Err(error) = run_controller(&args, &proxy) {
+                    if let Err(error) = run_controller(&args, &proxy, inputs, receiver) {
                         let _ = proxy.send_event(UserEvent::Fatal(format!("{error:#}")));
                     }
                 }
@@ -143,6 +233,14 @@ mod macos {
             menu_bar: None,
             pill: None,
             failure: None,
+            language: Language::from_tags(&platform_macos::system_languages()),
+            bundled: std::env::current_exe()
+                .map(|path| onboarding::is_bundled(&path))
+                .unwrap_or(false),
+            inputs,
+            report: None,
+            setup: None,
+            close_setup_at: None,
         };
         event_loop
             .run_app(&mut app)
@@ -153,17 +251,24 @@ mod macos {
         }
     }
 
-    fn run_controller(args: &Args, proxy: &EventLoopProxy<UserEvent>) -> Result<()> {
-        let (tx, rx) = mpsc::channel::<Input>();
-
+    fn run_controller(
+        args: &Args,
+        proxy: &EventLoopProxy<UserEvent>,
+        tx: Sender<Input>,
+        rx: mpsc::Receiver<Input>,
+    ) -> Result<()> {
         let status_proxy = proxy.clone();
         let pill_proxy = proxy.clone();
-        let mut platform = MacPlatform::new(
+        let permissions_proxy = proxy.clone();
+        let platform = MacPlatform::new(
             Box::new(move |status| {
                 let _ = status_proxy.send_event(UserEvent::Status(status));
             }),
             Box::new(move |state| {
                 let _ = pill_proxy.send_event(UserEvent::Pill(state));
+            }),
+            Box::new(move |report| {
+                let _ = permissions_proxy.send_event(UserEvent::Permissions(report));
             }),
         );
         let mut engine = OnnxEngine::new(ModelFiles::new(&args.model_dir, args.precision));
@@ -171,12 +276,6 @@ mod macos {
         tracing::info!("Model loaded");
 
         let trigger_tx = tx.clone();
-        platform
-            .listen_trigger(Box::new(move |event| {
-                let _ = trigger_tx.send(Input::Trigger(event));
-            }))
-            .context("watching the Trigger key")?;
-
         let audio_tx = tx;
         let microphone = MicCapture::new(Arc::new(move |samples| {
             let _ = audio_tx.send(Input::Audio(samples));
@@ -191,7 +290,13 @@ mod macos {
                 language: args.language,
                 ..Config::default()
             },
-        );
+        )
+        .watch_permissions(PERMISSION_POLL, move || {
+            let trigger_tx = trigger_tx.clone();
+            Box::new(move |event| {
+                let _ = trigger_tx.send(Input::Trigger(event));
+            })
+        });
         controller.run(rx);
         Ok(())
     }

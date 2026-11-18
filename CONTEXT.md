@@ -59,5 +59,21 @@ The part that turns audio into Partial and Final text; swappable behind one inte
 _Avoid_: Backend, recognizer, ASR (as a component name)
 
 **Model**:
-The speech recognition weights the Engine runs, downloaded on first launch.
+A set of speech recognition weights the Engine can run. Exactly one Model is the Active model at a time; others may sit on disk unused.
 _Avoid_: Weights, checkpoint
+
+**Active model**:
+The Model the Engine uses for the next Utterance, chosen by the user in settings.
+_Avoid_: Current model, selected model
+
+**Model catalog**:
+The list of Models PimSiang knows how to download and verify, fixed per release.
+_Avoid_: Model registry, model store
+
+**Custom model**:
+A Model the user points PimSiang at in a folder on their machine, outside the Model catalog and not verified by PimSiang.
+_Avoid_: Local model, user model
+
+**Language mode**:
+How a Model writes English words spoken inside Thai speech (`th-mix` in Latin letters, `th-TH` in Thai script). Only some Models offer it.
+_Avoid_: Locale, language setting

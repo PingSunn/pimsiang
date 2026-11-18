@@ -234,3 +234,27 @@ fn run_turns_channel_events_into_ticks_and_returns_when_the_channel_closes() {
 
     assert_eq!(c.platform().pastes(), ["สวัสดี"]);
 }
+
+#[test]
+fn audio_queued_behind_the_release_still_reaches_the_engine() {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let mut engine = FakeEngine::new(Vec::<String>::new(), "จบประโยค");
+    engine.load().unwrap();
+    let c = Controller::new(FakePlatform::new(), engine, FakeMicrophone::new(), config());
+    let t0 = Instant::now();
+
+    tx.send(Input::Trigger(TriggerEvent::pressed(t0))).unwrap();
+    tx.send(Input::Tick(t0 + HOLD)).unwrap();
+    tx.send(Input::Audio(vec![0.0; 1_600])).unwrap();
+    tx.send(Input::Trigger(TriggerEvent::released(
+        t0 + Duration::from_secs(1),
+    )))
+    .unwrap();
+    tx.send(Input::Audio(vec![0.0; 800])).unwrap();
+    tx.send(Input::Audio(vec![0.0; 400])).unwrap();
+    drop(tx);
+    let c = c.run(rx);
+
+    assert_eq!(c.engine().pushed_samples(), 2_800);
+    assert_eq!(c.platform().pastes(), ["จบประโยค"]);
+}

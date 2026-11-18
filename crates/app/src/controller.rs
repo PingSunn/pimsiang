@@ -86,15 +86,19 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
                     Err(_) => return self,
                 },
             };
-            self.handle(input);
+            self.dispatch(input, Some(&inputs));
         }
     }
 
     pub fn handle(&mut self, input: Input) {
+        self.dispatch(input, None);
+    }
+
+    fn dispatch(&mut self, input: Input, queued: Option<&Receiver<Input>>) {
         match input {
             Input::Trigger(event) => match event.state {
                 TriggerState::Pressed => self.on_pressed(event.at),
-                TriggerState::Released => self.on_released(),
+                TriggerState::Released => self.on_released(queued),
             },
             Input::Audio(samples) => self.on_audio(&samples),
             Input::Tick(now) => self.on_tick(now),
@@ -107,11 +111,11 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
         }
     }
 
-    fn on_released(&mut self) {
+    fn on_released(&mut self, queued: Option<&Receiver<Input>>) {
         match self.state {
             State::Idle => {}
             State::Pending { .. } => self.state = State::Idle,
-            State::Listening => self.finish(),
+            State::Listening => self.finish(queued),
         }
     }
 
@@ -156,9 +160,16 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
         self.platform.show_status(Status::Listening);
     }
 
-    fn finish(&mut self) {
-        self.state = State::Idle;
+    fn finish(&mut self, queued: Option<&Receiver<Input>>) {
         self.microphone.stop();
+        if let Some(queued) = queued {
+            for input in queued.try_iter() {
+                if let Input::Audio(samples) = input {
+                    self.on_audio(&samples);
+                }
+            }
+        }
+        self.state = State::Idle;
         self.platform.show_status(Status::Transcribing);
         match self.engine.finish_utterance() {
             Ok(text) => self.deliver(text.trim()),

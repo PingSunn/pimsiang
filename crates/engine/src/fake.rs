@@ -10,6 +10,8 @@ pub struct FakeEngine {
     pending: Option<VecDeque<String>>,
     last_options: Option<UtteranceOptions>,
     pushed_samples: usize,
+    push_count: usize,
+    load_fails: bool,
 }
 
 impl FakeEngine {
@@ -25,7 +27,18 @@ impl FakeEngine {
             pending: None,
             last_options: None,
             pushed_samples: 0,
+            push_count: 0,
+            load_fails: false,
         }
+    }
+
+    pub fn failing_load(mut self) -> Self {
+        self.load_fails = true;
+        self
+    }
+
+    pub fn push_count(&self) -> usize {
+        self.push_count
     }
 
     pub fn last_options(&self) -> Option<UtteranceOptions> {
@@ -43,6 +56,9 @@ impl FakeEngine {
 
 impl Engine for FakeEngine {
     fn load(&mut self) -> Result<(), EngineError> {
+        if self.load_fails {
+            return Err(EngineError::Model("scripted load failure".to_owned()));
+        }
         if !self.loaded {
             self.loaded = true;
             self.load_count += 1;
@@ -71,6 +87,7 @@ impl Engine for FakeEngine {
     fn push_audio(&mut self, samples: &[f32]) -> Result<Option<String>, EngineError> {
         let pending = self.pending.as_mut().ok_or(EngineError::NoUtterance)?;
         self.pushed_samples += samples.len();
+        self.push_count += 1;
         Ok(pending.pop_front())
     }
 

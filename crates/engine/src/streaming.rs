@@ -145,6 +145,24 @@ impl<R: Recognizer, D: SpeechDetector> Engine for StreamingEngine<R, D> {
     }
 
     fn push_audio(&mut self, samples: &[f32]) -> Result<Option<String>, EngineError> {
+        self.push(samples, true)
+    }
+
+    fn push_tail(&mut self, samples: &[f32]) -> Result<(), EngineError> {
+        self.push(samples, false).map(drop)
+    }
+
+    fn finish_utterance(&mut self) -> Result<String, EngineError> {
+        self.finish()
+    }
+
+    fn cancel_utterance(&mut self) {
+        self.utterance = None;
+    }
+}
+
+impl<R: Recognizer, D: SpeechDetector> StreamingEngine<R, D> {
+    fn push(&mut self, samples: &[f32], partials: bool) -> Result<Option<String>, EngineError> {
         let utterance = self.utterance.as_mut().ok_or(EngineError::NoUtterance)?;
         utterance.audio.extend_from_slice(samples);
         utterance.since_partial += samples.len();
@@ -157,7 +175,7 @@ impl<R: Recognizer, D: SpeechDetector> Engine for StreamingEngine<R, D> {
                 .speech_probability(&utterance.audio[start..window_end])?;
             closed |= utterance.advance(&mut self.recognizer, probability, window_end)?;
         }
-        if utterance.in_speech && utterance.since_partial >= PARTIAL_INTERVAL_SAMPLES {
+        if partials && utterance.in_speech && utterance.since_partial >= PARTIAL_INTERVAL_SAMPLES {
             utterance.since_partial = 0;
             let open = self
                 .recognizer
@@ -167,7 +185,7 @@ impl<R: Recognizer, D: SpeechDetector> Engine for StreamingEngine<R, D> {
         Ok(closed.then(|| utterance.text_with("")))
     }
 
-    fn finish_utterance(&mut self) -> Result<String, EngineError> {
+    fn finish(&mut self) -> Result<String, EngineError> {
         let mut utterance = self.utterance.take().ok_or(EngineError::NoUtterance)?;
         while utterance.audio.len() - utterance.scanned >= WINDOW_SAMPLES {
             let start = utterance.scanned;
@@ -189,9 +207,5 @@ impl<R: Recognizer, D: SpeechDetector> Engine for StreamingEngine<R, D> {
             utterance.close_segment(&mut self.recognizer)?;
         }
         Ok(utterance.text_with(""))
-    }
-
-    fn cancel_utterance(&mut self) {
-        self.utterance = None;
     }
 }

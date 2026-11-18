@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use audio::{Microphone, MicrophoneChoice, Opened};
-use engine::{Engine, EngineError, LanguageMode, UtteranceOptions};
+use engine::{Engine, EngineError, LanguageMode, RecognitionMode, UtteranceOptions};
 use platform::{
     Focus, MicrophoneEntry, MicrophoneMenu, PartialText, Permission, PermissionReport,
     PermissionStatus, PillError, PillNotice, PillState, Platform, Sound, Status, TriggerEvent,
@@ -18,6 +18,7 @@ use crate::preferences::Preferences;
 pub struct Config {
     pub hold_threshold: Duration,
     pub language: LanguageMode,
+    pub recognition_mode: RecognitionMode,
     pub pill_linger: Duration,
     pub error_linger: Duration,
     pub notice_linger: Duration,
@@ -36,6 +37,7 @@ impl Default for Config {
         Self {
             hold_threshold: Duration::from_millis(250),
             language: LanguageMode::default(),
+            recognition_mode: RecognitionMode::default(),
             pill_linger: Duration::from_millis(400),
             error_linger: Duration::from_secs(3),
             notice_linger: Duration::from_millis(1500),
@@ -331,6 +333,7 @@ impl<P: Platform, E: Engine + Send + 'static, M: Microphone> Controller<P, E, M>
 
     fn apply_preferences(&mut self, preferences: Preferences) {
         self.config.language = preferences.language;
+        self.config.recognition_mode = preferences.recognition_mode;
         self.config.sounds = preferences.sounds;
         self.config.clipboard_restore = preferences.clipboard_restore;
         let switched_on = preferences.unload_when_idle && !self.config.unload_when_idle;
@@ -666,6 +669,7 @@ impl<P: Platform, E: Engine + Send + 'static, M: Microphone> Controller<P, E, M>
         }
         let options = UtteranceOptions {
             language: self.config.language,
+            recognition_mode: self.config.recognition_mode,
         };
         if let Err(error) = self.with_engine(|engine| engine.start_utterance(options)) {
             tracing::error!(%error, "cannot start an Utterance");
@@ -793,6 +797,7 @@ impl<P: Platform, E: Engine + Send + 'static, M: Microphone> Controller<P, E, M>
         }
         let options = UtteranceOptions {
             language: self.config.language,
+            recognition_mode: self.config.recognition_mode,
         };
         if let Err(error) = self.with_engine(|engine| engine.start_utterance(options)) {
             tracing::error!(%error, "cannot start an Utterance");

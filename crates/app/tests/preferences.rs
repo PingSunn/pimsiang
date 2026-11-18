@@ -1,5 +1,5 @@
 use app::preferences::Preferences;
-use engine::LanguageMode;
+use engine::{LanguageMode, RecognitionMode};
 use platform::{PillPlacement, PillPosition, TriggerKey};
 use store::Settings;
 
@@ -22,6 +22,7 @@ fn stored_values_round_trip_through_the_settings() {
     let preferences = Preferences {
         trigger_key: TriggerKey::RightControl,
         language: LanguageMode::ThTh,
+        recognition_mode: RecognitionMode::Conversation,
         sounds: false,
         clipboard_restore: false,
         launch_at_login: false,
@@ -31,10 +32,11 @@ fn stored_values_round_trip_through_the_settings() {
     };
     let mut settings = Settings::default();
 
-    preferences.apply_keeping_language(&mut settings, false);
+    preferences.apply_keeping_overrides(&mut settings, false, false);
 
     assert_eq!(settings.trigger_key.as_deref(), Some("right-control"));
     assert_eq!(settings.language.as_deref(), Some("th-TH"));
+    assert_eq!(settings.recognition_mode.as_deref(), Some("conversation"));
     assert_eq!(settings.pill_placement.as_deref(), Some("notch"));
     assert_eq!(settings.pill_position.as_deref(), Some("0.2500,0.7500"));
     assert_eq!(Preferences::from_settings(&settings), preferences);
@@ -45,6 +47,7 @@ fn an_unknown_trigger_key_or_language_falls_back_to_the_default() {
     let settings = Settings {
         trigger_key: Some("fn".to_owned()),
         language: Some("en-US".to_owned()),
+        recognition_mode: Some("fast".to_owned()),
         ..Settings::default()
     };
 
@@ -52,6 +55,7 @@ fn an_unknown_trigger_key_or_language_falls_back_to_the_default() {
 
     assert_eq!(preferences.trigger_key, TriggerKey::RightOption);
     assert_eq!(preferences.language, LanguageMode::ThMix);
+    assert_eq!(preferences.recognition_mode, RecognitionMode::Standard);
 }
 
 #[test]
@@ -62,7 +66,7 @@ fn applying_preferences_keeps_the_microphone_and_update_state() {
         ..Settings::default()
     };
 
-    Preferences::default().apply_keeping_language(&mut settings, false);
+    Preferences::default().apply_keeping_overrides(&mut settings, false, false);
 
     assert_eq!(settings.microphone.as_deref(), Some("usb"));
     assert_eq!(settings.dismissed_update.as_deref(), Some("0.2.0"));
@@ -80,7 +84,7 @@ fn a_language_override_is_not_written_to_the_settings() {
         ..Preferences::default()
     };
 
-    preferences.apply_keeping_language(&mut settings, true);
+    preferences.apply_keeping_overrides(&mut settings, true, false);
 
     assert_eq!(settings.language.as_deref(), Some("th-TH"));
     assert_eq!(settings.sounds, Some(false));
@@ -121,4 +125,22 @@ fn a_saved_pill_placement_and_position_are_read_back() {
 
     assert_eq!(preferences.pill_placement, PillPlacement::Notch);
     assert_eq!(preferences.pill_position, PillPosition { x: 0.8, y: 0.9 });
+}
+
+#[test]
+fn a_recognition_mode_override_is_not_written_to_the_settings() {
+    let mut settings = Settings {
+        recognition_mode: Some("conversation".to_owned()),
+        ..Settings::default()
+    };
+    let preferences = Preferences {
+        recognition_mode: RecognitionMode::Standard,
+        sounds: false,
+        ..Preferences::default()
+    };
+
+    preferences.apply_keeping_overrides(&mut settings, false, true);
+
+    assert_eq!(settings.recognition_mode.as_deref(), Some("conversation"));
+    assert_eq!(settings.sounds, Some(false));
 }

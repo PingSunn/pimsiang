@@ -4,7 +4,7 @@ use app::controller::{Config, Controller, Input};
 use app::preferences::Preferences;
 use audio::fake::FakeMicrophone;
 use engine::fake::FakeEngine;
-use engine::{Engine, LanguageMode, UtteranceOptions};
+use engine::{Engine, LanguageMode, RecognitionMode, UtteranceOptions};
 use platform::fake::FakePlatform;
 use platform::{PillError, PillNotice, PillState, Sound, Status, TriggerEvent, TriggerKey};
 
@@ -18,6 +18,7 @@ fn config() -> Config {
     Config {
         hold_threshold: HOLD,
         language: LanguageMode::ThMix,
+        recognition_mode: engine::RecognitionMode::Standard,
         pill_linger: LINGER,
         error_linger: ERROR_LINGER,
         notice_linger: Duration::from_millis(1500),
@@ -179,7 +180,8 @@ fn utterance_uses_the_configured_language_mode() {
     assert_eq!(
         c.engine().last_options(),
         Some(UtteranceOptions {
-            language: LanguageMode::ThMix
+            language: LanguageMode::ThMix,
+            recognition_mode: RecognitionMode::Standard
         })
     );
 }
@@ -1117,7 +1119,8 @@ fn a_language_mode_change_applies_to_the_next_utterance_only() {
     assert_eq!(
         c.engine().last_options(),
         Some(UtteranceOptions {
-            language: LanguageMode::ThMix
+            language: LanguageMode::ThMix,
+            recognition_mode: RecognitionMode::Standard
         })
     );
     release(&mut c, t0 + Duration::from_secs(1));
@@ -1125,8 +1128,32 @@ fn a_language_mode_change_applies_to_the_next_utterance_only() {
     assert_eq!(
         c.engine().last_options(),
         Some(UtteranceOptions {
-            language: LanguageMode::ThTh
+            language: LanguageMode::ThTh,
+            recognition_mode: RecognitionMode::Standard
         })
+    );
+}
+
+#[test]
+fn a_recognition_mode_change_applies_to_the_next_utterance_only() {
+    let mut c = controller("x");
+    let t0 = Instant::now();
+    hold(&mut c, t0);
+
+    c.handle(Input::Preferences(Preferences {
+        recognition_mode: RecognitionMode::Conversation,
+        ..preferences()
+    }));
+
+    assert_eq!(
+        c.engine().last_options().map(|o| o.recognition_mode),
+        Some(RecognitionMode::Standard)
+    );
+    release(&mut c, t0 + Duration::from_secs(1));
+    hold(&mut c, t0 + Duration::from_secs(5));
+    assert_eq!(
+        c.engine().last_options().map(|o| o.recognition_mode),
+        Some(RecognitionMode::Conversation)
     );
 }
 

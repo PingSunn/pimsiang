@@ -38,7 +38,7 @@ mod macos {
     use app::update;
     use audio::{MicCapture, MicrophoneChoice};
     use clap::Parser;
-    use engine::{LanguageMode, ModelFiles, OnnxEngine, Precision};
+    use engine::{LanguageMode, ModelFiles, OnnxEngine, Precision, RecognitionMode};
     use objc2::MainThreadMarker;
     use platform::{MicrophoneMenu, PermissionReport, PillPosition, PillState, Sound, Status};
     use platform_macos::login_item::{self, LoginItem};
@@ -70,6 +70,8 @@ mod macos {
         precision: Precision,
         #[arg(long)]
         language: Option<LanguageMode>,
+        #[arg(long)]
+        mode: Option<RecognitionMode>,
         #[arg(long, default_value_t = 250)]
         hold_ms: u64,
     }
@@ -120,6 +122,7 @@ mod macos {
         history_window: Option<HistoryWindow>,
         preferences: Preferences,
         language_overridden: bool,
+        mode_overridden: bool,
         settings_window: Option<SettingsWindow>,
     }
 
@@ -276,6 +279,11 @@ mod macos {
             if !keep_language {
                 self.language_overridden = false;
             }
+            let keep_mode = self.mode_overridden
+                && changed.recognition_mode == self.preferences.recognition_mode;
+            if !keep_mode {
+                self.mode_overridden = false;
+            }
             self.preferences = changed;
             if let Some(menu_bar) = &self.menu_bar
                 && let Err(error) = menu_bar.show_trigger_key(changed.trigger_key)
@@ -284,7 +292,7 @@ mod macos {
             }
             if let Some(path) = &self.settings_path
                 && let Err(error) = Settings::update(path, |settings| {
-                    changed.apply_keeping_language(settings, keep_language)
+                    changed.apply_keeping_overrides(settings, keep_language, keep_mode)
                 })
             {
                 tracing::warn!(%error, "cannot save the settings");
@@ -717,6 +725,10 @@ mod macos {
         if let Some(language) = args.language {
             preferences.language = language;
         }
+        let mode_overridden = args.mode.is_some();
+        if let Some(mode) = args.mode {
+            preferences.recognition_mode = mode;
+        }
         if bundled {
             preferences.launch_at_login = start_at_login(preferences.launch_at_login);
         }
@@ -788,6 +800,7 @@ mod macos {
             history_window: None,
             preferences,
             language_overridden,
+            mode_overridden,
             settings_window: None,
         };
         if model.download {

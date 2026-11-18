@@ -18,6 +18,7 @@ fn config() -> Config {
     Config {
         hold_threshold: HOLD,
         language: LanguageMode::ThMix,
+        recognition_mode: engine::RecognitionMode::Standard,
         pill_linger: Duration::from_millis(400),
         error_linger: ERROR_LINGER,
         notice_linger: NOTICE_LINGER,

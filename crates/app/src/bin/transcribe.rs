@@ -3,7 +3,9 @@ use std::time::Instant;
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use engine::{Engine, LanguageMode, ModelFiles, OnnxEngine, Precision, UtteranceOptions};
+use engine::{
+    Engine, LanguageMode, ModelFiles, OnnxEngine, Precision, RecognitionMode, UtteranceOptions,
+};
 
 const CHUNK_SAMPLES: usize = 1_600;
 const SAMPLE_RATE: f64 = audio::TARGET_SAMPLE_RATE as f64;
@@ -18,6 +20,8 @@ struct Args {
     precision: Precision,
     #[arg(long, default_value = "th-mix")]
     language: LanguageMode,
+    #[arg(long, default_value = "standard")]
+    mode: RecognitionMode,
     #[arg(short, long)]
     verbose: bool,
 }
@@ -41,6 +45,7 @@ fn main() -> Result<()> {
     let started = Instant::now();
     engine.start_utterance(UtteranceOptions {
         language: args.language,
+        recognition_mode: args.mode,
     })?;
     let mut pushed = 0usize;
     for chunk in samples.chunks(CHUNK_SAMPLES) {

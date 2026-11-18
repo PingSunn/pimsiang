@@ -1,4 +1,4 @@
-use engine::LanguageMode;
+use engine::{LanguageMode, RecognitionMode};
 use platform::{PillPlacement, PillPosition, TriggerKey};
 use store::Settings;
 
@@ -6,6 +6,7 @@ use store::Settings;
 pub struct Preferences {
     pub trigger_key: TriggerKey,
     pub language: LanguageMode,
+    pub recognition_mode: RecognitionMode,
     pub sounds: bool,
     pub clipboard_restore: bool,
     pub launch_at_login: bool,
@@ -33,6 +34,11 @@ impl Preferences {
                 .as_deref()
                 .and_then(|name| name.parse().ok())
                 .unwrap_or_default(),
+            recognition_mode: settings
+                .recognition_mode
+                .as_deref()
+                .and_then(|name| name.parse().ok())
+                .unwrap_or_default(),
             sounds: settings.sounds(),
             clipboard_restore: settings.clipboard_restore(),
             launch_at_login: settings.launch_at_login(),
@@ -50,10 +56,18 @@ impl Preferences {
         }
     }
 
-    pub fn apply_keeping_language(&self, settings: &mut Settings, keep_language: bool) {
+    pub fn apply_keeping_overrides(
+        &self,
+        settings: &mut Settings,
+        keep_language: bool,
+        keep_recognition_mode: bool,
+    ) {
         settings.trigger_key = Some(self.trigger_key.name().to_owned());
         if !keep_language {
             settings.language = Some(self.language.name().to_owned());
+        }
+        if !keep_recognition_mode {
+            settings.recognition_mode = Some(self.recognition_mode.name().to_owned());
         }
         settings.sounds = Some(self.sounds);
         settings.clipboard_restore = Some(self.clipboard_restore);

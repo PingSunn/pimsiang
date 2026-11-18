@@ -299,8 +299,8 @@ pub enum PlatformError {
     Copy(String),
 }
 
-pub use focus::Focus;
 pub use dock::{DockState, ShowInDock, dock_visible};
+pub use focus::Focus;
 pub use pill_layout::{PillPlacement, PillPosition};
 
 pub type TriggerSink = Box<dyn FnMut(TriggerEvent) + Send>;

@@ -16,7 +16,7 @@ block2 = "0.6"
 core-foundation = "0.10"
 core-graphics = "0.25.0"
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSAttributedString", "NSBox", "NSColor", "NSControl", "NSEvent", "block2", "NSFont", "NSGraphics", "NSImage", "NSImageCell", "NSImageView", "NSPanel", "NSPasteboard", "NSPasteboardItem", "NSParagraphStyle", "NSResponder", "NSRunningApplication", "NSScreen", "NSSound", "NSText", "NSTextField", "NSView", "NSWindow", "NSWorkspace", "objc2-core-foundation"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSAttributedString", "NSApplication", "NSBox", "NSColor", "NSControl", "NSEvent", "block2", "NSFont", "NSGraphics", "NSImage", "NSImageCell", "NSImageView", "NSPanel", "NSPasteboard", "NSPasteboardItem", "NSParagraphStyle", "NSResponder", "NSRunningApplication", "NSScreen", "NSSound", "NSText", "NSTextField", "NSView", "NSWindow", "NSWorkspace", "objc2-core-foundation"] }
 objc2-av-foundation = { version = "0.3", default-features = false, features = ["std", "AVCaptureDevice", "AVMediaFormat", "block2"] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSAttributedString", "NSData", "NSDictionary", "NSRange", "NSValue", "NSEnumerator", "NSError", "NSGeometry", "NSLocale", "NSString", "NSURL"] }
 objc2-service-management = "0.3"

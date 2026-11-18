@@ -21,7 +21,7 @@ mod ui_tests;
 mod macos {
     use std::path::PathBuf;
     use std::sync::mpsc::Sender;
-    use std::sync::{Arc, mpsc};
+    use std::sync::{Arc, Mutex, mpsc};
     use std::time::{Duration, Instant};
 
     use anyhow::{Context, Result};
@@ -40,10 +40,14 @@ mod macos {
     use clap::Parser;
     use engine::{LanguageMode, ModelFiles, OnnxEngine, Precision};
     use objc2::MainThreadMarker;
-    use platform::{MicrophoneMenu, PermissionReport, PillPosition, PillState, Sound, Status};
+    use platform::{
+        DockState, MicrophoneMenu, PermissionReport, PillPosition, PillState, ShowInDock, Sound,
+        Status,
+    };
     use platform_macos::login_item::{self, LoginItem};
     use platform_macos::{
-        MacPlatform, PillArt, PillEvent, PillLayout, PillPanel, PlacementEnd, copy_text, play_sound,
+        MacPlatform, PillArt, PillEvent, PillLayout, PillPanel, PlacementEnd, copy_text, dock,
+        play_sound,
     };
     use store::{HistoryService, Settings};
     use tray_icon::menu::MenuEvent;
@@ -94,7 +98,15 @@ mod macos {
         HistoryChanged,
         Menu(MenuEvent),
         PasteLastShortcut,
+        DockReopen,
         Fatal(String),
+    }
+
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum WindowKind {
+        Setup,
+        Settings,
+        History,
     }
 
     struct App {
@@ -121,37 +133,96 @@ mod macos {
         preferences: Preferences,
         language_overridden: bool,
         settings_window: Option<SettingsWindow>,
+        show_in_dock: ShowInDock,
+        dock: DockState,
+        recent_window: Option<WindowKind>,
     }
 
     impl App {
+        fn any_window_open(&self) -> bool {
+            self.setup.is_some() || self.history_window.is_some() || self.settings_window.is_some()
+        }
+
+        fn sync_dock(&mut self) {
+            if let Some(visible) = self.dock.update(self.show_in_dock, self.any_window_open()) {
+                dock::set_visible(visible);
+            }
+        }
+
+        fn is_open(&self, kind: WindowKind) -> bool {
+            match kind {
+                WindowKind::Setup => self.setup.is_some(),
+                WindowKind::Settings => self.settings_window.is_some(),
+                WindowKind::History => self.history_window.is_some(),
+            }
+        }
+
+        fn raise(&mut self, kind: WindowKind) {
+            self.recent_window = Some(kind);
+            self.sync_dock();
+            dock::activate();
+            match kind {
+                WindowKind::Setup => {
+                    if let Some(window) = &self.setup {
+                        window.focus();
+                    }
+                }
+                WindowKind::Settings => {
+                    if let Some(window) = &self.settings_window {
+                        window.focus();
+                    }
+                }
+                WindowKind::History => {
+                    if let Some(window) = &self.history_window {
+                        window.focus();
+                    }
+                }
+            }
+        }
+
+        fn on_dock_reopen(&mut self, event_loop: &ActiveEventLoop) {
+            let recent = self.recent_window.filter(|kind| self.is_open(*kind));
+            let open = [WindowKind::Settings, WindowKind::History, WindowKind::Setup]
+                .into_iter()
+                .find(|kind| self.is_open(*kind));
+            match recent.or(open) {
+                Some(kind) => self.raise(kind),
+                None => self.open_settings(event_loop),
+            }
+        }
+
         fn open_setup(&mut self, event_loop: &ActiveEventLoop) {
-            if let Some(setup) = &self.setup {
-                setup.focus();
-                return;
+            if self.setup.is_none() {
+                match OnboardingWindow::open(event_loop, self.language.window_title()) {
+                    Ok(setup) => self.setup = Some(setup),
+                    Err(error) => {
+                        tracing::error!(%error, "cannot open the setup window");
+                        return;
+                    }
+                }
             }
-            match OnboardingWindow::open(event_loop, self.language.window_title()) {
-                Ok(setup) => self.setup = Some(setup),
-                Err(error) => tracing::error!(%error, "cannot open the setup window"),
-            }
+            self.raise(WindowKind::Setup);
         }
 
         fn open_history(&mut self, event_loop: &ActiveEventLoop) {
-            if let Some(window) = &self.history_window {
-                window.focus();
-                return;
-            }
-            match HistoryWindow::open(event_loop, self.language, self.history.is_none()) {
-                Ok(window) => {
-                    self.history_window = Some(window);
-                    self.refresh_history();
+            if self.history_window.is_none() {
+                match HistoryWindow::open(event_loop, self.language, self.history.is_none()) {
+                    Ok(window) => {
+                        self.history_window = Some(window);
+                        self.refresh_history();
+                    }
+                    Err(error) => {
+                        tracing::error!(%error, "cannot open the History window");
+                        return;
+                    }
                 }
-                Err(error) => tracing::error!(%error, "cannot open the History window"),
             }
+            self.raise(WindowKind::History);
         }
 
         fn open_settings(&mut self, event_loop: &ActiveEventLoop) {
-            if let Some(window) = &self.settings_window {
-                window.focus();
+            if self.settings_window.is_some() {
+                self.raise(WindowKind::Settings);
                 return;
             }
             match SettingsWindow::open(
@@ -162,7 +233,10 @@ mod macos {
                 login_item::status(),
                 self.model_chip(),
             ) {
-                Ok(window) => self.settings_window = Some(window),
+                Ok(window) => {
+                    self.settings_window = Some(window);
+                    self.raise(WindowKind::Settings);
+                }
                 Err(error) => tracing::error!(%error, "cannot open the settings window"),
             }
         }
@@ -511,6 +585,7 @@ mod macos {
         fn resumed(&mut self, _event_loop: &ActiveEventLoop) {}
 
         fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+            self.sync_dock();
             match self.close_setup_at {
                 Some(at) if Instant::now() >= at => {
                     self.close_setup_at = None;
@@ -616,6 +691,7 @@ mod macos {
                     }
                 }
                 UserEvent::PasteLastShortcut => self.paste_last(event_loop),
+                UserEvent::DockReopen => self.on_dock_reopen(event_loop),
                 UserEvent::Menu(event) => {
                     let action = self.menu_bar.as_ref().and_then(|bar| bar.action(&event.id));
                     match action {
@@ -690,6 +766,12 @@ mod macos {
             .build()
             .context("creating the event loop")?;
         let proxy = event_loop.create_proxy();
+        let reopen_proxy = Mutex::new(proxy.clone());
+        dock::on_reopen(move || {
+            if let Ok(proxy) = reopen_proxy.lock() {
+                let _ = proxy.send_event(UserEvent::DockReopen);
+            }
+        });
         let menu_proxy = proxy.clone();
         MenuEvent::set_event_handler(Some(move |event| {
             let _ = menu_proxy.send_event(UserEvent::Menu(event));
@@ -789,6 +871,9 @@ mod macos {
             preferences,
             language_overridden,
             settings_window: None,
+            show_in_dock: ShowInDock::default(),
+            dock: DockState::default(),
+            recent_window: None,
         };
         if model.download {
             app.start_model_download();

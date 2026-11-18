@@ -81,6 +81,9 @@ impl Surface {
     }
 
     pub fn focus(&self) {
+        if self.window.is_minimized() == Some(true) {
+            self.window.set_minimized(false);
+        }
         self.window.focus_window();
     }
 

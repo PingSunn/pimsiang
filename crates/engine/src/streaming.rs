@@ -115,11 +115,17 @@ impl OpenUtterance {
             .min(self.scanned);
         let text = recognizer.recognize(&self.audio[..cut], self.options.language)?;
         self.lock(text, true);
+        let in_pause = self.silent > 0 && cut > self.scanned.saturating_sub(self.silent);
         self.audio.drain(..cut);
         self.scanned -= cut;
         self.recent.retain(|&(end, _)| end > cut);
         for (end, _) in &mut self.recent {
             *end -= cut;
+        }
+        if in_pause {
+            self.in_speech = false;
+            self.silent = 0;
+            self.recent.clear();
         }
         Ok(())
     }
@@ -230,9 +236,8 @@ impl<R: Recognizer, D: SpeechDetector> StreamingEngine<R, D> {
             closed |= utterance.advance(&mut self.recognizer, probability, window_end)?;
         }
         if partials
-            && !closed
             && utterance.in_speech
-            && utterance.since_partial >= PARTIAL_INTERVAL_SAMPLES
+            && (closed || utterance.since_partial >= PARTIAL_INTERVAL_SAMPLES)
         {
             utterance.since_partial = 0;
             let open = self

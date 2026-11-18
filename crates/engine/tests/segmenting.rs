@@ -435,6 +435,74 @@ fn a_forced_cut_joins_without_a_space_but_a_silence_close_joins_with_one() {
     assert_eq!(spans(phrases[1]).len(), 1, "{text}");
 }
 
+fn pause_spanning_the_cap(window: usize) -> f32 {
+    if (460..500).contains(&window) {
+        0.0
+    } else {
+        0.9
+    }
+}
+
+#[test]
+fn a_pause_spanning_the_cap_never_decodes_a_silence_only_segment() {
+    let (mut engine, _) = scripted_engine(pause_spanning_the_cap);
+
+    stream(&mut engine, &indexed_audio(600));
+    let text = engine.finish_utterance().unwrap();
+
+    let spans = spans(&text);
+    assert!(spans.len() >= 2, "{text}");
+    for (start, end) in spans {
+        let holds_speech = (0..600).any(|window| {
+            pause_spanning_the_cap(window) >= 0.5
+                && window * WINDOW_SAMPLES < end
+                && (window + 1) * WINDOW_SAMPLES > start
+        });
+        assert!(holds_speech, "({start}, {end}) is silence only: {text}");
+    }
+}
+
+struct LengthRecognizer;
+
+impl Recognizer for LengthRecognizer {
+    fn load(&mut self) -> Result<(), EngineError> {
+        Ok(())
+    }
+
+    fn unload(&mut self) {}
+
+    fn is_loaded(&self) -> bool {
+        true
+    }
+
+    fn recognize(&mut self, samples: &[f32], _: LanguageMode) -> Result<String, EngineError> {
+        Ok("a".repeat(samples.len() / 64))
+    }
+}
+
+#[test]
+fn partial_text_never_shrinks_across_a_forced_cut() {
+    let mut engine = StreamingEngine::with_detector(
+        LengthRecognizer,
+        ScriptedDetector {
+            probabilities: |_| 0.9,
+            next: 0,
+        },
+    );
+    engine.load().unwrap();
+    engine.start_utterance(UtteranceOptions::default()).unwrap();
+
+    let partials = stream(&mut engine, &indexed_audio(1_250));
+
+    assert!(partials.len() > 50);
+    assert!(
+        partials
+            .windows(2)
+            .all(|pair| pair[0].len() <= pair[1].len()),
+        "a Partial lost text"
+    );
+}
+
 #[test]
 fn partial_text_decodes_at_most_one_capped_segment_per_tick() {
     let (mut engine, calls) = scripted_engine(|_| 0.9);
@@ -444,7 +512,10 @@ fn partial_text_decodes_at_most_one_capped_segment_per_tick() {
         let before = calls.lengths().len();
         engine.push_audio(chunk).unwrap();
         let decoded = calls.lengths()[before..].to_vec();
-        assert!(decoded.len() <= 1, "decoded {decoded:?} in one tick");
+        assert!(
+            decoded.iter().filter(|&&n| n > 2 * SECOND).count() <= 1,
+            "decoded {decoded:?} in one tick"
+        );
         assert!(
             decoded
                 .iter()

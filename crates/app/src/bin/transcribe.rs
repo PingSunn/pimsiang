@@ -49,7 +49,7 @@ fn main() -> Result<()> {
         match engine.push_audio(chunk) {
             Ok(Some(partial)) if args.verbose => eprintln!("[partial {at:6.2} s] {partial}"),
             Ok(_) => {}
-            Err(error) => eprintln!("warning: Partial text failed at {at:.2} s: {error}"),
+            Err(error) => eprintln!("warning: decoding failed at {at:.2} s: {error}"),
         }
     }
     let final_started = Instant::now();

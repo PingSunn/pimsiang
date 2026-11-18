@@ -7,7 +7,7 @@ use ort::session::Session;
 use ort::value::Tensor;
 
 use crate::features::MelFrontEnd;
-use crate::{EngineError, LanguageMode, Recognizer, StreamingEngine};
+use crate::{EngineError, LanguageMode, Recognizer, SileroVad, StreamingEngine};
 
 const ENCODER_WIDTH: usize = 1024;
 const STATE_SIZE: usize = 2 * 640;
@@ -16,11 +16,12 @@ const SHORT_CLIP_SAMPLES: usize = 2 * 16_000;
 const BLANK_BIAS: f32 = -1.0;
 const SHORT_CLIP_BLANK_BIAS: f32 = -2.5;
 
-pub type OnnxEngine = StreamingEngine<OnnxRecognizer>;
+pub type OnnxEngine = StreamingEngine<OnnxRecognizer, SileroVad>;
 
 impl OnnxEngine {
     pub fn new(files: ModelFiles) -> Self {
-        StreamingEngine::with_recognizer(OnnxRecognizer::new(files))
+        let vad = SileroVad::new(files.vad());
+        StreamingEngine::with_detector(OnnxRecognizer::new(files), vad)
     }
 }
 
@@ -82,6 +83,10 @@ impl ModelFiles {
         self.dir.join("decoder_joint.onnx")
     }
 
+    pub fn vad(&self) -> PathBuf {
+        self.dir.join("silero_vad.onnx")
+    }
+
     pub fn tokens(&self) -> PathBuf {
         self.dir.join("tokens.txt")
     }
@@ -126,7 +131,7 @@ impl Recognizer for OnnxRecognizer {
             .lines()
             .map(str::to_owned)
             .collect();
-        let environment = ort::init().build().map_err(model_error)?;
+        let environment = crate::runtime::environment()?;
         self.model = Some(LoadedModel {
             encoder: open_session(&environment, &encoder_path)?,
             decoder_joint: open_session(&environment, &decoder_path)?,

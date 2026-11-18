@@ -2,12 +2,17 @@ mod cer;
 pub mod fake;
 mod features;
 mod onnx;
+mod runtime;
 mod streaming;
+mod vad;
 
 pub use cer::character_error_rate;
 pub use features::{LogMel, log_mel};
 pub use onnx::{ModelFiles, OnnxEngine, OnnxRecognizer, Precision};
-pub use streaming::{PARTIAL_INTERVAL_SAMPLES, StreamingEngine};
+pub use streaming::{
+    MIN_SILENCE_SAMPLES, PARTIAL_INTERVAL_SAMPLES, SPEECH_PAD_SAMPLES, StreamingEngine,
+};
+pub use vad::{AlwaysSpeech, SileroVad, SpeechDetector, WINDOW_SAMPLES};
 
 use std::fmt;
 use std::str::FromStr;

@@ -281,3 +281,45 @@ fn the_service_answers_queries_through_a_callback() {
 
     assert_eq!(answer.recv().unwrap(), Some(1));
 }
+
+#[test]
+fn the_database_and_every_file_next_to_it_are_private_to_the_owner() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let (dir, history) = open();
+    history.add("ลับ", 1, Kind::Pasted, None).unwrap();
+
+    let folder = dir.path().join("nested");
+    let mut checked = 0;
+    for file in std::fs::read_dir(&folder).unwrap() {
+        let mode = file.unwrap().metadata().unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
+        checked += 1;
+    }
+    assert!(checked >= 1);
+}
+
+#[test]
+fn a_row_with_an_unknown_kind_is_skipped_and_the_rest_is_still_listed() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("history.sqlite");
+    let history = History::open(&path).unwrap();
+    history.add("ปกติ", 1, Kind::Pasted, None).unwrap();
+    Connection::open(&path)
+        .unwrap()
+        .execute(
+            "INSERT INTO entries (text, created, kind) VALUES ('แปลก', 2, 'bogus')",
+            [],
+        )
+        .unwrap();
+
+    assert_eq!(texts(&history.list(0, 10).unwrap()), ["ปกติ"]);
+    assert_eq!(
+        texts(&history.search("แปลก", 0, 10).unwrap()),
+        Vec::<&str>::new()
+    );
+    assert_eq!(
+        history.latest().unwrap().map(|entry| entry.text),
+        Some("ปกติ".to_owned())
+    );
+}

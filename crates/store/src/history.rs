@@ -29,10 +29,11 @@ impl Kind {
         }
     }
 
-    fn parse(text: &str) -> Self {
+    fn parse(text: &str) -> Option<Self> {
         match text {
-            "note" => Self::Note,
-            _ => Self::Pasted,
+            "pasted" => Some(Self::Pasted),
+            "note" => Some(Self::Note),
+            _ => None,
         }
     }
 }
@@ -80,6 +81,7 @@ impl History {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
         }
+        create_private(path)?;
         let connection = Connection::open(path)?;
         connection.busy_timeout(std::time::Duration::from_secs(5))?;
         let history = Self { connection };
@@ -133,7 +135,7 @@ impl History {
             "SELECT {COLUMNS} FROM entries ORDER BY created DESC, id DESC LIMIT ?1 OFFSET ?2"
         ))?;
         let rows = statement.query_map(params![limit as i64, offset as i64], entry)?;
-        Ok(rows.collect::<Result<_, _>>()?)
+        collect(rows)
     }
 
     pub fn search(
@@ -153,7 +155,7 @@ impl History {
                  ORDER BY created DESC, id DESC LIMIT ?2 OFFSET ?3"
             ))?;
             let rows = statement.query_map(params![pattern, limit as i64, offset as i64], entry)?;
-            return Ok(rows.collect::<Result<_, _>>()?);
+            return collect(rows);
         }
         let phrase = format!("\"{}\"", query.replace('"', "\"\""));
         let mut statement = self.connection.prepare(
@@ -163,7 +165,7 @@ impl History {
              ORDER BY e.created DESC, e.id DESC LIMIT ?2 OFFSET ?3",
         )?;
         let rows = statement.query_map(params![phrase, limit as i64, offset as i64], entry)?;
-        Ok(rows.collect::<Result<_, _>>()?)
+        collect(rows)
     }
 
     pub fn delete(&self, id: i64) -> Result<bool, HistoryError> {
@@ -188,22 +190,54 @@ impl History {
         Ok(self
             .connection
             .query_row(
-                &format!("SELECT {COLUMNS} FROM entries ORDER BY created DESC, id DESC LIMIT 1"),
+                &format!(
+                    "SELECT {COLUMNS} FROM entries WHERE kind IN ('pasted', 'note')
+                     ORDER BY created DESC, id DESC LIMIT 1"
+                ),
                 [],
                 entry,
             )
-            .optional()?)
+            .optional()?
+            .flatten())
     }
 }
 
-fn entry(row: &Row<'_>) -> rusqlite::Result<Entry> {
-    Ok(Entry {
-        id: row.get(0)?,
+fn entry(row: &Row<'_>) -> rusqlite::Result<Option<Entry>> {
+    let id = row.get(0)?;
+    let kind = row.get::<_, String>(3)?;
+    let Some(kind) = Kind::parse(&kind) else {
+        tracing::warn!(id, kind, "skipping a History entry with an unknown kind");
+        return Ok(None);
+    };
+    Ok(Some(Entry {
+        id,
         text: row.get(1)?,
         created: row.get(2)?,
-        kind: Kind::parse(&row.get::<_, String>(3)?),
+        kind,
         model_id: row.get(4)?,
-    })
+    }))
+}
+
+fn collect(
+    rows: impl Iterator<Item = rusqlite::Result<Option<Entry>>>,
+) -> Result<Vec<Entry>, HistoryError> {
+    let mut entries = Vec::new();
+    for row in rows {
+        entries.extend(row?);
+    }
+    Ok(entries)
+}
+
+fn create_private(path: &Path) -> Result<(), HistoryError> {
+    use std::os::unix::fs::OpenOptionsExt;
+
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .mode(0o600)
+        .open(path)?;
+    Ok(())
 }
 
 fn escape_like(text: &str) -> String {

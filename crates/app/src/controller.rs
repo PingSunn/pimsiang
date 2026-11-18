@@ -8,6 +8,7 @@ use platform::{
     MicrophoneEntry, MicrophoneMenu, Permission, PermissionReport, PermissionStatus, PillError,
     PillNotice, PillState, Platform, Sound, Status, TriggerEvent, TriggerSink, TriggerState,
 };
+use store::Kind;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Config {
@@ -48,8 +49,10 @@ pub enum Input {
     Microphone(MicrophoneChoice),
     MicrophoneLost,
     ModelReady,
+    PasteText(String),
 }
 
+type HistorySink = Box<dyn FnMut(&str, Kind) + Send>;
 type TriggerSource = Box<dyn FnMut() -> TriggerSink + Send>;
 
 struct PermissionWatch {
@@ -83,6 +86,7 @@ pub struct Controller<P, E, M> {
     choice: MicrophoneChoice,
     prompted: Vec<Permission>,
     model_ready: bool,
+    history: Option<HistorySink>,
 }
 
 impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
@@ -103,7 +107,13 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
             choice: MicrophoneChoice::default(),
             prompted: Vec::new(),
             model_ready: true,
+            history: None,
         }
+    }
+
+    pub fn record_history(mut self, sink: impl FnMut(&str, Kind) + Send + 'static) -> Self {
+        self.history = Some(Box::new(sink));
+        self
     }
 
     pub fn model_pending(mut self) -> Self {
@@ -230,6 +240,7 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
                 self.model_ready = true;
                 self.preload_model();
             }
+            Input::PasteText(text) => self.paste_again(&text),
         }
         Vec::new()
     }
@@ -586,12 +597,30 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
         match self.platform.paste(text) {
             Ok(()) => {
                 tracing::info!(chars = text.chars().count(), "pasted Final text");
+                self.record(text, Kind::Pasted);
                 Ok(())
             }
             Err(error) => {
                 tracing::error!(%error, "cannot paste the Final text");
+                self.record(text, Kind::Note);
                 Err(PillError::PasteFailed)
             }
+        }
+    }
+
+    fn record(&mut self, text: &str, kind: Kind) {
+        if let Some(history) = &mut self.history {
+            history(text, kind);
+        }
+    }
+
+    fn paste_again(&mut self, text: &str) {
+        if !matches!(self.state, State::Idle) || text.is_empty() {
+            return;
+        }
+        if let Err(error) = self.platform.paste(text) {
+            tracing::error!(%error, "cannot paste the last transcript");
+            self.fail(PillError::PasteFailed);
         }
     }
 }

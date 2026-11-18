@@ -211,8 +211,8 @@ impl Language {
 
     pub fn settings_trigger_key_help(self) -> &'static str {
         self.pick(
-            "Hold it to talk, double-tap it for hands-free.",
-            "กดค้างเพื่อพูด แตะสองครั้งเพื่อพูดต่อเนื่อง",
+            "Hold it to talk, double-tap it for hands-free, hold it with Shift for a Quick note.",
+            "กดค้างเพื่อพูด แตะสองครั้งเพื่อพูดต่อเนื่อง กดค้างพร้อม Shift เพื่อจดเป็นโน้ตด่วน",
         )
     }
 

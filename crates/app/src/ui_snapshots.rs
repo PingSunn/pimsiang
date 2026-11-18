@@ -289,7 +289,12 @@ fn entries() -> Vec<Entry> {
             "นี่คือข้อความทดสอบ ภาษาไทย ผสม English words เช่น meeting, deadline และ sprint review",
             Kind::Pasted,
         ),
-        entry(7, at(2, 8, 45), "Remember to renew the domain before Friday.", Kind::Note),
+        entry(
+            7,
+            at(2, 8, 45),
+            "Remember to renew the domain before Friday.",
+            Kind::Note,
+        ),
     ]
 }
 
@@ -427,18 +432,44 @@ fn history_snapshots() {
     });
 }
 
-fn pill(ui: &mut egui::Ui, text: &str, art: platform_macos::PillArt) {
-    let font = egui::FontId::proportional(14.0);
-    let galley = ui.painter().layout_no_wrap(
-        text.to_owned(),
-        font,
-        egui::Color32::from_rgb(0xfb, 0xf7, 0xee),
-    );
-    let size = vec2(
-        (galley.size().x + 2.0 * 18.0 + 26.0 + 8.0).clamp(140.0, 520.0),
-        34.0,
-    );
-    let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+fn pill(ui: &mut egui::Ui, content: &platform::PillContent, art: platform_macos::PillArt) {
+    let paper = egui::Color32::from_rgb(0xfb, 0xf7, 0xee);
+    let faded = egui::Color32::from_rgb(0x8a, 0x82, 0x76);
+    let wattle = egui::Color32::from_rgb(0xff, 0xd2, 0x3f);
+    let font = egui::FontId::proportional(15.0);
+    let mut job = egui::text::LayoutJob::default();
+    for (text, color) in [(&content.settled, paper), (&content.tentative, faded)] {
+        if !text.is_empty() {
+            job.append(
+                text,
+                0.0,
+                egui::TextFormat {
+                    font_id: font.clone(),
+                    color,
+                    ..Default::default()
+                },
+            );
+        }
+    }
+    let galley = ui.fonts_mut(|fonts| fonts.layout_job(job));
+    let badge = content.badge.as_ref().map(|text| {
+        ui.painter().layout_no_wrap(
+            text.clone(),
+            egui::FontId::proportional(12.0),
+            egui::Color32::from_rgb(0x1c, 0x1a, 0x17),
+        )
+    });
+    let trailing = if content.caret {
+        12.0
+    } else if content.dots {
+        39.0
+    } else if let Some(badge) = &badge {
+        badge.size().x + 26.0
+    } else {
+        0.0
+    };
+    let width = (8.0 + 32.0 + 10.0 + galley.size().x + trailing + 18.0).min(520.0);
+    let (rect, _) = ui.allocate_exact_size(vec2(width, 44.0), egui::Sense::hover());
     let key = egui::Id::unique(("pill-art", format!("{art:?}")));
     let texture = match ui
         .ctx()
@@ -462,43 +493,78 @@ fn pill(ui: &mut egui::Ui, text: &str, art: platform_macos::PillArt) {
             texture
         }
     };
-    let painter = ui.painter();
-    painter.rect(
+    ui.painter().rect_filled(
         rect,
-        egui::CornerRadius::same(17),
+        egui::CornerRadius::same(22),
         egui::Color32::from_rgb(0x1c, 0x1a, 0x17),
-        egui::Stroke::new(1.0, egui::Color32::from_rgb(0x3a, 0x35, 0x2e)),
-        egui::StrokeKind::Inside,
     );
-    let start = rect.left() + (rect.width() - (26.0 + 8.0 + galley.size().x)) / 2.0;
     egui::Image::new(&texture).paint_at(
         ui,
-        egui::Rect::from_min_size(pos2(start, rect.center().y - 13.0), vec2(26.0, 26.0)),
+        egui::Rect::from_min_size(
+            pos2(rect.left() + 8.0, rect.center().y - 16.0),
+            vec2(32.0, 32.0),
+        ),
     );
+    let text_left = rect.left() + 8.0 + 32.0 + 10.0;
+    let text_width = galley.size().x;
     ui.painter().galley(
-        pos2(start + 34.0, rect.center().y - galley.size().y / 2.0),
+        pos2(text_left, rect.center().y - galley.size().y / 2.0),
         galley,
-        egui::Color32::WHITE,
+        paper,
     );
+    let mut x = text_left + text_width + 10.0;
+    if content.caret {
+        ui.painter().rect_filled(
+            egui::Rect::from_min_size(pos2(x - 8.0, rect.center().y - 9.0), vec2(2.0, 18.0)),
+            0.0,
+            wattle,
+        );
+    } else if content.dots {
+        for alpha in [1.0, 0.6, 0.3] {
+            ui.painter().circle_filled(
+                pos2(x + 2.5, rect.center().y),
+                2.5,
+                wattle.gamma_multiply(alpha),
+            );
+            x += 8.0;
+        }
+    } else if let Some(badge) = badge {
+        let badge_rect = egui::Rect::from_center_size(
+            pos2(x + (badge.size().x + 16.0) / 2.0, rect.center().y),
+            vec2(badge.size().x + 16.0, badge.size().y + 4.0),
+        );
+        ui.painter()
+            .rect_filled(badge_rect, egui::CornerRadius::same(255), wattle);
+        ui.painter().galley(
+            badge_rect.center() - badge.size() / 2.0,
+            badge,
+            egui::Color32::from_rgb(0x1c, 0x1a, 0x17),
+        );
+    }
 }
 
 #[test]
 #[ignore = "renders offscreen on the GPU: cargo test -p app ui_snapshots -- --ignored"]
 fn pill_snapshots() {
     for (language, language_name) in LANGUAGES {
-        let mut harness = harness(vec2(560.0, 240.0), Theme::Dark, |ui| {
+        let mut harness = harness(vec2(560.0, 260.0), Theme::Dark, |ui| {
             let background = egui::Color32::from_rgb(0x3a, 0x3d, 0x4a);
             ui.painter().rect_filled(ui.max_rect(), 0.0, background);
             ui.vertical_centered(|ui| {
                 ui.spacing_mut().item_spacing.y = 14.0;
                 for state in [
-                    platform::PillState::Listening,
-                    platform::PillState::partial("ช่วยส่งรายงานประจำสัปดาห์ให้ทีมก่อนบ่ายสามโมง"),
+                    platform::PillState::Partial(platform::PartialText::new(
+                        "ช่วยส่งรายงานประจำสัปดาห์ให้ทีมก่อนบ่ายสามโมง",
+                        "ช่วยส่งรายงานประจำสัปดาห์ให้ทีมก่อนบ่าย".len(),
+                    )),
                     platform::PillState::Transcribing,
-                    platform::PillState::Error(platform::PillError::MicrophoneUnavailable),
+                    platform::PillState::Notice(platform::PillNotice::QuickNoteSaved),
+                    platform::PillState::Error(platform::PillError::PermissionMissing(
+                        platform::Permission::Microphone,
+                    )),
                 ] {
-                    if let Some(text) = language.pill_text(&state) {
-                        pill(ui, &text, platform_macos::PillArt::for_state(&state));
+                    if let Some(content) = language.pill_content(&state) {
+                        pill(ui, &content, platform_macos::PillArt::for_state(&state));
                     }
                 }
             });

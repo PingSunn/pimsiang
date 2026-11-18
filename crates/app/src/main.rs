@@ -27,8 +27,8 @@ mod macos {
     use anyhow::{Context, Result};
     use app::controller::{Config, Controller, Input, PermissionCommand};
     use app::history_view;
-    use app::i18n::Language;
     use app::history_view::Page;
+    use app::i18n::Language;
     use app::model_chip::{ModelChip, model_chip};
     use app::model_download::{self, Manifest, ModelStatus};
     use app::onboarding;

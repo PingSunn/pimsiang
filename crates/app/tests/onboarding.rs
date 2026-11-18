@@ -293,7 +293,10 @@ fn the_settings_chip_follows_the_model_state() {
         model_chip(&ModelStatus::Downloading { done: 0, total: 0 }, false),
         ModelChip::Downloading { percent: 0 }
     );
-    assert_eq!(model_chip(&ModelStatus::Verifying, false), ModelChip::Verifying);
+    assert_eq!(
+        model_chip(&ModelStatus::Verifying, false),
+        ModelChip::Verifying
+    );
     assert_eq!(
         model_chip(&ModelStatus::Failed("x".to_owned()), false),
         ModelChip::Missing

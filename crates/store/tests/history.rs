@@ -329,7 +329,9 @@ fn counting_matches_what_a_search_finds() {
     let (_dir, history) = open();
     history.add("ส่งรายงานให้ทีม", 1, Kind::Pasted, None).unwrap();
     history.add("ร่างรายงานไตรมาส", 2, Kind::Note, None).unwrap();
-    history.add("deploy after review", 3, Kind::Pasted, None).unwrap();
+    history
+        .add("deploy after review", 3, Kind::Pasted, None)
+        .unwrap();
     history.add("100% done", 4, Kind::Pasted, None).unwrap();
 
     assert_eq!(history.total().unwrap(), 4);

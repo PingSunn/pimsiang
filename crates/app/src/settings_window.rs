@@ -261,7 +261,11 @@ pub(crate) fn show(
                         .show(ui, |ui| {
                             ui.spacing_mut().item_spacing.y = 22.0;
                             ui.vertical(|ui| {
-                                theme::page_title(ui, section.title(language), section.subtitle(language));
+                                theme::page_title(
+                                    ui,
+                                    section.title(language),
+                                    section.subtitle(language),
+                                );
                             });
                             if let Some(error) = &inputs.error {
                                 theme::banner(ui, colors.warning, |ui| {

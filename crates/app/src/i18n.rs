@@ -42,11 +42,30 @@ impl Language {
     pub fn intro_left(self, left: usize) -> String {
         match (self, left) {
             (Self::English, 0) => "Everything is ready. This window closes by itself.".to_owned(),
-            (Self::English, 1) => "One step left, then you can talk. This window closes by itself when you are done.".to_owned(),
-            (Self::English, n) => format!("{n} steps left, then you can talk. This window closes by itself when you are done."),
-            (Self::Thai, 0) => th!("พร้อม" | "ใช้งาน" | "แล้ว หน้าต่าง" | "นี้" | "จะ" | "ปิดเอง").to_owned(),
+            (Self::English, 1) => {
+                "One step left, then you can talk. This window closes by itself when you are done."
+                    .to_owned()
+            }
+            (Self::English, n) => format!(
+                "{n} steps left, then you can talk. This window closes by itself when you are done."
+            ),
+            (Self::Thai, 0) => th!("พร้อม"
+                | "ใช้งาน"
+                | "แล้ว หน้าต่าง"
+                | "นี้"
+                | "จะ"
+                | "ปิดเอง")
+            .to_owned(),
             (Self::Thai, n) => format!(
-                th!("อีก {n} ขั้นตอน" | "ก็" | "พูด" | "ได้เลย หน้าต่าง" | "นี้" | "จะ" | "ปิดเอง" | "เมื่อ" | "ครบ"),
+                th!("อีก {n} ขั้นตอน"
+                    | "ก็"
+                    | "พูด"
+                    | "ได้เลย หน้าต่าง"
+                    | "นี้"
+                    | "จะ"
+                    | "ปิดเอง"
+                    | "เมื่อ"
+                    | "ครบ"),
                 n = n
             ),
         }
@@ -59,7 +78,16 @@ impl Language {
     pub fn setup_hint(self) -> &'static str {
         self.pick(
             "Hold and speak. Let go and the text lands at the cursor.",
-            th!("กดค้าง" | "แล้ว" | "พูด ปล่อย" | "แล้ว" | "ข้อความ" | "จะ" | "ไป" | "อยู่" | "ตรง" | "เคอร์เซอร์"),
+            th!("กดค้าง"
+                | "แล้ว"
+                | "พูด ปล่อย"
+                | "แล้ว"
+                | "ข้อความ"
+                | "จะ"
+                | "ไป"
+                | "อยู่"
+                | "ตรง"
+                | "เคอร์เซอร์"),
         )
     }
 
@@ -69,7 +97,6 @@ impl Language {
             th!("PimSiang กำลัง" | "ทำงาน" | "ผ่าน" | "เทอร์มินัล สิทธิ์" | "เหล่านี้" | "จึง" | "เป็นของ" | "แอป" | "เทอร์มินัล" | "ที่" | "เปิด" | "มัน ให้" | "อนุญาต" | "กับ" | "แอป" | "นั้น"),
         )
     }
-
 
     pub fn menu_setup(self) -> &'static str {
         self.pick("Set up permissions...", "ตั้งค่าสิทธิ์...")
@@ -211,12 +238,21 @@ impl Language {
     pub fn model_explain(self) -> &'static str {
         self.pick(
             "One-time download, about 1 GB. If it drops, it resumes where it stopped.",
-            th!("ดาวน์โหลด" | "ครั้งเดียว ราว 1 GB หลุด" | "แล้ว" | "ต่อ" | "จาก" | "เดิม" | "ได้"),
+            th!("ดาวน์โหลด"
+                | "ครั้งเดียว ราว 1 GB หลุด"
+                | "แล้ว"
+                | "ต่อ"
+                | "จาก"
+                | "เดิม"
+                | "ได้"),
         )
     }
 
     pub fn model_downloading(self, done: u64, total: u64) -> String {
-        let (done, total) = (group_thousands(done / 1_000_000), group_thousands(total / 1_000_000));
+        let (done, total) = (
+            group_thousands(done / 1_000_000),
+            group_thousands(total / 1_000_000),
+        );
         match self {
             Self::English => format!("{done} of {total} MB"),
             Self::Thai => format!("{done} จาก {total} MB"),
@@ -471,7 +507,17 @@ impl Language {
     pub fn settings_trigger_key_help(self) -> &'static str {
         self.pick(
             "One key does three things. Pick one that does not clash with your work.",
-            th!("ปุ่ม" | "เดียว" | "ทำได้" | "สามอย่าง เลือก" | "ปุ่ม" | "ที่" | "ไม่ชน" | "กับ" | "งาน" | "ของ" | "คุณ"),
+            th!("ปุ่ม"
+                | "เดียว"
+                | "ทำได้"
+                | "สามอย่าง เลือก"
+                | "ปุ่ม"
+                | "ที่"
+                | "ไม่ชน"
+                | "กับ"
+                | "งาน"
+                | "ของ"
+                | "คุณ"),
         )
     }
 
@@ -484,7 +530,13 @@ impl Language {
     }
 
     pub fn settings_language_mix_example(self) -> [(&'static str, bool); 5] {
-        [("ขอ ", false), ("deploy", true), (" หลัง ", false), ("review", true), (" เสร็จ", false)]
+        [
+            ("ขอ ", false),
+            ("deploy", true),
+            (" หลัง ", false),
+            ("review", true),
+            (" เสร็จ", false),
+        ]
     }
 
     pub fn settings_language_thai(self) -> &'static str {
@@ -492,7 +544,13 @@ impl Language {
     }
 
     pub fn settings_language_thai_example(self) -> [(&'static str, bool); 5] {
-        [("ขอ ", false), ("ดีพลอย", true), (" หลัง ", false), ("รีวิว", true), (" เสร็จ", false)]
+        [
+            ("ขอ ", false),
+            ("ดีพลอย", true),
+            (" หลัง ", false),
+            ("รีวิว", true),
+            (" เสร็จ", false),
+        ]
     }
 
     pub fn settings_language_help(self) -> &'static str {
@@ -682,18 +740,37 @@ impl Language {
     pub fn settings_launch_at_login_help(self) -> &'static str {
         self.pick(
             "The bird icon waits in the menu bar every time you start your Mac.",
-            th!("ไอคอน" | "นก" | "จะ" | "รอ" | "อยู่" | "บน" | "แถบเมนู" | "ทุกครั้ง" | "ที่" | "เปิดเครื่อง"),
+            th!("ไอคอน"
+                | "นก"
+                | "จะ"
+                | "รอ"
+                | "อยู่"
+                | "บน"
+                | "แถบเมนู"
+                | "ทุกครั้ง"
+                | "ที่"
+                | "เปิดเครื่อง"),
         )
     }
 
     pub fn settings_unload_when_idle(self) -> &'static str {
-        self.pick("Rest the model after 10 idle minutes", th!("พัก" | "โมเดล" | "เมื่อ" | "ไม่ได้" | "ใช้ 10 นาที"))
+        self.pick(
+            "Rest the model after 10 idle minutes",
+            th!("พัก" | "โมเดล" | "เมื่อ" | "ไม่ได้" | "ใช้ 10 นาที"),
+        )
     }
 
     pub fn settings_unload_when_idle_help(self) -> &'static str {
         self.pick(
             "Gives back about 800 MB of memory. The next start is a little slower.",
-            th!("คืน" | "หน่วยความจำ" | "ราว 800 MB ครั้ง" | "ต่อไป" | "จะ" | "เริ่ม" | "ช้าลง" | "นิดหนึ่ง"),
+            th!("คืน"
+                | "หน่วยความจำ"
+                | "ราว 800 MB ครั้ง"
+                | "ต่อไป"
+                | "จะ"
+                | "เริ่ม"
+                | "ช้าลง"
+                | "นิดหนึ่ง"),
         )
     }
 
@@ -716,7 +793,13 @@ impl Language {
             self.pick("Double-tap", "แตะสองครั้ง"),
             self.pick(
                 "Speak for long without holding. Tap again to finish",
-                th!("พูด" | "ยาว" | "ไม่ต้อง" | "กดค้าง แตะ" | "อีกครั้ง" | "เพื่อ" | "จบ"),
+                th!("พูด"
+                    | "ยาว"
+                    | "ไม่ต้อง"
+                    | "กดค้าง แตะ"
+                    | "อีกครั้ง"
+                    | "เพื่อ"
+                    | "จบ"),
             ),
         )
     }
@@ -733,11 +816,21 @@ impl Language {
 
     pub fn settings_trigger_esc(self) -> (&'static str, &'static str, &'static str) {
         match self {
-            Self::English => ("Press ", "Esc", " to cancel at any time. Nothing is pasted."),
+            Self::English => (
+                "Press ",
+                "Esc",
+                " to cancel at any time. Nothing is pasted.",
+            ),
             Self::Thai => (
                 "กด ",
                 "Esc",
-                th!(" เพื่อ" | "ยกเลิก" | "ได้" | "ทุกเมื่อ ข้อความ" | "จะ" | "ไม่ถูก" | "วาง"),
+                th!(" เพื่อ"
+                    | "ยกเลิก"
+                    | "ได้"
+                    | "ทุกเมื่อ ข้อความ"
+                    | "จะ"
+                    | "ไม่ถูก"
+                    | "วาง"),
             ),
         }
     }
@@ -804,7 +897,15 @@ impl Language {
     pub fn history_footer_hint(self) -> &'static str {
         self.pick(
             "Paste the latest one from the bird icon in the menu bar",
-            th!("วาง" | "อัน" | "ล่าสุด" | "ได้" | "จาก" | "ไอคอน" | "นก" | "บน" | "แถบเมนู"),
+            th!("วาง"
+                | "อัน"
+                | "ล่าสุด"
+                | "ได้"
+                | "จาก"
+                | "ไอคอน"
+                | "นก"
+                | "บน"
+                | "แถบเมนู"),
         )
     }
 
@@ -839,7 +940,7 @@ fn group_thousands(value: u64) -> String {
     let digits = value.to_string();
     let mut grouped = String::with_capacity(digits.len() + digits.len() / 3);
     for (index, digit) in digits.chars().enumerate() {
-        if index > 0 && (digits.len() - index) % 3 == 0 {
+        if index > 0 && (digits.len() - index).is_multiple_of(3) {
             grouped.push(',');
         }
         grouped.push(digit);

@@ -332,8 +332,11 @@ pub(crate) fn show(
                             for (index, group) in groups.iter().enumerate() {
                                 ui.add_space(if index == 0 { 12.0 } else { 14.0 });
                                 ui.label(
-                                    theme::bold(&language.history_day(group.day, year), theme::TEXT_XS)
-                                        .color(colors.muted_foreground),
+                                    theme::bold(
+                                        &language.history_day(group.day, year),
+                                        theme::TEXT_XS,
+                                    )
+                                    .color(colors.muted_foreground),
                                 );
                                 ui.add_space(theme::SPACE_1);
                                 for entry in group.entries {
@@ -342,7 +345,9 @@ pub(crate) fn show(
                                     });
                                 }
                             }
-                            if page.entries.len() >= *state.limit && page.matched > page.entries.len() {
+                            if page.entries.len() >= *state.limit
+                                && page.matched > page.entries.len()
+                            {
                                 ui.add_space(theme::SPACE_3);
                                 ui.vertical_centered(|ui| {
                                     if theme::button(
@@ -460,7 +465,11 @@ fn show_entry(
                         .color(muted),
                     );
                     if entry.kind == Kind::Note {
-                        ui.label(egui::RichText::new("\u{b7}").size(theme::TEXT_XS).color(muted));
+                        ui.label(
+                            egui::RichText::new("\u{b7}")
+                                .size(theme::TEXT_XS)
+                                .color(muted),
+                        );
                         theme::badge(ui, Badge::Note, language.history_kind(Kind::Note));
                     }
                     theme::row_end(ui, |ui| {

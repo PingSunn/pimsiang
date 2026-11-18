@@ -178,10 +178,8 @@ fn hero(ui: &mut egui::Ui, view: &View) {
         egui::Stroke::new(1.0, theme::mix(colors.accent_soft, colors.foreground, 0.12)),
     );
     let top = rect.bottom() - 26.0 - column;
-    let bubble_rect = egui::Rect::from_min_size(
-        egui::pos2(rect.left() + text_left, top),
-        bubble_size,
-    );
+    let bubble_rect =
+        egui::Rect::from_min_size(egui::pos2(rect.left() + text_left, top), bubble_size);
     painter.rect(
         bubble_rect,
         egui::CornerRadius {
@@ -200,9 +198,17 @@ fn hero(ui: &mut egui::Ui, view: &View) {
         colors.on_wattle,
     );
     let mut y = bubble_rect.bottom() + 6.0;
-    painter.galley(egui::pos2(rect.left() + text_left, y), title.clone(), colors.foreground);
+    painter.galley(
+        egui::pos2(rect.left() + text_left, y),
+        title.clone(),
+        colors.foreground,
+    );
     y += title.size().y + 6.0;
-    painter.galley(egui::pos2(rect.left() + text_left, y), subtitle, colors.ink2);
+    painter.galley(
+        egui::pos2(rect.left() + text_left, y),
+        subtitle,
+        colors.ink2,
+    );
     let mascot_rect = egui::Rect::from_min_size(
         egui::pos2(rect.left() + SIDE, rect.bottom() + 8.0 - mascot),
         egui::Vec2::splat(mascot),
@@ -247,7 +253,9 @@ fn steps(ui: &mut egui::Ui, view: &View, grant: &mut Option<Permission>, retry: 
     }
     ui.horizontal(|ui| {
         ui.label(theme::bold(&view.progress, theme::TEXT_SM).color(colors.muted_foreground));
-        theme::row_end(ui, |ui| theme::segments(ui, view.steps_done, view.steps_total));
+        theme::row_end(ui, |ui| {
+            theme::segments(ui, view.steps_done, view.steps_total)
+        });
     });
     ui.add_space(10.0);
     egui::Frame::new()

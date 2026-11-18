@@ -168,8 +168,18 @@ pub fn match_ranges(text: &str, query: &str) -> Vec<Range<usize>> {
 
 pub fn thai_month_abbreviation(month: u32) -> &'static str {
     const MONTHS: [&str; 12] = [
-        "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.",
-        "พ.ย.", "ธ.ค.",
+        "ม.ค.",
+        "ก.พ.",
+        "มี.ค.",
+        "เม.ย.",
+        "พ.ค.",
+        "มิ.ย.",
+        "ก.ค.",
+        "ส.ค.",
+        "ก.ย.",
+        "ต.ค.",
+        "พ.ย.",
+        "ธ.ค.",
     ];
     MONTHS[(month.clamp(1, 12) - 1) as usize]
 }

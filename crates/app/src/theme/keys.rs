@@ -34,7 +34,12 @@ pub fn paint_glyph(painter: &Painter, center: Pos2, size: f32, glyph: Glyph, col
         }
         Glyph::Option => {
             painter.add(egui::Shape::line(
-                vec![at(-0.9, -0.55), at(-0.3, -0.55), at(0.3, 0.55), at(0.9, 0.55)],
+                vec![
+                    at(-0.9, -0.55),
+                    at(-0.3, -0.55),
+                    at(0.3, 0.55),
+                    at(0.9, 0.55),
+                ],
                 stroke,
             ));
             painter.line_segment([at(0.15, -0.55), at(0.9, -0.55)], stroke);
@@ -70,11 +75,12 @@ pub fn parts_width(ui: &Ui, parts: &[Part<'_>], font: &egui::FontId, size: f32) 
         }
         width += match part {
             Part::Glyph(_) => size,
-            Part::Text(text) => ui
-                .painter()
-                .layout_no_wrap((*text).to_owned(), font.clone(), Color32::PLACEHOLDER)
-                .size()
-                .x,
+            Part::Text(text) => {
+                ui.painter()
+                    .layout_no_wrap((*text).to_owned(), font.clone(), Color32::PLACEHOLDER)
+                    .size()
+                    .x
+            }
         };
     }
     width
@@ -109,8 +115,11 @@ pub fn paint_parts(
                     .painter()
                     .layout_no_wrap((*text).to_owned(), font.clone(), color);
                 let width = galley.size().x;
-                ui.painter()
-                    .galley(pos2(x, left_center.y - galley.size().y / 2.0), galley, color);
+                ui.painter().galley(
+                    pos2(x, left_center.y - galley.size().y / 2.0),
+                    galley,
+                    color,
+                );
                 x += width;
             }
         }

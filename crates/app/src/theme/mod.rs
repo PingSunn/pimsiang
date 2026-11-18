@@ -1,6 +1,6 @@
 use egui::{
-    Align, Color32, CornerRadius, Frame, Id, Layout, Margin, Rect, Response, RichText, Role,
-    Sense, Stroke, StrokeKind, TextEdit, Theme, Ui, UiBuilder, Vec2, WidgetInfo, pos2, vec2,
+    Align, Color32, CornerRadius, Frame, Id, Layout, Margin, Rect, Response, RichText, Role, Sense,
+    Stroke, StrokeKind, TextEdit, Theme, Ui, UiBuilder, Vec2, WidgetInfo, pos2, vec2,
 };
 
 pub mod icons;
@@ -356,7 +356,11 @@ pub fn setting_row<R>(
             ui.add_space(14.0);
             ui.label(medium(title, TEXT_BASE));
             if let Some(text) = description {
-                ui.label(RichText::new(text).size(TEXT_XS).color(colors.muted_foreground));
+                ui.label(
+                    RichText::new(text)
+                        .size(TEXT_XS)
+                        .color(colors.muted_foreground),
+                );
             }
             ui.add_space(14.0);
         },
@@ -690,7 +694,10 @@ pub fn badge(ui: &mut Ui, kind: Badge, text: &str) {
         f32::INFINITY,
         egui::TextStyle::Small,
     );
-    let size = vec2(galley.size().x + 2.0 * SPACE_2 + 2.0, galley.size().y.max(18.0) + 4.0);
+    let size = vec2(
+        galley.size().x + 2.0 * SPACE_2 + 2.0,
+        galley.size().y.max(18.0) + 4.0,
+    );
     let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
     let painter = ui.painter();
     painter.rect_filled(rect, CornerRadius::same(RADIUS_FULL), fill);
@@ -893,7 +900,8 @@ pub fn status_chip(ui: &mut Ui, tone: ChipTone, text: &str) {
             egui::TextStyle::Small,
         );
     let height = galley.size().y.max(18.0) + 20.0;
-    let (rect, _) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
+    let (rect, response) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
+    response.widget_info(|| WidgetInfo::labeled(Role::Label, true, text));
     let painter = ui.painter();
     painter.rect(
         rect,
@@ -1017,18 +1025,31 @@ pub fn language_card<T: PartialEq>(
     painter.circle_stroke(
         dot,
         7.5,
-        Stroke::new(1.5, if selected { colors.accent } else { colors.input }),
+        Stroke::new(
+            1.5,
+            if selected {
+                colors.accent
+            } else {
+                colors.input
+            },
+        ),
     );
     if selected {
         painter.circle_filled(dot, 4.0, colors.accent);
     }
     painter.galley(
-        pos2(dot.x + 8.0 + 8.0, rect.top() + 14.0 + 10.0 - title_galley.size().y / 2.0),
+        pos2(
+            dot.x + 8.0 + 8.0,
+            rect.top() + 14.0 + 10.0 - title_galley.size().y / 2.0,
+        ),
         title_galley,
         colors.foreground,
     );
     painter.galley(
-        pos2(rect.left() + SPACE_4, rect.bottom() - 14.0 - example_galley.size().y),
+        pos2(
+            rect.left() + SPACE_4,
+            rect.bottom() - 14.0 - example_galley.size().y,
+        ),
         example_galley,
         colors.ink2,
     );
@@ -1120,11 +1141,7 @@ pub enum StripKey {
     Control,
 }
 
-pub fn keyboard_strip(
-    ui: &mut Ui,
-    chosen: StripKey,
-    tiles: [(Option<Glyph>, &str, &str); 3],
-) {
+pub fn keyboard_strip(ui: &mut Ui, chosen: StripKey, tiles: [(Option<Glyph>, &str, &str); 3]) {
     let colors = colors(ui);
     Frame::new()
         .fill(colors.strip)
@@ -1186,7 +1203,10 @@ fn keys_row(ui: &mut Ui, chosen: StripKey) {
             };
             keys::paint_parts(
                 ui,
-                pos2(key_rect.left() + 6.0 + 1.0, key_rect.bottom() - 5.0 - size / 2.0),
+                pos2(
+                    key_rect.left() + 6.0 + 1.0,
+                    key_rect.bottom() - 5.0 - size / 2.0,
+                ),
                 &[label],
                 &egui::FontId::proportional(size),
                 size,
@@ -1205,7 +1225,13 @@ fn keys_row(ui: &mut Ui, chosen: StripKey) {
     ui.painter()
         .rect_filled(space, CornerRadius::same(8), colors.strip_key);
     for (glyph, width, which) in right {
-        key(ui, x_right, width, Some(Part::Glyph(glyph)), which == chosen);
+        key(
+            ui,
+            x_right,
+            width,
+            Some(Part::Glyph(glyph)),
+            which == chosen,
+        );
         x_right += width + gap;
     }
     key(ui, x_right, 30.0, None, false);
@@ -1233,7 +1259,12 @@ fn gesture_tiles(ui: &mut Ui, tiles: [(Option<Glyph>, &str, &str); 3]) {
                 width - 24.0,
             );
             job.sections[0].format.line_height = Some(18.0);
-            (*glyph, indent, title, ui.fonts_mut(|fonts| fonts.layout_job(job)))
+            (
+                *glyph,
+                indent,
+                title,
+                ui.fonts_mut(|fonts| fonts.layout_job(job)),
+            )
         })
         .collect();
     let height = galleys

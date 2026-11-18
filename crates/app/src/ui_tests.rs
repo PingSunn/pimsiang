@@ -306,9 +306,5 @@ fn row_actions_are_reachable_from_the_keyboard() {
     harness.run();
     harness.key_press(Key::Tab);
     harness.run();
-    assert!(
-        harness
-            .ctx
-            .memory(|memory| memory.focused().is_some())
-    );
+    assert!(harness.ctx.memory(|memory| memory.focused().is_some()));
 }

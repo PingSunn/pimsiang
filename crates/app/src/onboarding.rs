@@ -81,7 +81,12 @@ fn model_row(language: Language, status: &ModelStatus) -> ModelRow {
             false,
             None,
         ),
-        ModelStatus::Verifying => row(language.model_verifying().to_owned(), Some(1.0), false, None),
+        ModelStatus::Verifying => row(
+            language.model_verifying().to_owned(),
+            Some(1.0),
+            false,
+            None,
+        ),
         ModelStatus::Failed(reason) => row(
             language.model_failed(reason),
             None,

@@ -1276,3 +1276,36 @@ fn the_pill_carries_the_settled_prefix_of_a_partial() {
     };
     assert_eq!(partial.split(), ("สวัสดี ", "ครับ"));
 }
+
+#[test]
+fn paste_last_while_the_trigger_key_is_held_pastes_and_starts_no_utterance() {
+    let mut c = controller("x");
+    let t0 = Instant::now();
+
+    press(&mut c, t0);
+    c.handle(Input::PasteText("ข้อความล่าสุด".to_owned()));
+    c.handle(Input::Tick(t0 + HOLD * 2));
+    release(&mut c, t0 + HOLD * 3);
+
+    assert_eq!(c.platform().pastes(), ["ข้อความล่าสุด"]);
+    assert!(!c.microphone().is_capturing());
+    assert!(c.platform().statuses().is_empty());
+}
+
+#[test]
+fn two_paste_last_shortcuts_with_the_trigger_key_do_not_start_hands_free() {
+    let mut c = controller("x");
+    let t0 = Instant::now();
+    let gap = Duration::from_millis(50);
+
+    press(&mut c, t0);
+    release(&mut c, t0 + gap);
+    c.handle(Input::PasteText("ข้อความล่าสุด".to_owned()));
+    press(&mut c, t0 + gap * 2);
+    c.handle(Input::PasteText("ข้อความล่าสุด".to_owned()));
+    release(&mut c, t0 + gap * 3);
+    c.handle(Input::Tick(t0 + HOLD * 2));
+
+    assert_eq!(c.platform().pastes(), ["ข้อความล่าสุด", "ข้อความล่าสุด"]);
+    assert!(!c.microphone().is_capturing());
+}

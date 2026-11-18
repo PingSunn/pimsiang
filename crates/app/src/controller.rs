@@ -990,6 +990,10 @@ impl<P: Platform, E: Engine + Send + 'static, M: Microphone> Controller<P, E, M>
     }
 
     fn paste_again(&mut self, text: &str) {
+        self.last_tap = None;
+        if matches!(self.state, State::Pending { .. }) {
+            self.state = State::Idle;
+        }
         if !matches!(self.state, State::Idle) || text.is_empty() {
             return;
         }

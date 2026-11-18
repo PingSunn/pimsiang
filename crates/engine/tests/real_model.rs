@@ -84,3 +84,47 @@ fn partial_text_arrives_before_final_text_while_streaming() {
     assert!(partials.iter().any(|p| !p.is_empty()));
     assert!(!final_text.is_empty());
 }
+
+fn reference(name: &str) -> String {
+    fixtures()
+        .into_iter()
+        .find(|(fixture, _)| fixture == name)
+        .map(|(_, text)| text)
+        .unwrap_or_else(|| panic!("no transcript for {name}"))
+}
+
+#[test]
+#[ignore = "needs the Model and Silero VAD on disk: set PIMSIANG_MODEL_DIR"]
+fn a_long_pause_in_the_middle_loses_no_words_after_it() {
+    let mut engine = loaded_engine();
+    let audio = [
+        read_fixture("meeting"),
+        vec![0.0; 45 * 16_000],
+        read_fixture("food"),
+    ]
+    .concat();
+
+    engine.start_utterance(UtteranceOptions::default()).unwrap();
+    for chunk in audio.chunks(1_600) {
+        engine.push_audio(chunk).unwrap();
+    }
+    let final_text = engine.finish_utterance().unwrap();
+
+    let expected = format!("{} {}", reference("meeting"), reference("food"));
+    let cer = character_error_rate(&expected, &final_text);
+    println!("CER {cer:.3} -> {final_text}");
+    assert!(cer <= CER_THRESHOLD, "CER {cer:.3} for `{final_text}`");
+}
+
+#[test]
+#[ignore = "needs the Model and Silero VAD on disk: set PIMSIANG_MODEL_DIR"]
+fn silence_only_input_has_empty_final_text() {
+    let mut engine = loaded_engine();
+
+    engine.start_utterance(UtteranceOptions::default()).unwrap();
+    for chunk in vec![0.0f32; 5 * 16_000].chunks(1_600) {
+        assert_eq!(engine.push_audio(chunk).unwrap(), None);
+    }
+
+    assert_eq!(engine.finish_utterance().unwrap(), "");
+}

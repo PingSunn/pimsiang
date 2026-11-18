@@ -464,18 +464,20 @@ mod macos {
         fn start_model_download(&mut self) {
             self.model = ModelStatus::Downloading {
                 done: 0,
-                total: Manifest::pinned().total_bytes(),
+                total: Manifest::pinned(Precision::Int8).total_bytes(),
             };
             let notify_proxy = self.proxy.clone();
             let inputs = self.inputs.clone();
-            if let Err(error) =
-                model_download::spawn(self.model_dir.clone(), Manifest::pinned(), move |status| {
+            if let Err(error) = model_download::spawn(
+                self.model_dir.clone(),
+                Manifest::pinned(Precision::Int8),
+                move |status| {
                     if status == ModelStatus::Ready {
                         let _ = inputs.send(Input::ModelReady);
                     }
                     let _ = notify_proxy.send_event(UserEvent::Model(status));
-                })
-            {
+                },
+            ) {
                 tracing::error!(%error, "cannot start the Model download");
                 let status = ModelStatus::Failed(error.to_string());
                 self.model = status.clone();
@@ -835,8 +837,8 @@ mod macos {
             let home = std::env::var_os("HOME")
                 .map(PathBuf::from)
                 .unwrap_or_default();
-            let dir = model_download::default_dir(&home);
-            let download = !model_download::is_ready(&dir, &Manifest::pinned());
+            let dir = model_download::default_dir(&home, Precision::Int8);
+            let download = !model_download::is_ready(&dir, &Manifest::pinned(Precision::Int8));
             Self {
                 dir,
                 precision: Precision::Int8,

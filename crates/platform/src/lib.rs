@@ -225,8 +225,26 @@ impl PartialText {
         while !self.text.is_char_boundary(at) {
             at -= 1;
         }
+        while at > 0 && self.text[at..].chars().next().is_some_and(joins_previous) {
+            at = self.text[..at]
+                .char_indices()
+                .next_back()
+                .map_or(0, |(index, _)| index);
+        }
         self.text.split_at(at)
     }
+}
+
+fn joins_previous(character: char) -> bool {
+    matches!(
+        character,
+        '\u{0300}'..='\u{036F}'
+            | '\u{0E31}'
+            | '\u{0E33}'..='\u{0E3A}'
+            | '\u{0E47}'..='\u{0E4E}'
+            | '\u{200D}'
+            | '\u{FE00}'..='\u{FE0F}'
+    )
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -329,6 +347,25 @@ mod tests {
     #[test]
     fn a_settled_length_inside_a_character_moves_back_to_a_boundary() {
         assert_eq!(PartialText::new("สว", 4).split(), ("ส", "ว"));
+    }
+
+    #[test]
+    fn a_settled_length_before_a_thai_mark_keeps_the_mark_with_its_consonant() {
+        let text = "สวัสดีครับ";
+        let before_vowel = "สวัสด".len();
+        assert_eq!(
+            PartialText::new(text, before_vowel).split(),
+            ("สวัส", "ดีครับ")
+        );
+        let tone = "ที่";
+        assert_eq!(PartialText::new(tone, "ที".len()).split(), ("", "ที่"));
+        assert_eq!(PartialText::new("น้ำ", "น้".len()).split(), ("", "น้ำ"));
+    }
+
+    #[test]
+    fn a_settled_length_before_a_latin_combining_accent_keeps_the_accent() {
+        let text = "cafe\u{0301} ok";
+        assert_eq!(PartialText::new(text, 4).split(), ("caf", "e\u{0301} ok"));
     }
 
     #[test]

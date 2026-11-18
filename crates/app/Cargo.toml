@@ -43,6 +43,7 @@ rustix = { version = "1", default-features = false, features = ["fs", "std"] }
 sha2 = "0.10"
 thiserror.workspace = true
 zip = { version = "2", default-features = false }
+image = { version = "0.25.10", default-features = false, features = ["png"] }
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
 
 [dev-dependencies]

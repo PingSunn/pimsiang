@@ -4,8 +4,10 @@ use egui::{
 };
 
 pub mod icons;
+pub mod mascot;
 
 pub use icons::Icon;
+pub use mascot::Pose;
 
 pub const RADIUS: u8 = 8;
 pub const RADIUS_LG: u8 = 12;
@@ -31,6 +33,7 @@ const WEIGHT_BOLD: f32 = 650.0;
 
 const CONTROL_HEIGHT: f32 = 34.0;
 pub const HEADER_HEIGHT: f32 = 60.0;
+pub const DISPLAY_FAMILY: &str = "Mitr";
 pub const WORDMARK: &str = "PimSiang";
 pub const WORDMARK_THAI: &str = "พิมพ์เสียง";
 
@@ -51,6 +54,8 @@ pub struct Palette {
     pub accent_foreground: Color32,
     pub accent_text: Color32,
     pub accent_soft: Color32,
+    pub selection: Color32,
+    pub knob_off: Color32,
     pub destructive: Color32,
     pub destructive_foreground: Color32,
     pub success: Color32,
@@ -62,47 +67,51 @@ const fn rgb(hex: u32) -> Color32 {
 }
 
 pub const LIGHT: Palette = Palette {
-    background: rgb(0xf5f5fa),
-    sidebar: rgb(0xeceef6),
+    background: rgb(0xfbf7ee),
+    sidebar: rgb(0xf6f1e4),
     card: rgb(0xffffff),
-    card_hover: rgb(0xf9f9fe),
-    muted: rgb(0xebebf4),
-    muted_foreground: rgb(0x5f5f78),
-    foreground: rgb(0x15152b),
-    border: rgb(0xe0e0ec),
-    input: rgb(0xc9c9db),
-    accent: rgb(0x5b45ee),
-    accent_hover: rgb(0x6b57f5),
-    accent_pressed: rgb(0x4c38d8),
-    accent_foreground: rgb(0xffffff),
-    accent_text: rgb(0x4a35d6),
-    accent_soft: Color32::from_rgba_unmultiplied_const(0x5b, 0x45, 0xee, 0x1c),
-    destructive: rgb(0xd92d3a),
+    card_hover: rgb(0xfffcf5),
+    muted: rgb(0xf1ebdb),
+    muted_foreground: rgb(0x6b645a),
+    foreground: rgb(0x1c1a17),
+    border: rgb(0xe8e0cf),
+    input: rgb(0xd2c8b0),
+    accent: rgb(0x1c1a17),
+    accent_hover: rgb(0x36322b),
+    accent_pressed: rgb(0x0d0c0a),
+    accent_foreground: rgb(0xffd23f),
+    accent_text: rgb(0x1c1a17),
+    accent_soft: rgb(0xffe89a),
+    selection: rgb(0xffe89a),
+    knob_off: rgb(0xffffff),
+    destructive: rgb(0xc8303a),
     destructive_foreground: rgb(0xffffff),
-    success: rgb(0x17803d),
-    warning: rgb(0xb45309),
+    success: rgb(0x2e7d3a),
+    warning: rgb(0xa85f00),
 };
 
 pub const DARK: Palette = Palette {
-    background: rgb(0x0b0b11),
-    sidebar: rgb(0x10101a),
-    card: rgb(0x14141e),
-    card_hover: rgb(0x1a1a27),
-    muted: rgb(0x1e1e2c),
-    muted_foreground: rgb(0x9b9bb4),
-    foreground: rgb(0xf3f3f8),
-    border: rgb(0x262637),
-    input: rgb(0x36364d),
-    accent: rgb(0x6a5af9),
-    accent_hover: rgb(0x7a6bff),
-    accent_pressed: rgb(0x5a4be6),
-    accent_foreground: rgb(0xffffff),
-    accent_text: rgb(0xaaa1ff),
-    accent_soft: Color32::from_rgba_unmultiplied_const(0x6a, 0x5a, 0xf9, 0x30),
+    background: rgb(0x16140f),
+    sidebar: rgb(0x1b1914),
+    card: rgb(0x1f1c17),
+    card_hover: rgb(0x27241d),
+    muted: rgb(0x2b2721),
+    muted_foreground: rgb(0xa8a091),
+    foreground: rgb(0xfbf7ee),
+    border: rgb(0x332f27),
+    input: rgb(0x4d473c),
+    accent: rgb(0xffd23f),
+    accent_hover: rgb(0xffdd6b),
+    accent_pressed: rgb(0xe8b92a),
+    accent_foreground: rgb(0x1c1a17),
+    accent_text: rgb(0xffd23f),
+    accent_soft: Color32::from_rgba_unmultiplied_const(0xff, 0xd2, 0x3f, 0x26),
+    selection: Color32::from_rgba_unmultiplied_const(0xff, 0xd2, 0x3f, 0x4d),
+    knob_off: rgb(0xc9c0ae),
     destructive: rgb(0xe5484d),
     destructive_foreground: rgb(0xffffff),
-    success: rgb(0x3dd68c),
-    warning: rgb(0xf5a524),
+    success: rgb(0x5fcb7e),
+    warning: rgb(0xf28c28),
 };
 
 pub fn palette(theme: Theme) -> Palette {
@@ -181,7 +190,7 @@ fn style(theme: Theme) -> egui::Style {
     visuals.hyperlink_color = colors.accent_text;
     visuals.warn_fg_color = colors.warning;
     visuals.error_fg_color = colors.destructive;
-    visuals.selection.bg_fill = tint(colors.accent, 0x66);
+    visuals.selection.bg_fill = colors.selection;
     visuals.selection.stroke = Stroke::new(1.0, colors.accent_text);
     visuals.text_cursor.stroke = Stroke::new(1.5, colors.accent_text);
     visuals.striped = false;
@@ -236,8 +245,14 @@ pub fn bold(text: &str, size: f32) -> RichText {
         .variation(b"wght", WEIGHT_BOLD)
 }
 
+pub fn display(text: &str, size: f32) -> RichText {
+    RichText::new(text)
+        .size(size)
+        .family(egui::FontFamily::Name(DISPLAY_FAMILY.into()))
+}
+
 pub fn title(ui: &mut Ui, text: &str) {
-    ui.label(bold(text, TEXT_TITLE));
+    ui.label(display(text, TEXT_TITLE));
 }
 
 pub fn heading(ui: &mut Ui, text: &str) {
@@ -276,38 +291,13 @@ pub fn gradient(painter: &egui::Painter, rect: Rect, top: Color32, bottom: Color
 }
 
 pub fn logo(ui: &mut Ui, size: f32) {
-    let colors = colors(ui);
-    let (rect, _) = ui.allocate_exact_size(vec2(size, size), Sense::hover());
-    let radius = CornerRadius::same((size * 0.3) as u8);
-    let painter = ui.painter();
-    painter.add(
-        egui::Shadow {
-            offset: [0, (size * 0.12) as i8],
-            blur: (size * 0.5) as u8,
-            spread: 0,
-            color: tint(colors.accent, 0x70),
-        }
-        .as_shape(rect, radius),
-    );
-    painter.rect_filled(rect, radius, colors.accent);
-    painter.rect_stroke(
-        rect,
-        radius,
-        Stroke::new(1.0, tint(colors.accent_foreground, 0x40)),
-        StrokeKind::Inside,
-    );
-    icons::paint(
-        painter,
-        Rect::from_center_size(rect.center(), Vec2::splat(size * 0.6)),
-        Icon::Waveform,
-        colors.accent_foreground,
-    );
+    mascot::show(ui, Pose::HeadDefault, size);
 }
 
 pub fn wordmark(ui: &mut Ui) {
     let muted = colors(ui).muted_foreground;
     ui.spacing_mut().item_spacing.x = SPACE_2;
-    ui.label(bold(WORDMARK, TEXT_LG));
+    ui.label(display(WORDMARK, TEXT_LG));
     ui.label(RichText::new(WORDMARK_THAI).size(TEXT_SM).color(muted));
 }
 
@@ -688,13 +678,14 @@ pub fn toggle(ui: &mut Ui, on: &mut bool, enabled: bool, text: &str) -> Response
         radius,
         Color32::from_black_alpha(40),
     );
+    let knob = mix(colors.knob_off, colors.accent_foreground, progress);
     painter.circle_filled(
         center,
         radius,
         if enabled {
-            Color32::WHITE
+            knob
         } else {
-            Color32::WHITE.gamma_multiply(0.7)
+            knob.gamma_multiply(0.7)
         },
     );
     response

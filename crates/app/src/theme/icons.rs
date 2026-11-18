@@ -2,7 +2,6 @@ use egui::{Color32, Painter, Pos2, Rect, Stroke, StrokeKind, pos2, vec2};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Icon {
-    Waveform,
     Sliders,
     Key,
     Speaker,
@@ -21,20 +20,6 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
     let path =
         |points: &[(f32, f32)]| -> Vec<Pos2> { points.iter().map(|&(x, y)| at(x, y)).collect() };
     match icon {
-        Icon::Waveform => {
-            for (x, height) in [
-                (-0.8, 0.3),
-                (-0.4, 0.7),
-                (0.0, 1.0),
-                (0.4, 0.55),
-                (0.8, 0.25),
-            ] {
-                painter.line_segment([at(x, -height), at(x, height)], stroke);
-                for y in [-height, height] {
-                    painter.circle_filled(at(x, y), stroke.width / 2.0, color);
-                }
-            }
-        }
         Icon::Sliders => {
             for (y, knob) in [(-0.6, -0.3), (0.0, 0.45), (0.6, -0.05)] {
                 painter.line_segment([at(-0.9, y), at(0.9, y)], stroke);

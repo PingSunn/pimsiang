@@ -13,7 +13,9 @@ use winit::window::{Window, WindowId};
 use crate::theme;
 
 const ANUPHAN: &[u8] = include_bytes!("../assets/Anuphan[wght].ttf");
+const MITR: &[u8] = include_bytes!("../assets/Mitr-SemiBold.ttf");
 const FONT_NAME: &str = "Anuphan";
+const DISPLAY_NAME: &str = "Mitr";
 const MIN_WIDTH: f64 = 400.0;
 const MIN_HEIGHT: f64 = 360.0;
 
@@ -142,5 +144,13 @@ pub(crate) fn fonts() -> FontDefinitions {
             .or_default()
             .insert(0, FONT_NAME.to_owned());
     }
+    definitions.font_data.insert(
+        DISPLAY_NAME.to_owned(),
+        Arc::new(FontData::from_static(MITR)),
+    );
+    definitions.families.insert(
+        FontFamily::Name(theme::DISPLAY_FAMILY.into()),
+        vec![DISPLAY_NAME.to_owned(), FONT_NAME.to_owned()],
+    );
     definitions
 }

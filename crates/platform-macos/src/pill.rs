@@ -17,12 +17,15 @@ const MAX_WIDTH: f64 = 520.0;
 const CORNER_RADIUS: f64 = 14.0;
 const BORDER_WIDTH: f64 = 1.0;
 const MENU_BAR_GAP: f64 = 6.0;
+const DOT_SIZE: f64 = 8.0;
+const DOT_GAP: f64 = 8.0;
 
 pub struct PillPanel {
     mtm: MainThreadMarker,
     panel: Retained<NSPanel>,
     label: Retained<NSTextField>,
     shape: Retained<NSBox>,
+    dot: Retained<NSBox>,
 }
 
 struct Anchor {
@@ -61,7 +64,7 @@ impl PillPanel {
 
         let label = NSTextField::labelWithString(&NSString::from_str(""), mtm);
         label.setFont(Some(&NSFont::systemFontOfSize(FONT_SIZE)));
-        label.setTextColor(Some(&zinc(0xfa, 0xfa, 0xfa)));
+        label.setTextColor(Some(&rgb(0xf3, 0xf3, 0xf8)));
         label.setAlignment(NSTextAlignment::Center);
         label.setLineBreakMode(NSLineBreakMode::ByTruncatingHead);
 
@@ -69,11 +72,18 @@ impl PillPanel {
         shape.setBoxType(NSBoxType::Custom);
         shape.setTitlePosition(NSTitlePosition::NoTitle);
         shape.setBorderWidth(BORDER_WIDTH);
-        shape.setBorderColor(&zinc(0x27, 0x27, 0x2a));
-        shape.setFillColor(&zinc(0x09, 0x09, 0x0b));
+        shape.setBorderColor(&rgb(0x2a, 0x2a, 0x40));
+        shape.setFillColor(&rgb(0x0b, 0x0b, 0x11));
         shape.setCornerRadius(CORNER_RADIUS);
+        let dot = NSBox::new(mtm);
+        dot.setBoxType(NSBoxType::Custom);
+        dot.setTitlePosition(NSTitlePosition::NoTitle);
+        dot.setBorderWidth(0.0);
+        dot.setFillColor(&rgb(0x7a, 0x6b, 0xff));
+        dot.setCornerRadius(DOT_SIZE / 2.0);
         let container = NSView::new(mtm);
         container.addSubview(&shape);
+        container.addSubview(&dot);
         container.addSubview(&label);
         panel.setContentView(Some(&container));
 
@@ -82,6 +92,7 @@ impl PillPanel {
             panel,
             label,
             shape,
+            dot,
         }
     }
 
@@ -97,7 +108,7 @@ impl PillPanel {
             .sizeThatFits(NSSize::new(MAX_WIDTH, LABEL_HEIGHT))
             .width;
         let notch_width = anchor.notch.as_ref().map_or(0.0, |notch| notch.width);
-        let width = (text_width + 2.0 * PADDING_X)
+        let width = (text_width + 2.0 * PADDING_X + DOT_SIZE + DOT_GAP)
             .clamp(MIN_WIDTH, MAX_WIDTH)
             .max(notch_width);
         let (top_inset, overhang) = match &anchor.notch {
@@ -124,9 +135,13 @@ impl PillPanel {
         self.shape.setCornerRadius(radius);
         self.shape
             .setFrame(NSRect::new(NSPoint::new(0.0, 0.0), frame.size));
+        self.dot.setFrame(NSRect::new(
+            NSPoint::new(PADDING_X, PADDING_Y + (LABEL_HEIGHT - DOT_SIZE) / 2.0),
+            NSSize::new(DOT_SIZE, DOT_SIZE),
+        ));
         self.label.setFrame(NSRect::new(
-            NSPoint::new(PADDING_X, PADDING_Y),
-            NSSize::new(width - 2.0 * PADDING_X, LABEL_HEIGHT),
+            NSPoint::new(PADDING_X + DOT_SIZE + DOT_GAP, PADDING_Y),
+            NSSize::new(width - 2.0 * PADDING_X - DOT_SIZE - DOT_GAP, LABEL_HEIGHT),
         ));
         self.panel.orderFrontRegardless();
     }
@@ -166,7 +181,7 @@ impl PillPanel {
     }
 }
 
-fn zinc(red: u8, green: u8, blue: u8) -> Retained<NSColor> {
+fn rgb(red: u8, green: u8, blue: u8) -> Retained<NSColor> {
     NSColor::colorWithSRGBRed_green_blue_alpha(
         f64::from(red) / 255.0,
         f64::from(green) / 255.0,

@@ -1,4 +1,7 @@
-use platform::{Permission, PermissionReport, PermissionStatus, TriggerKey};
+use platform::{
+    Permission, PermissionReport, PermissionStatus, PillError, PillNotice, PillState, Status,
+    TriggerKey,
+};
 use store::Kind;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -183,6 +186,96 @@ impl Language {
 
     pub fn model_retry(self) -> &'static str {
         self.pick("Try again", "ลองอีกครั้ง")
+    }
+
+    pub fn menu_open_logs(self) -> &'static str {
+        self.pick("Open log folder", "เปิดโฟลเดอร์ล็อก")
+    }
+
+    pub fn menu_quit(self) -> &'static str {
+        self.pick("Quit PimSiang", "ออกจาก PimSiang")
+    }
+
+    pub fn tooltip(self, status: Status, permission_missing: bool) -> &'static str {
+        if permission_missing {
+            return self.pick("PimSiang: permission missing", "PimSiang: ขาดสิทธิ์");
+        }
+        match status {
+            Status::Ready => self.pick("PimSiang: ready", "PimSiang: พร้อมใช้งาน"),
+            Status::Listening => self.pick("PimSiang: listening", "PimSiang: กำลังฟัง"),
+            Status::Transcribing => self.pick("PimSiang: transcribing", "PimSiang: กำลังถอดเสียง"),
+        }
+    }
+
+    pub fn pill_listening(self) -> &'static str {
+        self.pick("Listening…", "กำลังฟัง…")
+    }
+
+    pub fn pill_loading_model(self) -> &'static str {
+        self.pick("Loading the Model…", "กำลังโหลดโมเดล…")
+    }
+
+    pub fn pill_transcribing(self) -> &'static str {
+        self.pick("Transcribing…", "กำลังถอดเสียง…")
+    }
+
+    pub fn pill_error(self, error: PillError) -> String {
+        match error {
+            PillError::PermissionMissing(permission) => {
+                let name = self.permission_name(permission);
+                match self {
+                    Self::English => format!("{name} permission is missing"),
+                    Self::Thai => format!("ขาดสิทธิ์{name}"),
+                }
+            }
+            PillError::ModelNotLoaded => {
+                self.pick("Model not loaded", "ยังไม่ได้โหลดโมเดล").to_owned()
+            }
+            PillError::ModelNotReady => self.pick("Model not ready", "โมเดลยังไม่พร้อม").to_owned(),
+            PillError::MicrophoneUnavailable => self
+                .pick("No microphone available", "ไม่พบไมโครโฟน")
+                .to_owned(),
+            PillError::TranscriptionFailed => self
+                .pick("Transcription failed", "ถอดเสียงไม่สำเร็จ")
+                .to_owned(),
+            PillError::PasteFailed => self
+                .pick("Could not paste the text", "วางข้อความไม่ได้")
+                .to_owned(),
+        }
+    }
+
+    pub fn pill_notice(self, notice: PillNotice) -> &'static str {
+        match notice {
+            PillNotice::MicrophoneFellBack => self.pick(
+                "Microphone not found, using the system default",
+                "ไม่พบไมโครโฟน ใช้ค่าเริ่มต้นของระบบแทน",
+            ),
+            PillNotice::MicrophoneLost => {
+                self.pick("Microphone disconnected", "ไมโครโฟนขาดการเชื่อมต่อ")
+            }
+            PillNotice::NoTranscriptYet => self.pick("No transcript yet", "ยังไม่มีข้อความ"),
+            PillNotice::QuickNoteSaved => self.pick("Saved as a Note", "บันทึกเป็นโน้ตแล้ว"),
+            PillNotice::NoTextFieldKeptAsNote => self.pick(
+                "No text field focused. Saved as a Note and copied",
+                "ไม่มีช่องข้อความ บันทึกเป็นโน้ตและคัดลอกแล้ว",
+            ),
+            PillNotice::PasteFailedKeptAsNote => self.pick(
+                "Could not paste. Saved as a Note and copied",
+                "วางไม่ได้ บันทึกเป็นโน้ตและคัดลอกแล้ว",
+            ),
+        }
+    }
+
+    pub fn pill_text(self, state: &PillState) -> Option<String> {
+        match state {
+            PillState::Hidden => None,
+            PillState::Listening => Some(self.pill_listening().to_owned()),
+            PillState::LoadingModel => Some(self.pill_loading_model().to_owned()),
+            PillState::Partial(text) => Some(text.clone()),
+            PillState::Transcribing => Some(self.pill_transcribing().to_owned()),
+            PillState::Notice(notice) => Some(self.pill_notice(*notice).to_owned()),
+            PillState::Error(error) => Some(self.pill_error(*error)),
+        }
     }
 
     pub fn menu_history(self) -> &'static str {

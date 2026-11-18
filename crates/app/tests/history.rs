@@ -7,7 +7,7 @@ use audio::fake::FakeMicrophone;
 use engine::fake::FakeEngine;
 use engine::{Engine, LanguageMode};
 use platform::fake::FakePlatform;
-use platform::{PillNotice, PillState, TriggerEvent, TriggerKey};
+use platform::{Permission, PillError, PillNotice, PillState, Status, TriggerEvent, TriggerKey};
 use store::{History, HistoryService, Kind};
 
 const IDLE: Duration = Duration::from_secs(600);
@@ -185,10 +185,40 @@ fn every_history_string_has_a_thai_and_an_english_version() {
             language.history_cancel(),
             language.history_show_more(),
             language.history_unavailable(),
+            language.menu_open_logs(),
+            language.menu_quit(),
+            language.tooltip(Status::Ready, false),
+            language.tooltip(Status::Listening, false),
+            language.tooltip(Status::Transcribing, false),
+            language.tooltip(Status::Ready, true),
+            language.pill_listening(),
+            language.pill_loading_model(),
+            language.pill_transcribing(),
+            language.pill_notice(PillNotice::MicrophoneFellBack),
+            language.pill_notice(PillNotice::MicrophoneLost),
+            language.pill_notice(PillNotice::NoTranscriptYet),
+            language.pill_notice(PillNotice::QuickNoteSaved),
+            language.pill_notice(PillNotice::NoTextFieldKeptAsNote),
+            language.pill_notice(PillNotice::PasteFailedKeptAsNote),
         ];
         for text in strings {
             assert!(!text.is_empty());
             assert_eq!(has_thai(text), language == Language::Thai, "{text}");
+        }
+        let errors = [
+            PillError::PermissionMissing(Permission::Microphone),
+            PillError::PermissionMissing(Permission::Accessibility),
+            PillError::PermissionMissing(Permission::InputMonitoring),
+            PillError::ModelNotLoaded,
+            PillError::ModelNotReady,
+            PillError::MicrophoneUnavailable,
+            PillError::TranscriptionFailed,
+            PillError::PasteFailed,
+        ];
+        for error in errors {
+            let text = language.pill_error(error);
+            assert!(!text.is_empty());
+            assert_eq!(has_thai(&text), language == Language::Thai, "{text}");
         }
     }
 }
@@ -212,11 +242,17 @@ fn paste_last_with_an_empty_history_shows_a_notice_and_pastes_nothing() {
 }
 
 #[test]
-fn the_no_transcript_notice_is_bilingual() {
-    let message = PillNotice::NoTranscriptYet.message();
+fn the_no_transcript_notice_follows_the_system_language() {
+    use app::i18n::Language;
 
-    assert!(message.contains("No transcript yet"));
-    assert!(message.contains("ยังไม่มี"));
+    assert_eq!(
+        Language::English.pill_notice(PillNotice::NoTranscriptYet),
+        "No transcript yet"
+    );
+    assert_eq!(
+        Language::Thai.pill_notice(PillNotice::NoTranscriptYet),
+        "ยังไม่มีข้อความ"
+    );
 }
 
 #[test]

@@ -6,7 +6,6 @@ use objc2_app_kit::{
     NSWindowLevel, NSWindowStyleMask,
 };
 use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
-use platform::PillState;
 
 const STATUS_LEVEL: NSWindowLevel = 25;
 const FONT_SIZE: f64 = 14.0;
@@ -84,20 +83,12 @@ impl PillPanel {
         }
     }
 
-    pub fn show(&self, state: &PillState) {
-        let text = match state {
-            PillState::Hidden => {
-                self.panel.orderOut(None);
-                return;
-            }
-            PillState::Listening => "Listening…".to_owned(),
-            PillState::LoadingModel => "Loading the Model… · กำลังโหลดโมเดล".to_owned(),
-            PillState::Partial(text) => text.clone(),
-            PillState::Transcribing => "Transcribing…".to_owned(),
-            PillState::Notice(notice) => notice.message().to_owned(),
-            PillState::Error(error) => error.message().to_owned(),
+    pub fn show(&self, text: Option<&str>) {
+        let Some(text) = text else {
+            self.panel.orderOut(None);
+            return;
         };
-        self.label.setStringValue(&NSString::from_str(&text));
+        self.label.setStringValue(&NSString::from_str(text));
         let anchor = self.anchor();
         let text_width = self
             .label

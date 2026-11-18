@@ -56,8 +56,8 @@ impl MenuBar {
         let history = MenuItem::new(language.menu_history(), true, None);
         let paste_last = MenuItem::new(language.menu_paste_last(), true, None);
         let settings = MenuItem::new(language.menu_settings(), true, None);
-        let open_logs = MenuItem::new("Open log folder", true, None);
-        let quit = MenuItem::new("Quit PimSiang", true, None);
+        let open_logs = MenuItem::new(language.menu_open_logs(), true, None);
+        let quit = MenuItem::new(language.menu_quit(), true, None);
         let menu = Menu::new();
         menu.append_items(&[
             &permissions_info,
@@ -170,15 +170,8 @@ impl MenuBar {
         let status = self.status.get();
         let warning = self.warning.get() && status == Status::Ready;
         self.tray.set_icon(Some(icon_for(status, warning)?))?;
-        self.tray.set_tooltip(Some(if warning {
-            "PimSiang: permission missing"
-        } else {
-            match status {
-                Status::Ready => "PimSiang: ready",
-                Status::Listening => "PimSiang: listening",
-                Status::Transcribing => "PimSiang: transcribing",
-            }
-        }))?;
+        self.tray
+            .set_tooltip(Some(self.language.tooltip(status, warning)))?;
         Ok(())
     }
 

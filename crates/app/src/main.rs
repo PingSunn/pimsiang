@@ -453,7 +453,7 @@ mod macos {
                         self.pill = MainThreadMarker::new().map(PillPanel::new);
                     }
                     if let Some(pill) = &self.pill {
-                        pill.show(&state);
+                        pill.show(self.language.pill_text(&state).as_deref());
                     }
                 }
                 UserEvent::Sound(sound) => play_sound(sound),

@@ -184,25 +184,6 @@ pub enum PillError {
     PasteFailed,
 }
 
-impl PillError {
-    pub fn message(self) -> &'static str {
-        match self {
-            Self::PermissionMissing(Permission::Microphone) => "Microphone permission is missing",
-            Self::PermissionMissing(Permission::Accessibility) => {
-                "Accessibility permission is missing"
-            }
-            Self::PermissionMissing(Permission::InputMonitoring) => {
-                "Input Monitoring permission is missing"
-            }
-            Self::ModelNotLoaded => "Model not loaded",
-            Self::ModelNotReady => "Model not ready",
-            Self::MicrophoneUnavailable => "No microphone available",
-            Self::TranscriptionFailed => "Transcription failed",
-            Self::PasteFailed => "Could not paste the text",
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PillNotice {
     MicrophoneFellBack,
@@ -211,23 +192,6 @@ pub enum PillNotice {
     QuickNoteSaved,
     NoTextFieldKeptAsNote,
     PasteFailedKeptAsNote,
-}
-
-impl PillNotice {
-    pub fn message(self) -> &'static str {
-        match self {
-            Self::MicrophoneFellBack => "Microphone not found, using the system default",
-            Self::MicrophoneLost => "Microphone disconnected",
-            Self::NoTranscriptYet => "No transcript yet · ยังไม่มีข้อความ",
-            Self::QuickNoteSaved => "Saved as a Note · บันทึกเป็นโน้ตแล้ว",
-            Self::NoTextFieldKeptAsNote => {
-                "No text field focused. Saved as a Note and copied · ไม่มีช่องข้อความ บันทึกเป็นโน้ตและคัดลอกแล้ว"
-            }
-            Self::PasteFailedKeptAsNote => {
-                "Could not paste. Saved as a Note and copied · วางไม่ได้ บันทึกเป็นโน้ตและคัดลอกแล้ว"
-            }
-        }
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

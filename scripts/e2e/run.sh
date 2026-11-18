@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # End-to-end harness: drives the running PimSiang with synthetic keys and Thai
-# TTS through the room microphone. See docs/adr/0041-e2e-harness-synthetic-events-and-tts.md.
+# TTS through the room microphone. See docs/adr/0042-e2e-harness-synthetic-events-and-tts.md.
 set -uo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"

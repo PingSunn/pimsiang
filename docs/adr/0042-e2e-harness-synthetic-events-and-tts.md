@@ -1,4 +1,4 @@
-# 0041. End-to-end harness with synthetic events and TTS through the room microphone
+# 0042. End-to-end harness with synthetic events and TTS through the room microphone
 
 ## Context
 

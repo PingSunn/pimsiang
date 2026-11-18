@@ -1,0 +1,13 @@
+# Quick note is decided by Shift when the Trigger key goes down; the focus probe answers yes, no or unknown
+
+The listen-only tap (ADR 0013) reads the Shift flag from the same `flagsChanged` event that reports the Trigger key going down and carries it on `TriggerEvent::pressed`. The controller remembers it from that press, so Shift held as the Trigger key goes down makes the Utterance a Quick note, in Push-to-talk and in Hands-free (the second tap of the double-tap decides). Shift pressed later, or on the tap that ends Hands-free, changes nothing, and a Quick note that is cancelled leaves no state behind for the next Utterance. A Quick note is stored as a Note and the Pill confirms it; it is never probed, pasted or copied, so the clipboard is left alone.
+
+For Dictation the controller calls `Platform::focus_probe` when the Final text is ready, not when the Utterance starts, since the user may switch apps while speaking. `Focus::NoTextField` keeps the text as a Note, copies it with `Platform::copy` and shows a Pill notice for three seconds; `TextField` and `Unknown` paste with the clipboard restore setting (ADR 0027). A copied Note never restores the old clipboard: `copy` goes through the same process-wide `Clipboard` with restore off, which drops any pending snapshot. A failed paste now follows the same path (Note, copy, notice) as the ADR 0024 record, so the text is on the clipboard and the Pill says where it went; only if the copy also fails does the Pill show the paste error.
+
+The macOS probe asks `AXUIElementCreateSystemWide` for `AXFocusedUIElement` and reads its `AXRole`, on a short-lived thread with a 0.2 s `AXUIElementSetMessagingTimeout` and a 0.5 s deadline on the answer, so a hung app cannot stall the controller. `platform::focus::classify` maps the answer: `AXTextField`, `AXTextArea`, `AXComboBox` and `AXSearchField` are text fields; `AXWebArea` and `AXGroup` are unknown because Electron and browsers report them for editable content; any other role is a text field only if it has `AXSelectedTextRange`, otherwise no text field. Any error, a missing focused element or a timeout is unknown, which pastes (ADR 0004).
+
+## Considered options
+
+- **Shift at any time before the Utterance ends:** forgiving, but needs Shift change events in the tap and makes a held Shift ambiguous in Hands-free.
+- **Shift at the end of the Utterance:** the same Trigger key release would decide, which conflicts with Shift as a modifier of the press.
+- **Treating `kAXErrorNoValue` as no text field:** correct for Finder, but Electron apps without accessibility enabled return the same error, which would turn real Dictation into Notes.

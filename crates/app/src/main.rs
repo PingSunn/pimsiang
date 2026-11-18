@@ -1,6 +1,8 @@
 #[cfg(target_os = "macos")]
 mod egui_surface;
 #[cfg(target_os = "macos")]
+mod history_window;
+#[cfg(target_os = "macos")]
 mod logging;
 #[cfg(target_os = "macos")]
 mod onboarding_window;
@@ -27,7 +29,7 @@ mod macos {
     use objc2::MainThreadMarker;
     use platform::{MicrophoneMenu, PermissionReport, PillState, Sound, Status};
     use platform_macos::{MacPlatform, PillPanel, play_sound};
-    use store::Settings;
+    use store::{Entry, HistoryService, Kind, Settings};
     use tray_icon::menu::MenuEvent;
     use winit::application::ApplicationHandler;
     use winit::event::{StartCause, WindowEvent};
@@ -35,6 +37,7 @@ mod macos {
     use winit::platform::macos::{ActivationPolicy, EventLoopBuilderExtMacOS};
     use winit::window::WindowId;
 
+    use crate::history_window::{HistoryWindow, Outcome as HistoryOutcome};
     use crate::logging;
     use crate::onboarding_window::{OnboardingWindow, Outcome};
     use crate::tray::{MenuAction, MenuBar, copy_to_clipboard, open_folder};
@@ -63,6 +66,7 @@ mod macos {
         Microphones(MicrophoneMenu),
         Update(Option<String>),
         Model(ModelStatus),
+        HistoryEntries(Vec<Entry>),
         Menu(MenuEvent),
         Fatal(String),
     }
@@ -83,6 +87,8 @@ mod macos {
         report: Option<PermissionReport>,
         setup: Option<OnboardingWindow>,
         close_setup_at: Option<Instant>,
+        history: Option<Arc<HistoryService>>,
+        history_window: Option<HistoryWindow>,
     }
 
     impl App {
@@ -94,6 +100,85 @@ mod macos {
             match OnboardingWindow::open(event_loop, self.language.window_title()) {
                 Ok(setup) => self.setup = Some(setup),
                 Err(error) => tracing::error!(%error, "cannot open the setup window"),
+            }
+        }
+
+        fn open_history(&mut self, event_loop: &ActiveEventLoop) {
+            if let Some(window) = &self.history_window {
+                window.focus();
+                return;
+            }
+            match HistoryWindow::open(event_loop, self.language, self.history.is_none()) {
+                Ok(window) => {
+                    self.history_window = Some(window);
+                    self.refresh_history();
+                }
+                Err(error) => tracing::error!(%error, "cannot open the History window"),
+            }
+        }
+
+        fn refresh_history(&self) {
+            let (Some(service), Some(window)) = (&self.history, &self.history_window) else {
+                return;
+            };
+            let query = window.query().to_owned();
+            let limit = window.limit();
+            let proxy = self.proxy.clone();
+            service.run(move |history| match history.search(&query, 0, limit) {
+                Ok(entries) => {
+                    let _ = proxy.send_event(UserEvent::HistoryEntries(entries));
+                }
+                Err(error) => tracing::warn!(%error, "cannot read History"),
+            });
+        }
+
+        fn paste_last(&self) {
+            let Some(service) = &self.history else {
+                return;
+            };
+            let inputs = self.inputs.clone();
+            service.run(move |history| match history.latest() {
+                Ok(Some(entry)) => {
+                    let _ = inputs.send(Input::PasteText(entry.text));
+                }
+                Ok(None) => {}
+                Err(error) => tracing::warn!(%error, "cannot read the last transcript"),
+            });
+        }
+
+        fn on_history_window(&mut self, event: &WindowEvent) {
+            let Some(window) = self.history_window.as_mut() else {
+                return;
+            };
+            match window.handle(event) {
+                HistoryOutcome::Idle => {}
+                HistoryOutcome::Close => self.history_window = None,
+                HistoryOutcome::Refresh => self.refresh_history(),
+                HistoryOutcome::Copy(text) => {
+                    if let Err(error) = copy_to_clipboard(&text) {
+                        tracing::warn!(%error, "cannot copy the History entry");
+                    }
+                }
+                HistoryOutcome::Delete(id) => {
+                    if let Some(service) = &self.history {
+                        service.run(move |history| {
+                            if let Err(error) = history.delete(id) {
+                                tracing::warn!(%error, "cannot delete the History entry");
+                            }
+                        });
+                    }
+                    self.refresh_history();
+                }
+                HistoryOutcome::Clear => {
+                    if let Some(service) = &self.history {
+                        service.run(|history| {
+                            if let Err(error) = history.clear() {
+                                tracing::warn!(%error, "cannot clear History");
+                            }
+                        });
+                    }
+                    self.refresh_history();
+                }
             }
         }
 
@@ -207,6 +292,14 @@ mod macos {
         }
 
         fn window_event(&mut self, _: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
+            if self
+                .history_window
+                .as_ref()
+                .is_some_and(|window| window.id() == id)
+            {
+                self.on_history_window(&event);
+                return;
+            }
             let view = self.setup_view();
             let Some(setup) = self.setup.as_mut().filter(|setup| setup.id() == id) else {
                 return;
@@ -253,6 +346,11 @@ mod macos {
                     }
                 }
                 UserEvent::Model(status) => self.on_model(event_loop, status),
+                UserEvent::HistoryEntries(entries) => {
+                    if let Some(window) = self.history_window.as_mut() {
+                        window.set_entries(entries);
+                    }
+                }
                 UserEvent::Update(version) => {
                     if let Some(menu_bar) = &self.menu_bar
                         && let Err(error) = menu_bar.show_update(version.as_deref())
@@ -265,6 +363,8 @@ mod macos {
                     match action {
                         Some(MenuAction::Microphone(choice)) => self.choose_microphone(choice),
                         Some(MenuAction::SetupPermissions) => self.open_setup(event_loop),
+                        Some(MenuAction::OpenHistory) => self.open_history(event_loop),
+                        Some(MenuAction::PasteLast) => self.paste_last(),
                         Some(MenuAction::CopyUpgradeCommand) => {
                             match copy_to_clipboard(update::UPGRADE_COMMAND) {
                                 Ok(()) => {
@@ -336,6 +436,14 @@ mod macos {
             let _ = menu_proxy.send_event(UserEvent::Menu(event));
         }));
 
+        let history = history_path().and_then(|path| match HistoryService::spawn(&path) {
+            Ok(service) => Some(Arc::new(service)),
+            Err(error) => {
+                tracing::error!(%error, "cannot open History");
+                None
+            }
+        });
+
         let (inputs, receiver) = mpsc::channel::<Input>();
         std::thread::Builder::new()
             .name("utterance-controller".to_owned())
@@ -343,8 +451,11 @@ mod macos {
                 let proxy = proxy.clone();
                 let inputs = inputs.clone();
                 let model = model.clone();
+                let history = history.clone();
                 move || {
-                    if let Err(error) = run_controller(&args, &model, &proxy, inputs, receiver) {
+                    if let Err(error) =
+                        run_controller(&args, &model, &proxy, inputs, receiver, history)
+                    {
                         let _ = proxy.send_event(UserEvent::Fatal(format!("{error:#}")));
                     }
                 }
@@ -386,6 +497,8 @@ mod macos {
             report: None,
             setup: None,
             close_setup_at: None,
+            history: history.clone(),
+            history_window: None,
         };
         if model.download {
             app.start_model_download();
@@ -393,6 +506,9 @@ mod macos {
         event_loop
             .run_app(&mut app)
             .context("running the event loop")?;
+        if let Some(history) = &history {
+            history.flush();
+        }
         match app.failure {
             Some(message) => Err(anyhow::anyhow!(message)),
             None => Ok(()),
@@ -438,12 +554,18 @@ mod macos {
         Some(PathBuf::from(home).join("Library/Application Support/PimSiang/settings"))
     }
 
+    fn history_path() -> Option<PathBuf> {
+        let home = std::env::var_os("HOME")?;
+        Some(PathBuf::from(home).join("Library/Application Support/PimSiang/history.sqlite"))
+    }
+
     fn run_controller(
         args: &Args,
         model: &ModelSource,
         proxy: &EventLoopProxy<UserEvent>,
         tx: Sender<Input>,
         rx: mpsc::Receiver<Input>,
+        history: Option<Arc<HistoryService>>,
     ) -> Result<()> {
         let status_proxy = proxy.clone();
         let pill_proxy = proxy.clone();
@@ -497,6 +619,17 @@ mod macos {
         });
         if model.download {
             controller = controller.model_pending();
+        }
+        if let Some(history) = history {
+            let model_id = model
+                .dir
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned());
+            controller = controller.record_history(move |text: &str, kind: Kind| {
+                history.add(text.to_owned(), kind, model_id.clone(), |error| {
+                    tracing::warn!(%error, "cannot record the Final text in History");
+                });
+            });
         }
         if let Some(path) = settings_path()
             && let Some(id) = Settings::load(&path).microphone

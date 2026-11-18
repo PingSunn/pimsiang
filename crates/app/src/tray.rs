@@ -21,6 +21,8 @@ pub struct MenuBar {
     setup_permissions_id: MenuId,
     microphones: Submenu,
     microphone_ids: RefCell<Vec<(MenuId, MicrophoneChoice)>>,
+    history_id: MenuId,
+    paste_last_id: MenuId,
     update_notice: MenuItem,
     update_notice_id: MenuId,
     dismiss_update: MenuItem,
@@ -34,6 +36,8 @@ pub struct MenuBar {
 pub enum MenuAction {
     Microphone(MicrophoneChoice),
     SetupPermissions,
+    OpenHistory,
+    PasteLast,
     CopyUpgradeCommand,
     DismissUpdate,
     OpenLogFolder,
@@ -47,6 +51,8 @@ impl MenuBar {
         let microphones = Submenu::new(language.menu_microphone(), true);
         let update_notice = MenuItem::new(language.menu_update(""), true, None);
         let dismiss_update = MenuItem::new(language.menu_dismiss_update(), true, None);
+        let history = MenuItem::new(language.menu_history(), true, None);
+        let paste_last = MenuItem::new(language.menu_paste_last(), true, None);
         let open_logs = MenuItem::new("Open log folder", true, None);
         let quit = MenuItem::new("Quit PimSiang", true, None);
         let menu = Menu::new();
@@ -54,6 +60,8 @@ impl MenuBar {
             &permissions_info,
             &setup_permissions,
             &microphones,
+            &history,
+            &paste_last,
             &open_logs,
             &quit,
         ])
@@ -74,6 +82,8 @@ impl MenuBar {
             microphone_ids: RefCell::new(Vec::new()),
             permissions_info,
             setup_permissions,
+            history_id: history.id().clone(),
+            paste_last_id: paste_last.id().clone(),
             update_notice_id: update_notice.id().clone(),
             update_notice,
             dismiss_update_id: dismiss_update.id().clone(),
@@ -178,6 +188,10 @@ impl MenuBar {
             Some(MenuAction::Microphone(choice))
         } else if *id == self.setup_permissions_id {
             Some(MenuAction::SetupPermissions)
+        } else if *id == self.history_id {
+            Some(MenuAction::OpenHistory)
+        } else if *id == self.paste_last_id {
+            Some(MenuAction::PasteLast)
         } else if *id == self.update_notice_id {
             Some(MenuAction::CopyUpgradeCommand)
         } else if *id == self.dismiss_update_id {

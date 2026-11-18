@@ -144,3 +144,45 @@ fn utterances_reach_a_real_store_and_can_be_searched() {
     assert_eq!(found[0].kind, Kind::Pasted);
     assert_eq!(found[0].model_id.as_deref(), Some("int8"));
 }
+
+#[test]
+fn entry_times_are_shown_in_the_given_zone_to_the_minute() {
+    use app::history_view::format_created_at;
+    let bangkok = chrono::FixedOffset::east_opt(7 * 3600).unwrap();
+
+    assert_eq!(
+        format_created_at(1_700_000_000, bangkok),
+        "2023-11-15 05:13"
+    );
+}
+
+#[test]
+fn every_history_string_has_a_thai_and_an_english_version() {
+    use app::i18n::Language;
+    let has_thai = |text: &str| text.chars().any(|c| ('\u{0E00}'..='\u{0E7F}').contains(&c));
+    for language in [Language::English, Language::Thai] {
+        let strings = [
+            language.menu_history(),
+            language.menu_paste_last(),
+            language.history_title(),
+            language.history_search_hint(),
+            language.history_empty(),
+            language.history_no_match(),
+            language.history_kind(Kind::Pasted),
+            language.history_kind(Kind::Note),
+            language.history_copy(),
+            language.history_copied(),
+            language.history_delete(),
+            language.history_clear_all(),
+            language.history_confirm_clear(),
+            language.history_confirm_yes(),
+            language.history_cancel(),
+            language.history_show_more(),
+            language.history_unavailable(),
+        ];
+        for text in strings {
+            assert!(!text.is_empty());
+            assert_eq!(has_thai(text), language == Language::Thai, "{text}");
+        }
+    }
+}

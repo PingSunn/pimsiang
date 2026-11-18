@@ -1,4 +1,5 @@
 use platform::{Permission, PermissionReport, PermissionStatus};
+use store::Kind;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Language {
@@ -174,5 +175,81 @@ impl Language {
 
     pub fn model_retry(self) -> &'static str {
         self.pick("Try again", "ลองอีกครั้ง")
+    }
+
+    pub fn menu_history(self) -> &'static str {
+        self.pick("History...", "ประวัติ...")
+    }
+
+    pub fn menu_paste_last(self) -> &'static str {
+        self.pick("Paste last transcript", "วางข้อความล่าสุดอีกครั้ง")
+    }
+
+    pub fn history_title(self) -> &'static str {
+        self.pick("PimSiang history", "ประวัติ PimSiang")
+    }
+
+    pub fn history_search_hint(self) -> &'static str {
+        self.pick("Search what you said", "ค้นหาสิ่งที่เคยพูด")
+    }
+
+    pub fn history_empty(self) -> &'static str {
+        self.pick(
+            "Nothing here yet. Everything you dictate is kept here, on this Mac only.",
+            "ยังไม่มีรายการ ทุกอย่างที่คุณพูดจะถูกเก็บไว้ที่นี่ ในเครื่องนี้เท่านั้น",
+        )
+    }
+
+    pub fn history_no_match(self) -> &'static str {
+        self.pick("No entries match your search.", "ไม่พบรายการที่ตรงกับคำค้นหา")
+    }
+
+    pub fn history_kind(self, kind: Kind) -> &'static str {
+        match kind {
+            Kind::Pasted => self.pick("Pasted", "วางแล้ว"),
+            Kind::Note => self.pick("Note", "โน้ต"),
+        }
+    }
+
+    pub fn history_copy(self) -> &'static str {
+        self.pick("Copy", "คัดลอก")
+    }
+
+    pub fn history_copied(self) -> &'static str {
+        self.pick("Copied", "คัดลอกแล้ว")
+    }
+
+    pub fn history_delete(self) -> &'static str {
+        self.pick("Delete", "ลบ")
+    }
+
+    pub fn history_clear_all(self) -> &'static str {
+        self.pick("Clear all...", "ลบทั้งหมด...")
+    }
+
+    pub fn history_confirm_clear(self) -> &'static str {
+        self.pick(
+            "Delete all history? This cannot be undone.",
+            "ลบประวัติทั้งหมด? การลบนี้ย้อนกลับไม่ได้",
+        )
+    }
+
+    pub fn history_confirm_yes(self) -> &'static str {
+        self.pick("Delete everything", "ลบทั้งหมดเลย")
+    }
+
+    pub fn history_cancel(self) -> &'static str {
+        self.pick("Cancel", "ยกเลิก")
+    }
+
+    pub fn history_show_more(self) -> &'static str {
+        self.pick("Show more", "แสดงเพิ่ม")
+    }
+
+    pub fn history_unavailable(self) -> &'static str {
+        self.pick(
+            "History is unavailable: the database could not be opened.",
+            "ใช้งานประวัติไม่ได้: เปิดฐานข้อมูลไม่สำเร็จ",
+        )
     }
 }

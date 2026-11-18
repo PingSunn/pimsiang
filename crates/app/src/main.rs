@@ -39,7 +39,7 @@ mod macos {
     use objc2::MainThreadMarker;
     use platform::{MicrophoneMenu, PermissionReport, PillState, Sound, Status};
     use platform_macos::login_item::{self, LoginItem};
-    use platform_macos::{MacPlatform, PillPanel, copy_text, play_sound};
+    use platform_macos::{MacPlatform, PillArt, PillPanel, copy_text, play_sound};
     use store::{Entry, HistoryService, Settings};
     use tray_icon::menu::MenuEvent;
     use winit::application::ApplicationHandler;
@@ -459,7 +459,10 @@ mod macos {
                         self.pill = MainThreadMarker::new().map(PillPanel::new);
                     }
                     if let Some(pill) = &self.pill {
-                        pill.show(self.language.pill_text(&state).as_deref());
+                        pill.show(
+                            self.language.pill_text(&state).as_deref(),
+                            PillArt::for_state(&state),
+                        );
                     }
                 }
                 UserEvent::Sound(sound) => play_sound(sound),

@@ -345,34 +345,56 @@ fn history_snapshots() {
     });
 }
 
-fn pill(ui: &mut egui::Ui, text: &str) {
+fn pill(ui: &mut egui::Ui, text: &str, art: platform_macos::PillArt) {
     let font = egui::FontId::proportional(14.0);
     let galley = ui.painter().layout_no_wrap(
         text.to_owned(),
         font,
-        egui::Color32::from_rgb(0xf3, 0xf3, 0xf8),
+        egui::Color32::from_rgb(0xfb, 0xf7, 0xee),
     );
     let size = vec2(
-        (galley.size().x + 2.0 * 18.0 + 16.0).clamp(140.0, 520.0),
+        (galley.size().x + 2.0 * 18.0 + 26.0 + 8.0).clamp(140.0, 520.0),
         34.0,
     );
     let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+    let key = egui::Id::unique(("pill-art", format!("{art:?}")));
+    let texture = match ui
+        .ctx()
+        .data(|data| data.get_temp::<egui::TextureHandle>(key))
+    {
+        Some(texture) => texture,
+        None => {
+            let rgba = image::load_from_memory(art.png())
+                .expect("decoding the Pill art")
+                .to_rgba8();
+            let texture = ui.ctx().load_texture(
+                format!("pill-{art:?}"),
+                egui::ColorImage::from_rgba_unmultiplied(
+                    [rgba.width() as usize, rgba.height() as usize],
+                    rgba.as_raw(),
+                ),
+                egui::TextureOptions::LINEAR,
+            );
+            ui.ctx()
+                .data_mut(|data| data.insert_temp(key, texture.clone()));
+            texture
+        }
+    };
     let painter = ui.painter();
     painter.rect(
         rect,
         egui::CornerRadius::same(17),
-        egui::Color32::from_rgb(0x0b, 0x0b, 0x11),
-        egui::Stroke::new(1.0, egui::Color32::from_rgb(0x2a, 0x2a, 0x40)),
+        egui::Color32::from_rgb(0x1c, 0x1a, 0x17),
+        egui::Stroke::new(1.0, egui::Color32::from_rgb(0x3a, 0x35, 0x2e)),
         egui::StrokeKind::Inside,
     );
-    let start = rect.left() + (rect.width() - (8.0 + 8.0 + galley.size().x)) / 2.0;
-    painter.circle_filled(
-        pos2(start + 4.0, rect.center().y),
-        4.0,
-        egui::Color32::from_rgb(0x7a, 0x6b, 0xff),
+    let start = rect.left() + (rect.width() - (26.0 + 8.0 + galley.size().x)) / 2.0;
+    egui::Image::new(&texture).paint_at(
+        ui,
+        egui::Rect::from_min_size(pos2(start, rect.center().y - 13.0), vec2(26.0, 26.0)),
     );
-    painter.galley(
-        pos2(start + 16.0, rect.center().y - galley.size().y / 2.0),
+    ui.painter().galley(
+        pos2(start + 34.0, rect.center().y - galley.size().y / 2.0),
         galley,
         egui::Color32::WHITE,
     );
@@ -382,7 +404,7 @@ fn pill(ui: &mut egui::Ui, text: &str) {
 #[ignore = "renders offscreen on the GPU: cargo test -p app ui_snapshots -- --ignored"]
 fn pill_snapshots() {
     for (language, language_name) in LANGUAGES {
-        let mut harness = harness(vec2(560.0, 200.0), Theme::Dark, |ui| {
+        let mut harness = harness(vec2(560.0, 240.0), Theme::Dark, |ui| {
             let background = egui::Color32::from_rgb(0x3a, 0x3d, 0x4a);
             ui.painter().rect_filled(ui.max_rect(), 0.0, background);
             ui.vertical_centered(|ui| {
@@ -393,13 +415,15 @@ fn pill_snapshots() {
                         "ช่วยส่งรายงานประจำสัปดาห์ให้ทีมก่อนบ่ายสามโมง".to_owned(),
                     ),
                     platform::PillState::Transcribing,
+                    platform::PillState::Error(platform::PillError::MicrophoneUnavailable),
                 ] {
                     if let Some(text) = language.pill_text(&state) {
-                        pill(ui, &text);
+                        pill(ui, &text, platform_macos::PillArt::for_state(&state));
                     }
                 }
             });
         });
+        harness.run();
         save(&mut harness, &format!("pill-{language_name}"));
     }
 }

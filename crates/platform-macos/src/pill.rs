@@ -1,11 +1,14 @@
-use objc2::MainThreadMarker;
+use std::cell::Cell;
+
 use objc2::rc::Retained;
+use objc2::{AnyThread, MainThreadMarker};
 use objc2_app_kit::{
-    NSBackingStoreType, NSBox, NSBoxType, NSColor, NSEvent, NSFont, NSLineBreakMode, NSPanel,
-    NSScreen, NSTextAlignment, NSTextField, NSTitlePosition, NSView, NSWindowCollectionBehavior,
-    NSWindowLevel, NSWindowStyleMask,
+    NSBackingStoreType, NSBox, NSBoxType, NSColor, NSEvent, NSFont, NSImage, NSImageView,
+    NSLineBreakMode, NSPanel, NSScreen, NSTextAlignment, NSTextField, NSTitlePosition, NSView,
+    NSWindowCollectionBehavior, NSWindowLevel, NSWindowStyleMask,
 };
-use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
+use objc2_foundation::{NSData, NSPoint, NSRect, NSSize, NSString};
+use platform::PillState;
 
 const STATUS_LEVEL: NSWindowLevel = 25;
 const FONT_SIZE: f64 = 14.0;
@@ -17,15 +20,51 @@ const MAX_WIDTH: f64 = 520.0;
 const CORNER_RADIUS: f64 = 14.0;
 const BORDER_WIDTH: f64 = 1.0;
 const MENU_BAR_GAP: f64 = 6.0;
-const DOT_SIZE: f64 = 8.0;
-const DOT_GAP: f64 = 8.0;
+const HEAD_SIZE: f64 = 26.0;
+const HEAD_GAP: f64 = 8.0;
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum PillArt {
+    Default,
+    Listening,
+    Writing,
+    Confused,
+}
+
+impl PillArt {
+    pub fn for_state(state: &PillState) -> Self {
+        match state {
+            PillState::Listening | PillState::Partial(_) => Self::Listening,
+            PillState::Transcribing => Self::Writing,
+            PillState::Error(_) => Self::Confused,
+            PillState::LoadingModel | PillState::Notice(_) | PillState::Hidden => Self::Default,
+        }
+    }
+
+    pub fn png(self) -> &'static [u8] {
+        match self {
+            Self::Default => include_bytes!("../assets/pill-default.png"),
+            Self::Listening => include_bytes!("../assets/pill-listening.png"),
+            Self::Writing => include_bytes!("../assets/pill-writing.png"),
+            Self::Confused => include_bytes!("../assets/pill-confused.png"),
+        }
+    }
+
+    fn image(self) -> Option<Retained<NSImage>> {
+        let image = NSImage::initWithData(NSImage::alloc(), &NSData::with_bytes(self.png()))?;
+        image.setSize(NSSize::new(HEAD_SIZE, HEAD_SIZE));
+        Some(image)
+    }
+}
 
 pub struct PillPanel {
     mtm: MainThreadMarker,
     panel: Retained<NSPanel>,
     label: Retained<NSTextField>,
     shape: Retained<NSBox>,
-    dot: Retained<NSBox>,
+    head: Retained<NSImageView>,
+    art: Cell<PillArt>,
+    images: [Option<Retained<NSImage>>; 4],
 }
 
 struct Anchor {
@@ -64,7 +103,7 @@ impl PillPanel {
 
         let label = NSTextField::labelWithString(&NSString::from_str(""), mtm);
         label.setFont(Some(&NSFont::systemFontOfSize(FONT_SIZE)));
-        label.setTextColor(Some(&rgb(0xf3, 0xf3, 0xf8)));
+        label.setTextColor(Some(&rgb(0xfb, 0xf7, 0xee)));
         label.setAlignment(NSTextAlignment::Left);
         label.setLineBreakMode(NSLineBreakMode::ByTruncatingHead);
 
@@ -72,18 +111,23 @@ impl PillPanel {
         shape.setBoxType(NSBoxType::Custom);
         shape.setTitlePosition(NSTitlePosition::NoTitle);
         shape.setBorderWidth(BORDER_WIDTH);
-        shape.setBorderColor(&rgb(0x2a, 0x2a, 0x40));
-        shape.setFillColor(&rgb(0x0b, 0x0b, 0x11));
+        shape.setBorderColor(&rgb(0x3a, 0x35, 0x2e));
+        shape.setFillColor(&rgb(0x1c, 0x1a, 0x17));
         shape.setCornerRadius(CORNER_RADIUS);
-        let dot = NSBox::new(mtm);
-        dot.setBoxType(NSBoxType::Custom);
-        dot.setTitlePosition(NSTitlePosition::NoTitle);
-        dot.setBorderWidth(0.0);
-        dot.setFillColor(&rgb(0x7a, 0x6b, 0xff));
-        dot.setCornerRadius(DOT_SIZE / 2.0);
+        let head = NSImageView::new(mtm);
+        let images = [
+            PillArt::Default,
+            PillArt::Listening,
+            PillArt::Writing,
+            PillArt::Confused,
+        ]
+        .map(PillArt::image);
+        if let Some(image) = &images[0] {
+            head.setImage(Some(image));
+        }
         let container = NSView::new(mtm);
         container.addSubview(&shape);
-        container.addSubview(&dot);
+        container.addSubview(&head);
         container.addSubview(&label);
         panel.setContentView(Some(&container));
 
@@ -92,23 +136,34 @@ impl PillPanel {
             panel,
             label,
             shape,
-            dot,
+            head,
+            art: Cell::new(PillArt::Default),
+            images,
         }
     }
 
-    pub fn show(&self, text: Option<&str>) {
+    pub fn show(&self, text: Option<&str>, art: PillArt) {
         let Some(text) = text else {
             self.panel.orderOut(None);
             return;
         };
         self.label.setStringValue(&NSString::from_str(text));
+        if self.art.replace(art) != art {
+            let index = match art {
+                PillArt::Default => 0,
+                PillArt::Listening => 1,
+                PillArt::Writing => 2,
+                PillArt::Confused => 3,
+            };
+            self.head.setImage(self.images[index].as_deref());
+        }
         let anchor = self.anchor();
         let text_width = self
             .label
             .sizeThatFits(NSSize::new(MAX_WIDTH, LABEL_HEIGHT))
             .width;
         let notch_width = anchor.notch.as_ref().map_or(0.0, |notch| notch.width);
-        let width = (text_width + 2.0 * PADDING_X + DOT_SIZE + DOT_GAP)
+        let width = (text_width + 2.0 * PADDING_X + HEAD_SIZE + HEAD_GAP)
             .clamp(MIN_WIDTH, MAX_WIDTH)
             .max(notch_width);
         let (top_inset, overhang) = match &anchor.notch {
@@ -135,15 +190,15 @@ impl PillPanel {
         self.shape.setCornerRadius(radius);
         self.shape
             .setFrame(NSRect::new(NSPoint::new(0.0, 0.0), frame.size));
-        let text_available = width - 2.0 * PADDING_X - DOT_SIZE - DOT_GAP;
+        let text_available = width - 2.0 * PADDING_X - HEAD_SIZE - HEAD_GAP;
         let shown_width = text_width.min(text_available);
-        let start = (width - (DOT_SIZE + DOT_GAP + shown_width)) / 2.0;
-        self.dot.setFrame(NSRect::new(
-            NSPoint::new(start, PADDING_Y + (LABEL_HEIGHT - DOT_SIZE) / 2.0),
-            NSSize::new(DOT_SIZE, DOT_SIZE),
+        let start = (width - (HEAD_SIZE + HEAD_GAP + shown_width)) / 2.0;
+        self.head.setFrame(NSRect::new(
+            NSPoint::new(start, PADDING_Y + (LABEL_HEIGHT - HEAD_SIZE) / 2.0),
+            NSSize::new(HEAD_SIZE, HEAD_SIZE),
         ));
         self.label.setFrame(NSRect::new(
-            NSPoint::new(start + DOT_SIZE + DOT_GAP, PADDING_Y),
+            NSPoint::new(start + HEAD_SIZE + HEAD_GAP, PADDING_Y),
             NSSize::new(shown_width, LABEL_HEIGHT),
         ));
         self.panel.orderFrontRegardless();

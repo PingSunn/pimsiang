@@ -13,7 +13,7 @@ mod permissions;
 mod pill;
 mod sound;
 
-pub use pill::PillPanel;
+pub use pill::{PillArt, PillPanel};
 pub use sound::play as play_sound;
 
 use core_foundation::runloop::{CFRunLoop, kCFRunLoopCommonModes, kCFRunLoopDefaultMode};

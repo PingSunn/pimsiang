@@ -44,8 +44,7 @@ mod macos {
     use engine::{LanguageMode, ModelFiles, OnnxEngine, Precision};
     use objc2::MainThreadMarker;
     use platform::{
-        DockState, MicrophoneMenu, PermissionReport, PillPosition, PillState, ShowInDock, Sound,
-        Status,
+        DockState, MicrophoneMenu, PermissionReport, PillPosition, PillState, Sound, Status,
     };
     use platform_macos::login_item::{self, LoginItem};
     use platform_macos::{
@@ -139,7 +138,6 @@ mod macos {
         preferences: Preferences,
         language_overridden: bool,
         settings_window: Option<SettingsWindow>,
-        show_in_dock: ShowInDock,
         dock: DockState,
         recent_window: Option<WindowKind>,
     }
@@ -150,7 +148,10 @@ mod macos {
         }
 
         fn sync_dock(&mut self) {
-            if let Some(visible) = self.dock.update(self.show_in_dock, self.any_window_open()) {
+            if let Some(visible) = self
+                .dock
+                .update(self.preferences.show_in_dock, self.any_window_open())
+            {
                 dock::set_visible(visible);
             }
         }
@@ -407,7 +408,14 @@ mod macos {
             if !keep_language {
                 self.language_overridden = false;
             }
+            let dock_changed = changed.show_in_dock != self.preferences.show_in_dock;
             self.preferences = changed;
+            if dock_changed {
+                self.sync_dock();
+                if let Some(kind) = self.recent_window.filter(|kind| self.is_open(*kind)) {
+                    self.raise(kind);
+                }
+            }
             if let Some(menu_bar) = &self.menu_bar
                 && let Err(error) = menu_bar.show_trigger_key(changed.trigger_key)
             {
@@ -944,7 +952,6 @@ mod macos {
             preferences,
             language_overridden,
             settings_window: None,
-            show_in_dock: ShowInDock::default(),
             dock: DockState::default(),
             recent_window: None,
         };

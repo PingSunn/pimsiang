@@ -1,6 +1,6 @@
 use app::preferences::Preferences;
 use engine::LanguageMode;
-use platform::{PillPlacement, PillPosition, TriggerKey};
+use platform::{PillPlacement, PillPosition, ShowInDock, TriggerKey};
 use store::Settings;
 
 #[test]
@@ -15,6 +15,7 @@ fn an_empty_settings_file_gives_the_defaults() {
     assert!(preferences.unload_when_idle);
     assert_eq!(preferences.pill_placement, PillPlacement::Floating);
     assert_eq!(preferences.pill_position, PillPosition { x: 0.5, y: 0.12 });
+    assert_eq!(preferences.show_in_dock, ShowInDock::WhileWindowOpen);
 }
 
 #[test]
@@ -28,6 +29,7 @@ fn stored_values_round_trip_through_the_settings() {
         unload_when_idle: false,
         pill_placement: PillPlacement::Notch,
         pill_position: PillPosition { x: 0.25, y: 0.75 },
+        show_in_dock: ShowInDock::Never,
     };
     let mut settings = Settings::default();
 
@@ -37,6 +39,7 @@ fn stored_values_round_trip_through_the_settings() {
     assert_eq!(settings.language.as_deref(), Some("th-TH"));
     assert_eq!(settings.pill_placement.as_deref(), Some("notch"));
     assert_eq!(settings.pill_position.as_deref(), Some("0.2500,0.7500"));
+    assert_eq!(settings.show_in_dock.as_deref(), Some("never"));
     assert_eq!(Preferences::from_settings(&settings), preferences);
 }
 
@@ -121,4 +124,30 @@ fn a_saved_pill_placement_and_position_are_read_back() {
 
     assert_eq!(preferences.pill_placement, PillPlacement::Notch);
     assert_eq!(preferences.pill_position, PillPosition { x: 0.8, y: 0.9 });
+}
+
+#[test]
+fn a_missing_or_unknown_show_in_dock_falls_back_to_while_a_window_is_open() {
+    for stored in [None, Some(""), Some("sometimes"), Some("NEVER")] {
+        let settings = Settings {
+            show_in_dock: stored.map(str::to_owned),
+            ..Settings::default()
+        };
+
+        let preferences = Preferences::from_settings(&settings);
+
+        assert_eq!(preferences.show_in_dock, ShowInDock::WhileWindowOpen);
+    }
+}
+
+#[test]
+fn a_saved_show_in_dock_is_read_back() {
+    for show in ShowInDock::ALL {
+        let settings = Settings {
+            show_in_dock: Some(show.name().to_owned()),
+            ..Settings::default()
+        };
+
+        assert_eq!(Preferences::from_settings(&settings).show_in_dock, show);
+    }
 }

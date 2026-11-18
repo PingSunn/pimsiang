@@ -3,10 +3,11 @@ use app::history_view::Page;
 use app::i18n::Language;
 use app::model_chip::ModelChip;
 use app::preferences::Preferences;
+use egui::accesskit::Toggled;
 use egui::{Id, Key, Modifiers, Role};
 use egui_kittest::Harness;
-use egui_kittest::kittest::Queryable;
-use platform::PillPlacement;
+use egui_kittest::kittest::{NodeT, Queryable};
+use platform::{PillPlacement, ShowInDock};
 use platform_macos::login_item::LoginItem;
 use store::{Entry, Kind};
 
@@ -308,6 +309,34 @@ fn choosing_notch_or_floating_changes_the_saved_placement() {
     assert_eq!(
         harness.state().preferences.pill_placement,
         PillPlacement::Floating
+    );
+}
+
+#[test]
+fn show_in_dock_reflects_the_preference_and_choosing_updates_it() {
+    let mut fixture = settings_fixture();
+    fixture.preferences.show_in_dock = ShowInDock::Always;
+    let mut harness = settings(fixture);
+    let selected = |harness: &Harness<'_, SettingsFixture>, label: &str| {
+        harness
+            .get_by_role_and_label(Role::RadioButton, label)
+            .accesskit_node()
+            .toggled()
+    };
+    assert_eq!(selected(&harness, "Always"), Some(Toggled::True));
+    assert_eq!(selected(&harness, "Never"), Some(Toggled::False));
+    harness
+        .get_by_role_and_label(Role::RadioButton, "Never")
+        .click();
+    harness.run();
+    assert_eq!(harness.state().preferences.show_in_dock, ShowInDock::Never);
+    harness
+        .get_by_role_and_label(Role::RadioButton, "While a window is open")
+        .click();
+    harness.run();
+    assert_eq!(
+        harness.state().preferences.show_in_dock,
+        ShowInDock::WhileWindowOpen
     );
 }
 

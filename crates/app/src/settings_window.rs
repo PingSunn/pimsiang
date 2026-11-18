@@ -3,7 +3,7 @@ use app::i18n::Language;
 use app::model_chip::ModelChip;
 use app::preferences::Preferences;
 use engine::LanguageMode;
-use platform::{PillPlacement, PillPosition, TriggerKey};
+use platform::{PillPlacement, PillPosition, ShowInDock, TriggerKey};
 use platform_macos::PlacementEnd;
 use platform_macos::login_item::{self, LoginItem};
 use winit::dpi::LogicalSize;
@@ -371,6 +371,7 @@ fn general(
         theme::description(ui, language.settings_language_help());
     });
     pill_position(ui, inputs, preferences, actions);
+    show_in_dock(ui, language, preferences);
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing.y = theme::SPACE_2;
         theme::section_label(ui, language.settings_system_group());
@@ -425,6 +426,29 @@ fn general(
             }
         });
     }
+}
+
+fn show_in_dock(ui: &mut egui::Ui, language: Language, preferences: &mut Preferences) {
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = theme::SPACE_2;
+        theme::section_label(ui, language.settings_dock_group());
+        let options = [
+            (
+                ShowInDock::Always,
+                vec![theme::Part::Text(language.settings_dock_always())],
+            ),
+            (
+                ShowInDock::WhileWindowOpen,
+                vec![theme::Part::Text(language.settings_dock_while_open())],
+            ),
+            (
+                ShowInDock::Never,
+                vec![theme::Part::Text(language.settings_dock_never())],
+            ),
+        ];
+        theme::segmented(ui, &mut preferences.show_in_dock, &options);
+        theme::description(ui, language.settings_dock_help());
+    });
 }
 
 fn pill_position(

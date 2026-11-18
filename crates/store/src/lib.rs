@@ -25,7 +25,8 @@ const LOGIN_ITEM_DECIDED_KEY: &str = "login_item_decided=";
 const UNLOAD_WHEN_IDLE_KEY: &str = "unload_when_idle=";
 const PILL_PLACEMENT_KEY: &str = "pill_placement=";
 const PILL_POSITION_KEY: &str = "pill_position=";
-const KEYS: [&str; 13] = [
+const SHOW_IN_DOCK_KEY: &str = "show_in_dock=";
+const KEYS: [&str; 14] = [
     MICROPHONE_KEY,
     LAST_UPDATE_CHECK_KEY,
     AVAILABLE_UPDATE_KEY,
@@ -39,6 +40,7 @@ const KEYS: [&str; 13] = [
     UNLOAD_WHEN_IDLE_KEY,
     PILL_PLACEMENT_KEY,
     PILL_POSITION_KEY,
+    SHOW_IN_DOCK_KEY,
 ];
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -56,6 +58,7 @@ pub struct Settings {
     pub unload_when_idle: Option<bool>,
     pub pill_placement: Option<String>,
     pub pill_position: Option<String>,
+    pub show_in_dock: Option<String>,
 }
 
 fn switch(text: &str, key: &str) -> Option<bool> {
@@ -103,6 +106,7 @@ impl Settings {
             unload_when_idle: switch(&text, UNLOAD_WHEN_IDLE_KEY),
             pill_placement: value(&text, PILL_PLACEMENT_KEY).map(str::to_owned),
             pill_position: value(&text, PILL_POSITION_KEY).map(str::to_owned),
+            show_in_dock: value(&text, SHOW_IN_DOCK_KEY).map(str::to_owned),
         }
     }
 
@@ -193,6 +197,7 @@ impl Settings {
             self.pill_placement.as_deref(),
         );
         push(&mut text, PILL_POSITION_KEY, self.pill_position.as_deref());
+        push(&mut text, SHOW_IN_DOCK_KEY, self.show_in_dock.as_deref());
         let existing = std::fs::read_to_string(path).unwrap_or_default();
         for line in existing.lines().map(|line| line.trim_end_matches('\r')) {
             if !line.is_empty() && !KEYS.iter().any(|key| line.starts_with(key)) {

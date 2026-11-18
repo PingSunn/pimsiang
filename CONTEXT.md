@@ -66,6 +66,10 @@ _Avoid_: Pill coordinates, offset
 The short mode in which a sample Pill can be dragged to choose the Pill position, ended with Done or Esc.
 _Avoid_: Edit mode, drag mode
 
+**Show in Dock**:
+The user's choice of when PimSiang has a Dock icon: Always, While a window is open (Setup, Settings or History; the default) or Never. The menu bar icon stays in every mode.
+_Avoid_: Dock mode, Dock visibility
+
 **Engine**:
 The part that turns audio into Partial and Final text; swappable behind one interface.
 _Avoid_: Backend, recognizer, ASR (as a component name)

@@ -8,7 +8,9 @@ use app::onboarding;
 use app::preferences::Preferences;
 use egui::{Pos2, Theme, Vec2, pos2, vec2};
 use egui_kittest::Harness;
-use platform::{PermissionReport, PermissionStatus, PillPlacement, PillPosition, TriggerKey};
+use platform::{
+    PermissionReport, PermissionStatus, PillPlacement, PillPosition, ShowInDock, TriggerKey,
+};
 use platform_macos::login_item::LoginItem;
 use store::{Entry, Kind};
 
@@ -138,6 +140,7 @@ struct SettingsCase {
     placement: PillPlacement,
     position: PillPosition,
     placing: bool,
+    show_in_dock: ShowInDock,
 }
 
 fn settings(case: SettingsCase) {
@@ -152,6 +155,7 @@ fn settings(case: SettingsCase) {
         placement,
         position,
         placing,
+        show_in_dock,
     } = case;
     every_look(
         name,
@@ -172,6 +176,7 @@ fn settings(case: SettingsCase) {
                 sounds: false,
                 pill_placement: placement,
                 pill_position: position,
+                show_in_dock,
                 ..Preferences::default()
             };
             settings_window::show(
@@ -200,9 +205,10 @@ fn settings_snapshots() {
         placement: PillPlacement::Floating,
         position: PillPosition::default(),
         placing: false,
+        show_in_dock: ShowInDock::default(),
     };
     let general = |case: SettingsCase| SettingsCase {
-        height: 700.0,
+        height: 900.0,
         ..case
     };
     settings(general(case(
@@ -244,6 +250,16 @@ fn settings_snapshots() {
         placing: true,
         ..case(
             "settings-general-pill-placing",
+            Section::General,
+            LoginItem::Disabled,
+            None,
+            ModelChip::Ready,
+        )
+    }));
+    settings(general(SettingsCase {
+        show_in_dock: ShowInDock::Never,
+        ..case(
+            "settings-general-dock-never",
             Section::General,
             LoginItem::Disabled,
             None,

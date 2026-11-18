@@ -771,7 +771,7 @@ fn the_start_sound_plays_before_the_microphone_opens() {
 
     hold(&mut c, Instant::now());
 
-    assert_eq!(c.platform().sounds(), [Sound::Start]);
+    assert_eq!(c.platform().sounds(), [Sound::Start, Sound::Stop]);
     assert_eq!(c.microphone().start_count(), 0);
 }
 
@@ -1000,6 +1000,7 @@ fn dictation_is_unavailable_until_the_model_is_ready() {
     assert_eq!(c.microphone().start_count(), 0);
 
     c.handle(Input::ModelReady);
+    c.handle(Input::ModelLoaded);
     assert!(c.engine().is_loaded());
 
     let t1 = t0 + Duration::from_secs(10);
@@ -1172,4 +1173,90 @@ fn saving_the_other_preferences_does_not_touch_the_trigger_key_watcher() {
 
     assert_eq!(c.platform().trigger_key(), TriggerKey::RightCommand);
     assert_eq!(c.platform().trigger_key_changes(), 1);
+}
+
+#[test]
+fn a_failed_microphone_start_closes_the_start_sound_with_the_stop_sound() {
+    let mut engine = FakeEngine::new(Vec::<String>::new(), "x");
+    engine.load().unwrap();
+    let mut c = Controller::new(
+        FakePlatform::new(),
+        engine,
+        FakeMicrophone::failing(),
+        config(),
+    );
+
+    hold(&mut c, Instant::now());
+
+    assert_eq!(c.platform().sounds(), [Sound::Start, Sound::Stop]);
+}
+
+#[test]
+fn preferences_saved_while_transcribing_still_reach_the_controller() {
+    let t0 = Instant::now();
+    let t1 = t0 + Duration::from_secs(1);
+    let c = run_script(vec![
+        trigger(TriggerEvent::pressed(t0)),
+        Input::Tick(t0 + HOLD),
+        trigger(TriggerEvent::released(t1)),
+        Input::Preferences(Preferences {
+            trigger_key: TriggerKey::RightCommand,
+            ..Preferences::default()
+        }),
+    ]);
+
+    assert_eq!(c.platform().trigger_key(), TriggerKey::RightCommand);
+    assert_eq!(c.platform().pastes(), ["วางแล้ว"]);
+}
+
+#[test]
+fn a_paste_again_queued_while_transcribing_is_not_lost() {
+    let t0 = Instant::now();
+    let t1 = t0 + Duration::from_secs(1);
+    let c = run_script(vec![
+        trigger(TriggerEvent::pressed(t0)),
+        Input::Tick(t0 + HOLD),
+        trigger(TriggerEvent::released(t1)),
+        Input::PasteText("ข้อความเก่า".to_owned()),
+    ]);
+
+    assert_eq!(c.platform().pastes(), ["วางแล้ว", "ข้อความเก่า"]);
+}
+
+#[test]
+fn shift_on_a_press_queued_while_transcribing_makes_the_next_utterance_a_quick_note() {
+    let t0 = Instant::now();
+    let t1 = t0 + Duration::from_secs(1);
+    let mut c = run_script(vec![
+        trigger(TriggerEvent::pressed(t0)),
+        Input::Tick(t0 + HOLD),
+        trigger(TriggerEvent::released(t1)),
+        trigger(TriggerEvent::pressed(t1 + ms(50)).with_shift()),
+    ]);
+    let t2 = Instant::now();
+
+    c.handle(Input::Tick(t2 + HOLD));
+    c.handle(Input::Audio(vec![0.0; 1_600]));
+    release(&mut c, t2 + Duration::from_secs(1));
+
+    assert_eq!(c.platform().pastes(), ["วางแล้ว"]);
+    assert_eq!(
+        c.platform().pills().last(),
+        Some(&PillState::Notice(PillNotice::QuickNoteSaved))
+    );
+}
+
+#[test]
+fn quit_waits_for_the_transcription_in_flight_and_stops_the_loop() {
+    let t0 = Instant::now();
+    let t1 = t0 + Duration::from_secs(1);
+    let c = run_script(vec![
+        trigger(TriggerEvent::pressed(t0)),
+        Input::Tick(t0 + HOLD),
+        trigger(TriggerEvent::released(t1)),
+        Input::Quit,
+        Input::PasteText("ไม่ควรถูกวาง".to_owned()),
+    ]);
+
+    assert_eq!(c.platform().pastes(), ["วางแล้ว"]);
 }

@@ -67,6 +67,7 @@ pub enum Input {
     PasteText(String),
     NoTranscript,
     Preferences(Preferences),
+    Quit,
 }
 
 type HistorySink = Box<dyn FnMut(&str, Kind) + Send>;
@@ -94,7 +95,7 @@ enum State {
     LoadingModel {
         hands_free: bool,
         ending: bool,
-        held_again: bool,
+        held_again: Option<bool>,
     },
 }
 
@@ -121,6 +122,7 @@ pub struct Controller<P, E, M> {
     loading: Option<Receiver<Result<(), EngineError>>>,
     buffered: Vec<f32>,
     wake: Option<Wake>,
+    microphone_lost_while_loading: bool,
     now: Instant,
     idle_since: Option<Instant>,
 }
@@ -150,6 +152,7 @@ impl<P: Platform, E: Engine + Send + 'static, M: Microphone> Controller<P, E, M>
             loading: None,
             buffered: Vec::new(),
             wake: None,
+            microphone_lost_while_loading: false,
             now,
             idle_since: loaded.then_some(now),
         }
@@ -189,12 +192,12 @@ impl<P: Platform, E: Engine + Send + 'static, M: Microphone> Controller<P, E, M>
         if !self.model_ready {
             return;
         }
-        if let Err(error) = self.with_engine(|engine| engine.load()) {
-            tracing::error!(%error, "cannot load the Model");
-            self.fail(PillError::ModelNotLoaded);
+        if self.loading.is_some() || self.with_engine(|engine| engine.is_loaded()) {
             return;
         }
-        self.idle_since = Some(self.now);
+        if !self.spawn_load() {
+            self.fail(PillError::ModelNotLoaded);
+        }
     }
 
     fn with_engine<R>(&self, f: impl FnOnce(&mut E) -> R) -> R {
@@ -260,6 +263,7 @@ impl<P: Platform, E: Engine + Send + 'static, M: Microphone> Controller<P, E, M>
                 },
             };
             let input = match input {
+                Input::Quit => return self,
                 Input::Audio(samples) => {
                     let (samples, next) = coalesce(samples, &inputs);
                     if let Some(next) = next {
@@ -308,6 +312,7 @@ impl<P: Platform, E: Engine + Send + 'static, M: Microphone> Controller<P, E, M>
             Input::PasteText(text) => self.paste_again(&text),
             Input::NoTranscript => self.show_notice(PillNotice::NoTranscriptYet),
             Input::Preferences(preferences) => self.apply_preferences(preferences),
+            Input::Quit => {}
         }
         Vec::new()
     }
@@ -347,7 +352,7 @@ impl<P: Platform, E: Engine + Send + 'static, M: Microphone> Controller<P, E, M>
                 hands_free: false,
                 ending: true,
                 ..
-            } => self.set_held_again(true),
+            } => self.set_held_again(Some(shift)),
             State::LoadingModel { .. }
             | State::Pending { .. }
             | State::Listening { hands_free: false }
@@ -367,7 +372,7 @@ impl<P: Platform, E: Engine + Send + 'static, M: Microphone> Controller<P, E, M>
                 ending: true,
                 ..
             } => {
-                self.set_held_again(false);
+                self.set_held_again(None);
                 Vec::new()
             }
             State::LoadingModel {
@@ -396,6 +401,11 @@ impl<P: Platform, E: Engine + Send + 'static, M: Microphone> Controller<P, E, M>
         match self.state {
             State::Pending { .. } => self.state = State::Idle,
             State::Listening { hands_free: false } => self.cancel(),
+            State::LoadingModel {
+                hands_free: false,
+                ending: true,
+                ..
+            } => self.set_held_again(None),
             State::LoadingModel {
                 hands_free: false, ..
             } => self.cancel(),
@@ -445,6 +455,7 @@ impl<P: Platform, E: Engine + Send + 'static, M: Microphone> Controller<P, E, M>
     fn on_microphone_lost(&mut self) -> Vec<Input> {
         if let State::LoadingModel { .. } = self.state {
             tracing::warn!("the microphone stream ended while the Model was loading");
+            self.microphone_lost_while_loading = true;
             self.end_loading_capture();
             return Vec::new();
         }
@@ -512,6 +523,7 @@ impl<P: Platform, E: Engine + Send + 'static, M: Microphone> Controller<P, E, M>
 
     fn poll_permissions(&mut self, now: Instant) {
         let report = PermissionReport::read(&self.platform);
+        let mut revoked = false;
         let Some(watch) = self.watch.as_mut() else {
             return;
         };
@@ -524,6 +536,7 @@ impl<P: Platform, E: Engine + Send + 'static, M: Microphone> Controller<P, E, M>
             watch.listening = false;
             self.platform.stop_trigger();
             tracing::warn!("Input Monitoring was revoked; the Trigger key is no longer watched");
+            revoked = true;
         }
         if !watch.listening && report.input_monitoring == PermissionStatus::Granted {
             match self.platform.listen_trigger((watch.trigger_source)()) {
@@ -534,6 +547,21 @@ impl<P: Platform, E: Engine + Send + 'static, M: Microphone> Controller<P, E, M>
                 Err(error) => tracing::warn!(%error, "cannot watch the Trigger key yet"),
             }
         }
+        if revoked {
+            self.abort_for_revoked_trigger();
+        }
+    }
+
+    fn abort_for_revoked_trigger(&mut self) {
+        self.last_tap = None;
+        match self.state {
+            State::Idle => return,
+            State::Pending { .. } => self.state = State::Idle,
+            State::Listening { .. } | State::EndingHandsFree | State::LoadingModel { .. } => {
+                self.cancel()
+            }
+        }
+        self.fail(PillError::PermissionMissing(Permission::InputMonitoring));
     }
 
     fn grant(&mut self, permission: Permission) {
@@ -627,6 +655,7 @@ impl<P: Platform, E: Engine + Send + 'static, M: Microphone> Controller<P, E, M>
             Err(error) => {
                 tracing::error!(%error, "cannot start the microphone");
                 self.with_engine(|engine| engine.cancel_utterance());
+                self.play(Sound::Stop);
                 self.fail(PillError::MicrophoneUnavailable);
                 return;
             }
@@ -654,15 +683,17 @@ impl<P: Platform, E: Engine + Send + 'static, M: Microphone> Controller<P, E, M>
         self.play(Sound::Start);
         if let Err(error) = self.microphone.start() {
             tracing::error!(%error, "cannot start the microphone");
+            self.play(Sound::Stop);
             self.fail(PillError::MicrophoneUnavailable);
             return;
         }
         self.state = State::LoadingModel {
             hands_free,
             ending: false,
-            held_again: false,
+            held_again: None,
         };
         self.quick_note = quick_note;
+        self.microphone_lost_while_loading = false;
         self.buffered.clear();
         self.hide_at = None;
         self.shown_partial = None;
@@ -704,7 +735,7 @@ impl<P: Platform, E: Engine + Send + 'static, M: Microphone> Controller<P, E, M>
         }
     }
 
-    fn set_held_again(&mut self, held: bool) {
+    fn set_held_again(&mut self, held: Option<bool>) {
         if let State::LoadingModel { held_again, .. } = &mut self.state {
             *held_again = held;
         }
@@ -725,6 +756,9 @@ impl<P: Platform, E: Engine + Send + 'static, M: Microphone> Controller<P, E, M>
         else {
             if let Err(error) = result {
                 tracing::error!(%error, "cannot load the Model");
+                if matches!(self.state, State::Idle) {
+                    self.fail(PillError::ModelNotLoaded);
+                }
             } else {
                 self.idle_since = Some(self.now);
             }
@@ -748,12 +782,16 @@ impl<P: Platform, E: Engine + Send + 'static, M: Microphone> Controller<P, E, M>
             if let Err(error) = self.with_engine(|engine| engine.push_tail(&buffered)) {
                 tracing::warn!(%error, "decoding failed while draining the buffered audio");
             }
-            let waiting = self.end(queued, None);
-            if held_again && matches!(self.state, State::Idle) {
+            let notice = std::mem::take(&mut self.microphone_lost_while_loading)
+                .then_some(PillNotice::MicrophoneLost);
+            let waiting = self.end(queued, notice);
+            if let Some(shift) = held_again
+                && matches!(self.state, State::Idle)
+            {
                 self.state = State::Pending {
                     since: Instant::now(),
                     second_tap: false,
-                    shift: false,
+                    shift,
                 };
             }
             return waiting;
@@ -825,26 +863,34 @@ impl<P: Platform, E: Engine + Send + 'static, M: Microphone> Controller<P, E, M>
         let cancelled = waiting.iter().any(
             |input| matches!(input, Input::Trigger(event) if event.state == TriggerState::Escape),
         );
-        let held = waiting
+        let last_key = waiting
             .iter()
             .filter_map(|input| match input {
-                Input::Trigger(event) => Some(event.state),
+                Input::Trigger(event) => Some(event),
                 _ => None,
             })
-            .rfind(|state| {
+            .rfind(|event| {
                 matches!(
-                    state,
+                    event.state,
                     TriggerState::Pressed | TriggerState::Released | TriggerState::Combined
                 )
+            });
+        let held = last_key.is_some_and(|event| event.state == TriggerState::Pressed);
+        let press_shift = waiting
+            .iter()
+            .rev()
+            .find_map(|input| match input {
+                Input::Trigger(event) if event.state == TriggerState::Pressed => Some(event.shift),
+                _ => None,
             })
-            == Some(TriggerState::Pressed);
-        waiting.retain(|input| matches!(input, Input::Tick(_) | Input::Permission(_)));
+            .unwrap_or(false);
+        waiting.retain(|input| !matches!(input, Input::Trigger(_) | Input::Audio(_)));
         self.last_tap = None;
         if held && !cancelled {
             self.state = State::Pending {
                 since: Instant::now(),
                 second_tap: false,
-                shift: false,
+                shift: press_shift,
             };
         }
         if cancelled {

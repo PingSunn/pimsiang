@@ -296,6 +296,7 @@ fn a_model_that_fails_to_load_is_a_pill_error_after_permissions_were_polled() {
 
     c.handle(Input::Tick(Instant::now()));
     c.preload_model();
+    c.handle(Input::ModelLoaded);
 
     assert_eq!(c.platform().reports().len(), 1);
     assert_eq!(
@@ -346,4 +347,27 @@ fn accessibility_prompts_first_and_opens_its_pane_on_the_next_click() {
     c.handle(grant());
     assert_eq!(c.platform().requested(), [Permission::Accessibility]);
     assert_eq!(c.platform().opened(), [Permission::Accessibility]);
+}
+
+#[test]
+fn revoking_input_monitoring_mid_hold_cancels_the_utterance_and_names_the_permission() {
+    let (mut c, _) = watching(FakePlatform::new());
+    let t0 = Instant::now();
+    c.handle(Input::Tick(t0));
+    c.handle(Input::Trigger(TriggerEvent::pressed(t0)));
+    c.handle(Input::Tick(t0 + HOLD));
+    assert!(c.microphone().is_capturing());
+
+    c.platform_mut()
+        .set_permission(Permission::InputMonitoring, PermissionStatus::NotDetermined);
+    c.handle(Input::Tick(t0 + POLL));
+
+    assert!(!c.microphone().is_capturing());
+    assert!(c.platform().pastes().is_empty());
+    assert_eq!(
+        c.platform().pills().last(),
+        Some(&PillState::Error(PillError::PermissionMissing(
+            Permission::InputMonitoring
+        )))
+    );
 }

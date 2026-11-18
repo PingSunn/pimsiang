@@ -373,3 +373,87 @@ fn a_tap_while_the_model_still_loads_is_dropped_once_it_is_done() {
     assert_eq!(c.platform().pastes(), ["สวัสดี"]);
     assert!(!c.microphone().is_capturing());
 }
+
+#[test]
+fn a_shortcut_after_release_while_the_model_loads_keeps_the_released_utterance() {
+    let (mut c, gate) = unloaded_and_gated("สวัสดี");
+    let t0 = Instant::now();
+
+    hold(&mut c, t0);
+    c.handle(Input::Audio(vec![0.0; 1_600]));
+    release(&mut c, t0 + Duration::from_secs(1));
+    press(&mut c, t0 + Duration::from_secs(2));
+    c.handle(Input::Trigger(TriggerEvent::combined(
+        t0 + Duration::from_secs(2) + HOLD / 4,
+    )));
+    gate.open();
+    c.handle(Input::ModelLoaded);
+    c.handle(Input::Tick(Instant::now() + HOLD));
+
+    assert_eq!(c.platform().pastes(), ["สวัสดี"]);
+    assert!(!c.microphone().is_capturing());
+}
+
+#[test]
+fn shift_on_a_press_made_while_the_model_loads_makes_the_next_utterance_a_quick_note() {
+    let (mut c, gate) = unloaded_and_gated("สวัสดี");
+    let t0 = Instant::now();
+
+    hold(&mut c, t0);
+    c.handle(Input::Audio(vec![0.0; 1_600]));
+    release(&mut c, t0 + Duration::from_secs(1));
+    c.handle(Input::Trigger(
+        TriggerEvent::pressed(t0 + Duration::from_secs(2)).with_shift(),
+    ));
+    gate.open();
+    c.handle(Input::ModelLoaded);
+    let t1 = Instant::now();
+    c.handle(Input::Tick(t1 + HOLD));
+    c.handle(Input::Audio(vec![0.0; 1_600]));
+    release(&mut c, t1 + Duration::from_secs(1));
+
+    assert_eq!(c.platform().pastes(), ["สวัสดี"]);
+    assert_eq!(
+        c.platform().pills().last(),
+        Some(&PillState::Notice(platform::PillNotice::QuickNoteSaved))
+    );
+}
+
+#[test]
+fn preloading_does_not_block_and_a_press_during_it_waits_with_the_loading_pill() {
+    let (mut c, gate) = unloaded_and_gated("สวัสดี");
+
+    c.preload_model();
+    let t0 = Instant::now();
+    hold(&mut c, t0);
+    c.handle(Input::Audio(vec![0.0; 1_600]));
+
+    assert!(c.microphone().is_capturing());
+    assert_eq!(c.platform().pills(), [PillState::LoadingModel]);
+
+    release(&mut c, t0 + Duration::from_secs(1));
+    gate.open();
+    c.handle(Input::ModelLoaded);
+
+    assert_eq!(c.engine().load_count(), 1);
+    assert_eq!(c.engine().pushed_samples(), 1_600);
+    assert_eq!(c.platform().pastes(), ["สวัสดี"]);
+}
+
+#[test]
+fn losing_the_microphone_while_the_model_loads_shows_the_notice() {
+    let (mut c, gate) = unloaded_and_gated("สวัสดี");
+    let t0 = Instant::now();
+
+    hold(&mut c, t0);
+    c.handle(Input::Audio(vec![0.0; 1_600]));
+    c.handle(Input::MicrophoneLost);
+    gate.open();
+    c.handle(Input::ModelLoaded);
+
+    assert_eq!(c.platform().pastes(), ["สวัสดี"]);
+    assert_eq!(
+        c.platform().pills().last(),
+        Some(&PillState::Notice(platform::PillNotice::MicrophoneLost))
+    );
+}

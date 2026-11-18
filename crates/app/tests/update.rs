@@ -268,7 +268,10 @@ fn dismissing_hides_the_notice_until_a_newer_version_appears() {
 
     update::dismiss(&path).unwrap();
 
-    assert_eq!(update::check(&server.source, &path, &current, NOW + 1), None);
+    assert_eq!(
+        update::check(&server.source, &path, &current, NOW + 1),
+        None
+    );
 
     let newer = Server::start(200, &release("v0.3.0"));
     assert_eq!(

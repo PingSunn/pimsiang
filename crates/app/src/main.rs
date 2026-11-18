@@ -16,6 +16,7 @@ mod macos {
     use app::controller::{Config, Controller, Input, PermissionCommand};
     use app::i18n::Language;
     use app::onboarding;
+    use app::update;
     use audio::{MicCapture, MicrophoneChoice};
     use clap::Parser;
     use engine::{LanguageMode, ModelFiles, OnnxEngine, Precision};
@@ -32,7 +33,7 @@ mod macos {
 
     use crate::logging;
     use crate::onboarding_window::{OnboardingWindow, Outcome};
-    use crate::tray::{MenuAction, MenuBar, open_folder};
+    use crate::tray::{MenuAction, MenuBar, copy_to_clipboard, open_folder};
 
     #[derive(Parser)]
     #[command(about = "PimSiang: hold Right Option and speak Thai")]
@@ -56,6 +57,7 @@ mod macos {
         Pill(PillState),
         Sound(Sound),
         Microphones(MicrophoneMenu),
+        Update(Option<String>),
         Menu(MenuEvent),
         Fatal(String),
     }
@@ -202,11 +204,42 @@ mod macos {
                         tracing::warn!(%error, "cannot update the microphone menu");
                     }
                 }
+                UserEvent::Update(version) => {
+                    if let Some(menu_bar) = &self.menu_bar
+                        && let Err(error) = menu_bar.show_update(version.as_deref())
+                    {
+                        tracing::warn!(%error, "cannot update the update notice");
+                    }
+                }
                 UserEvent::Menu(event) => {
                     let action = self.menu_bar.as_ref().and_then(|bar| bar.action(&event.id));
                     match action {
                         Some(MenuAction::Microphone(choice)) => self.choose_microphone(choice),
                         Some(MenuAction::SetupPermissions) => self.open_setup(event_loop),
+                        Some(MenuAction::CopyUpgradeCommand) => {
+                            match copy_to_clipboard(update::UPGRADE_COMMAND) {
+                                Ok(()) => {
+                                    if let Some(menu_bar) = &self.menu_bar {
+                                        menu_bar.flash_update_copied();
+                                    }
+                                }
+                                Err(error) => {
+                                    tracing::warn!(%error, "cannot copy the upgrade command");
+                                }
+                            }
+                        }
+                        Some(MenuAction::DismissUpdate) => {
+                            if let Some(path) = &self.settings_path
+                                && let Err(error) = update::dismiss(path)
+                            {
+                                tracing::warn!(%error, "cannot save the dismissed update");
+                            }
+                            if let Some(menu_bar) = &self.menu_bar
+                                && let Err(error) = menu_bar.show_update(None)
+                            {
+                                tracing::warn!(%error, "cannot hide the update notice");
+                            }
+                        }
                         Some(MenuAction::OpenLogFolder) => {
                             if let Err(error) = open_folder(&self.log_dir) {
                                 tracing::warn!(%error, "cannot open the log folder");
@@ -254,6 +287,23 @@ mod macos {
                 }
             })
             .context("starting the controller thread")?;
+
+        if let (Some(path), Some(current)) = (settings_path(), update::current_version()) {
+            let update_proxy = proxy.clone();
+            if let Err(error) = update::spawn_checker(
+                update::Source::github(),
+                path,
+                current,
+                update::FIRST_CHECK_DELAY,
+                move |version| {
+                    let _ = update_proxy.send_event(UserEvent::Update(
+                        version.map(|version| version.to_string()),
+                    ));
+                },
+            ) {
+                tracing::warn!(%error, "cannot start the update check");
+            }
+        }
 
         let mut app = App {
             log_dir,

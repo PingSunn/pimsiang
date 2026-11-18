@@ -66,6 +66,22 @@ impl Language {
         self.pick("System default", "ค่าเริ่มต้นของระบบ")
     }
 
+    pub fn menu_update(self, version: &str) -> String {
+        format!(
+            "{}{version}{}",
+            self.pick("Update available: v", "มีเวอร์ชันใหม่: v"),
+            self.pick(" — run brew upgrade", " — รัน brew upgrade"),
+        )
+    }
+
+    pub fn menu_update_copied(self) -> &'static str {
+        self.pick("Copied brew upgrade command", "คัดลอกคำสั่ง brew upgrade แล้ว")
+    }
+
+    pub fn menu_dismiss_update(self) -> &'static str {
+        self.pick("Dismiss this update notice", "ซ่อนการแจ้งเวอร์ชันใหม่นี้")
+    }
+
     pub fn menu_missing(self, report: &PermissionReport) -> String {
         let names: Vec<&str> = report
             .missing()

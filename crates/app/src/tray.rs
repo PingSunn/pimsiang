@@ -202,7 +202,7 @@ pub fn open_folder(path: &PathBuf) -> Result<()> {
 
 pub fn copy_to_clipboard(text: &str) -> Result<()> {
     use std::io::Write;
-    let mut child = std::process::Command::new("pbcopy")
+    let mut child = std::process::Command::new("/usr/bin/pbcopy")
         .stdin(std::process::Stdio::piped())
         .spawn()
         .context("starting pbcopy")?;

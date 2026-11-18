@@ -128,3 +128,41 @@ fn silence_only_input_has_empty_final_text() {
 
     assert_eq!(engine.finish_utterance().unwrap(), "");
 }
+
+fn resident_megabytes() -> f64 {
+    let output = std::process::Command::new("ps")
+        .args(["-o", "rss=", "-p", &std::process::id().to_string()])
+        .output()
+        .unwrap();
+    String::from_utf8_lossy(&output.stdout)
+        .trim()
+        .parse::<f64>()
+        .unwrap_or(f64::NAN)
+        / 1024.0
+}
+
+#[test]
+#[ignore = "needs the Model on disk: set PIMSIANG_MODEL_DIR"]
+fn unloading_frees_memory_and_the_model_loads_again() {
+    let mut engine = OnnxEngine::new(model_files());
+    let before = resident_megabytes();
+
+    let started = std::time::Instant::now();
+    engine.load().unwrap();
+    let load_seconds = started.elapsed().as_secs_f64();
+    let loaded = resident_megabytes();
+
+    engine.unload();
+    assert!(!engine.is_loaded());
+    let unloaded = resident_megabytes();
+
+    let started = std::time::Instant::now();
+    engine.load().unwrap();
+    let reload_seconds = started.elapsed().as_secs_f64();
+    assert!(engine.is_loaded());
+
+    println!(
+        "resident MB: before {before:.0}, loaded {loaded:.0}, unloaded {unloaded:.0}; \
+         load {load_seconds:.2} s, reload {reload_seconds:.2} s"
+    );
+}

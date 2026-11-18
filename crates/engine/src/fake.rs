@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::sync::mpsc::{self, Receiver, Sender};
 
 use crate::{Engine, EngineError, UtteranceOptions};
 
@@ -13,6 +14,15 @@ pub struct FakeEngine {
     push_count: usize,
     cancel_count: usize,
     load_fails: bool,
+    load_gate: Option<Receiver<()>>,
+}
+
+pub struct LoadGate(Sender<()>);
+
+impl LoadGate {
+    pub fn open(&self) {
+        let _ = self.0.send(());
+    }
 }
 
 impl FakeEngine {
@@ -31,7 +41,14 @@ impl FakeEngine {
             push_count: 0,
             cancel_count: 0,
             load_fails: false,
+            load_gate: None,
         }
+    }
+
+    pub fn gated_load(mut self) -> (Self, LoadGate) {
+        let (open, gate) = mpsc::channel();
+        self.load_gate = Some(gate);
+        (self, LoadGate(open))
     }
 
     pub fn failing_load(mut self) -> Self {
@@ -62,6 +79,9 @@ impl FakeEngine {
 
 impl Engine for FakeEngine {
     fn load(&mut self) -> Result<(), EngineError> {
+        if let Some(gate) = &self.load_gate {
+            let _ = gate.recv();
+        }
         if self.load_fails {
             return Err(EngineError::Model("scripted load failure".to_owned()));
         }

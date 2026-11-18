@@ -1,11 +1,21 @@
+use std::collections::VecDeque;
+
 use crate::vad::{AlwaysSpeech, SpeechDetector, WINDOW_SAMPLES};
 use crate::{Engine, EngineError, Recognizer, UtteranceOptions};
 
 pub const PARTIAL_INTERVAL_SAMPLES: usize = 8_000;
 pub const MIN_SILENCE_SAMPLES: usize = 8_000;
 pub const SPEECH_PAD_SAMPLES: usize = 4_800;
+pub const MAX_SEGMENT_SAMPLES: usize = 240_000;
+const CUT_SEARCH_SAMPLES: usize = 24_000;
+const CUT_SEARCH_WINDOWS: usize = CUT_SEARCH_SAMPLES / WINDOW_SAMPLES + 1;
 const SPEECH_THRESHOLD: f32 = 0.5;
 const SILENCE_THRESHOLD: f32 = 0.35;
+
+struct LockedSegment {
+    text: String,
+    forced: bool,
+}
 
 struct OpenUtterance {
     options: UtteranceOptions,
@@ -14,7 +24,8 @@ struct OpenUtterance {
     in_speech: bool,
     silent: usize,
     since_partial: usize,
-    locked: Vec<String>,
+    locked: Vec<LockedSegment>,
+    recent: VecDeque<(usize, f32)>,
 }
 
 impl OpenUtterance {
@@ -27,6 +38,7 @@ impl OpenUtterance {
             silent: 0,
             since_partial: 0,
             locked: Vec::new(),
+            recent: VecDeque::with_capacity(CUT_SEARCH_WINDOWS + 1),
         }
     }
 
@@ -61,6 +73,16 @@ impl OpenUtterance {
             self.audio.drain(..excess);
             self.scanned -= excess;
         }
+        if self.in_speech {
+            self.recent.push_back((self.scanned, probability));
+            if self.recent.len() > CUT_SEARCH_WINDOWS {
+                self.recent.pop_front();
+            }
+            if self.scanned >= MAX_SEGMENT_SAMPLES {
+                self.cut_segment(recognizer)?;
+                return Ok(true);
+            }
+        }
         Ok(false)
     }
 
@@ -72,23 +94,55 @@ impl OpenUtterance {
     fn close_segment<R: Recognizer>(&mut self, recognizer: &mut R) -> Result<(), EngineError> {
         let text =
             recognizer.recognize(&self.audio[..self.segment_end()], self.options.language)?;
-        if !text.is_empty() {
-            self.locked.push(text);
-        }
+        self.lock(text, false);
         self.audio.drain(..self.scanned);
         self.scanned = 0;
         self.in_speech = false;
         self.silent = 0;
+        self.recent.clear();
         Ok(())
     }
 
-    fn text_with(&self, open: &str) -> String {
-        self.locked
+    fn cut_segment<R: Recognizer>(&mut self, recognizer: &mut R) -> Result<(), EngineError> {
+        let cut = self
+            .recent
             .iter()
-            .map(String::as_str)
-            .chain((!open.is_empty()).then_some(open))
-            .collect::<Vec<_>>()
-            .join(" ")
+            .rev()
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map_or(self.scanned, |&(end, _)| {
+                end.saturating_sub(WINDOW_SAMPLES / 2).max(1)
+            })
+            .min(self.scanned);
+        let text = recognizer.recognize(&self.audio[..cut], self.options.language)?;
+        self.lock(text, true);
+        self.audio.drain(..cut);
+        self.scanned -= cut;
+        self.recent.retain(|&(end, _)| end > cut);
+        for (end, _) in &mut self.recent {
+            *end -= cut;
+        }
+        Ok(())
+    }
+
+    fn lock(&mut self, text: String, forced: bool) {
+        if !text.is_empty() {
+            self.locked.push(LockedSegment { text, forced });
+        }
+    }
+
+    fn text_with(&self, open: &str) -> String {
+        let mut text = String::new();
+        let mut separator = "";
+        for segment in &self.locked {
+            text.push_str(separator);
+            text.push_str(&segment.text);
+            separator = if segment.forced { "" } else { " " };
+        }
+        if !open.is_empty() {
+            text.push_str(separator);
+            text.push_str(open);
+        }
+        text
     }
 }
 
@@ -175,7 +229,11 @@ impl<R: Recognizer, D: SpeechDetector> StreamingEngine<R, D> {
                 .speech_probability(&utterance.audio[start..window_end])?;
             closed |= utterance.advance(&mut self.recognizer, probability, window_end)?;
         }
-        if partials && utterance.in_speech && utterance.since_partial >= PARTIAL_INTERVAL_SAMPLES {
+        if partials
+            && !closed
+            && utterance.in_speech
+            && utterance.since_partial >= PARTIAL_INTERVAL_SAMPLES
+        {
             utterance.since_partial = 0;
             let open = self
                 .recognizer

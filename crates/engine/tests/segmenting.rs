@@ -2,8 +2,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use engine::{
-    Engine, EngineError, LanguageMode, MIN_SILENCE_SAMPLES, Recognizer, SPEECH_PAD_SAMPLES,
-    SpeechDetector, StreamingEngine, UtteranceOptions,
+    Engine, EngineError, LanguageMode, MAX_SEGMENT_SAMPLES, MIN_SILENCE_SAMPLES, Recognizer,
+    SPEECH_PAD_SAMPLES, SpeechDetector, StreamingEngine, UtteranceOptions, WINDOW_SAMPLES,
 };
 
 const SECOND: usize = 16_000;
@@ -283,4 +283,173 @@ fn push_tail_yields_the_same_final_text_as_push_audio_without_a_partial_decode()
 
     assert_eq!(actual, expected);
     assert_eq!(decodes_before_finish, 1);
+}
+
+struct SpanRecognizer {
+    calls: Calls,
+}
+
+impl Recognizer for SpanRecognizer {
+    fn load(&mut self) -> Result<(), EngineError> {
+        Ok(())
+    }
+
+    fn unload(&mut self) {}
+
+    fn is_loaded(&self) -> bool {
+        true
+    }
+
+    fn recognize(&mut self, samples: &[f32], _: LanguageMode) -> Result<String, EngineError> {
+        self.calls.0.lock().unwrap().push(samples.len());
+        let index = |sample: f32| (sample / INDEX_STEP).round() as usize - 1;
+        Ok(match (samples.first(), samples.last()) {
+            (Some(&first), Some(&last)) => format!("{}:{}|", index(first), index(last) + 1),
+            _ => String::new(),
+        })
+    }
+}
+
+const INDEX_STEP: f32 = 1e-6;
+
+struct ScriptedDetector {
+    probabilities: fn(usize) -> f32,
+    next: usize,
+}
+
+impl SpeechDetector for ScriptedDetector {
+    fn load(&mut self) -> Result<(), EngineError> {
+        Ok(())
+    }
+
+    fn unload(&mut self) {}
+
+    fn is_loaded(&self) -> bool {
+        true
+    }
+
+    fn reset(&mut self) {
+        self.next = 0;
+    }
+
+    fn speech_probability(&mut self, _: &[f32]) -> Result<f32, EngineError> {
+        let probability = (self.probabilities)(self.next);
+        self.next += 1;
+        Ok(probability)
+    }
+}
+
+fn scripted_engine(
+    probabilities: fn(usize) -> f32,
+) -> (StreamingEngine<SpanRecognizer, ScriptedDetector>, Calls) {
+    let calls = Calls::default();
+    let mut engine = StreamingEngine::with_detector(
+        SpanRecognizer {
+            calls: calls.clone(),
+        },
+        ScriptedDetector {
+            probabilities,
+            next: 0,
+        },
+    );
+    engine.load().unwrap();
+    engine.start_utterance(UtteranceOptions::default()).unwrap();
+    (engine, calls)
+}
+
+fn indexed_audio(windows: usize) -> Vec<f32> {
+    (0..windows * WINDOW_SAMPLES)
+        .map(|i| (i + 1) as f32 * INDEX_STEP)
+        .collect()
+}
+
+fn spans(text: &str) -> Vec<(usize, usize)> {
+    text.split('|')
+        .filter(|span| !span.trim().is_empty())
+        .map(|span| {
+            let (start, end) = span.trim().split_once(':').unwrap();
+            (start.parse().unwrap(), end.parse().unwrap())
+        })
+        .collect()
+}
+
+fn continuous_speech_with_dips(window: usize) -> f32 {
+    match window {
+        300 => 0.0,
+        430 => 0.3,
+        440 => 0.2,
+        _ => 0.9,
+    }
+}
+
+#[test]
+fn a_segment_reaching_the_cap_is_cut_at_the_lowest_probability_window_near_its_end() {
+    let (mut engine, _) = scripted_engine(continuous_speech_with_dips);
+
+    stream(&mut engine, &indexed_audio(480));
+    let text = engine.finish_utterance().unwrap();
+
+    let cut = 440 * WINDOW_SAMPLES + WINDOW_SAMPLES / 2;
+    assert_eq!(spans(&text)[0], (0, cut));
+}
+
+#[test]
+fn forced_cuts_lose_and_duplicate_no_audio() {
+    let windows = 1_250;
+    let (mut engine, _) = scripted_engine(|_| 0.9);
+
+    stream(&mut engine, &indexed_audio(windows));
+    let text = engine.finish_utterance().unwrap();
+
+    let spans = spans(&text);
+    assert!(spans.len() >= 3, "{text}");
+    assert_eq!(spans.first().map(|s| s.0), Some(0));
+    assert_eq!(spans.last().map(|s| s.1), Some(windows * WINDOW_SAMPLES));
+    assert!(
+        spans.windows(2).all(|pair| pair[0].1 == pair[1].0),
+        "{text}"
+    );
+    assert!(
+        spans
+            .iter()
+            .all(|(start, end)| end - start <= MAX_SEGMENT_SAMPLES + WINDOW_SAMPLES)
+    );
+}
+
+#[test]
+fn a_forced_cut_joins_without_a_space_but_a_silence_close_joins_with_one() {
+    let (mut engine, _) = scripted_engine(|window| {
+        if (600..660).contains(&window) {
+            0.0
+        } else {
+            0.9
+        }
+    });
+
+    stream(&mut engine, &indexed_audio(1_000));
+    let text = engine.finish_utterance().unwrap();
+
+    let phrases: Vec<&str> = text.split(' ').collect();
+    assert_eq!(phrases.len(), 2, "{text}");
+    assert_eq!(spans(phrases[0]).len(), 2, "{text}");
+    assert_eq!(spans(phrases[1]).len(), 1, "{text}");
+}
+
+#[test]
+fn partial_text_decodes_at_most_one_capped_segment_per_tick() {
+    let (mut engine, calls) = scripted_engine(|_| 0.9);
+    let audio = indexed_audio(1_250);
+
+    for chunk in audio.chunks(1_600) {
+        let before = calls.lengths().len();
+        engine.push_audio(chunk).unwrap();
+        let decoded = calls.lengths()[before..].to_vec();
+        assert!(decoded.len() <= 1, "decoded {decoded:?} in one tick");
+        assert!(
+            decoded
+                .iter()
+                .all(|&n| n <= MAX_SEGMENT_SAMPLES + WINDOW_SAMPLES)
+        );
+    }
+    engine.finish_utterance().unwrap();
 }

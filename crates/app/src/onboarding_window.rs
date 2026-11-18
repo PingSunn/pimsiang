@@ -371,7 +371,7 @@ fn model_row(ui: &mut egui::Ui, view: &View, retry: &mut bool) {
                     ui.spacing_mut().item_spacing.y = 2.0;
                     ui.spacing_mut().interact_size.y = 0.0;
                     ui.label(theme::bold(model.title, 15.0));
-                    theme::description(ui, model.explain);
+                    theme::description(ui, &model.explain);
                     if let Some(fraction) = model.fraction {
                         ui.add_space(6.0);
                         theme::progress(ui, fraction);

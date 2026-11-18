@@ -206,6 +206,10 @@ pub fn build_of(precision: store::Precision) -> Precision {
     }
 }
 
+pub fn download_bytes(precision: Precision) -> u64 {
+    Manifest::pinned(precision).total_bytes()
+}
+
 pub fn models_root(home: &Path) -> PathBuf {
     home.join("Library/Application Support/PimSiang/models")
 }

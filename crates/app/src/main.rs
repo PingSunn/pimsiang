@@ -19,9 +19,11 @@ mod ui_tests;
 
 #[cfg(target_os = "macos")]
 mod macos {
+    use std::collections::HashMap;
     use std::path::PathBuf;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::mpsc::Sender;
-    use std::sync::{Arc, mpsc};
+    use std::sync::{Arc, Mutex, mpsc};
     use std::time::{Duration, Instant};
 
     use anyhow::{Context, Result};
@@ -31,6 +33,7 @@ mod macos {
     use app::i18n::Language;
     use app::model_chip::{ModelChip, model_chip};
     use app::model_download::{self, Manifest, ModelStatus};
+    use app::model_switch::{self, Command, Switcher};
     use app::onboarding;
     use app::preferences::Preferences;
     use app::shortcuts::{self, PasteLastShortcut};
@@ -58,7 +61,7 @@ mod macos {
     use crate::history_window::{HistoryWindow, Outcome as HistoryOutcome};
     use crate::logging;
     use crate::onboarding_window::{OnboardingWindow, Outcome};
-    use crate::settings_window::{Outcome as SettingsOutcome, SettingsWindow};
+    use crate::settings_window::{Build, Outcome as SettingsOutcome, SettingsWindow};
     use crate::tray::{MenuAction, MenuBar, open_folder};
 
     #[derive(Parser)]
@@ -89,6 +92,8 @@ mod macos {
         Microphones(MicrophoneMenu),
         Update(Option<String>),
         Model(ModelStatus),
+        Download { id: u64, status: ModelStatus },
+        ModelSwitched(Precision),
         HistoryEntries(Page),
         ModelLoading(bool),
         HistoryChanged,
@@ -108,7 +113,9 @@ mod macos {
         bundled: bool,
         model: ModelStatus,
         model_loading: bool,
-        model_dir: PathBuf,
+        models_root: Option<PathBuf>,
+        switcher: Option<Switcher>,
+        cancels: HashMap<u64, Arc<AtomicBool>>,
         custom_model: Option<ModelFiles>,
         model_prompted: bool,
         proxy: EventLoopProxy<UserEvent>,
@@ -161,6 +168,7 @@ mod macos {
                 self.bundled,
                 login_item::status(),
                 self.model_chip(),
+                self.build_note(),
             ) {
                 Ok(window) => self.settings_window = Some(window),
                 Err(error) => tracing::error!(%error, "cannot open the settings window"),
@@ -225,14 +233,32 @@ mod macos {
             }
         }
 
+        fn usable(&self) -> bool {
+            self.switcher.as_ref().is_some_and(Switcher::usable)
+        }
+
         fn model_chip(&self) -> ModelChip {
-            model_chip(&self.model, self.model_loading)
+            let status = match &self.model {
+                ModelStatus::Failed(_) if self.usable() => &ModelStatus::Ready,
+                other => other,
+            };
+            model_chip(status, self.model_loading)
+        }
+
+        fn build_note(&self) -> Option<Build> {
+            let switcher = self.switcher.as_ref()?;
+            (self.model != ModelStatus::Ready).then(|| Build {
+                status: self.model.clone(),
+                keeps_working: switcher.usable(),
+            })
         }
 
         fn refresh_model_chip(&mut self) {
             let chip = self.model_chip();
+            let build = self.build_note();
             if let Some(window) = self.settings_window.as_mut() {
                 window.show_model(chip);
+                window.show_build(build);
             }
         }
 
@@ -250,6 +276,7 @@ mod macos {
                 SettingsOutcome::EndPlacement(end) => self.end_placement(end),
                 SettingsOutcome::OpenLoginItems => login_item::open_login_items_settings(),
                 SettingsOutcome::OpenHistory => self.open_history(event_loop),
+                SettingsOutcome::RetryModel => self.retry_build(),
                 SettingsOutcome::Changed(changed) => {
                     if changed.pill_placement != platform::PillPlacement::Floating {
                         self.end_placement(PlacementEnd::Escape);
@@ -276,7 +303,11 @@ mod macos {
             if !keep_language {
                 self.language_overridden = false;
             }
+            let previous = self.preferences;
             self.preferences = changed;
+            if changed.precision != previous.precision {
+                self.want_build(changed.precision);
+            }
             if let Some(menu_bar) = &self.menu_bar
                 && let Err(error) = menu_bar.show_trigger_key(changed.trigger_key)
             {
@@ -407,6 +438,9 @@ mod macos {
                 &report,
                 self.bundled,
                 &self.model,
+                model_download::download_bytes(model_download::build_of(
+                    self.preferences.precision,
+                )),
             )
         }
 
@@ -438,7 +472,7 @@ mod macos {
             let ready = status == ModelStatus::Ready;
             self.model = status;
             self.refresh_model_chip();
-            if !ready && (failed || !self.model_prompted) {
+            if !ready && (failed || (!self.model_prompted && !self.usable())) {
                 self.model_prompted = true;
                 self.open_setup(event_loop);
             }
@@ -461,27 +495,106 @@ mod macos {
             let _ = self.proxy.send_event(UserEvent::Model(status));
         }
 
-        fn start_model_download(&mut self) {
-            self.model = ModelStatus::Downloading {
-                done: 0,
-                total: Manifest::pinned(Precision::Int8).total_bytes(),
+        fn want_build(&mut self, precision: store::Precision) {
+            let (Some(root), Some(switcher)) = (self.models_root.clone(), self.switcher.as_mut())
+            else {
+                return;
             };
-            let notify_proxy = self.proxy.clone();
-            let inputs = self.inputs.clone();
-            if let Err(error) = model_download::spawn(
-                self.model_dir.clone(),
-                Manifest::pinned(Precision::Int8),
-                move |status| {
-                    if status == ModelStatus::Ready {
-                        let _ = inputs.send(Input::ModelReady);
+            let commands = switcher.want(model_download::build_of(precision), &|build| {
+                model_switch::presence(&root, build)
+            });
+            self.run_commands(commands);
+        }
+
+        fn retry_build(&mut self) {
+            let (Some(root), Some(switcher)) = (self.models_root.clone(), self.switcher.as_mut())
+            else {
+                return;
+            };
+            let commands = switcher.retry(&|build| model_switch::presence(&root, build));
+            self.run_commands(commands);
+        }
+
+        fn on_download(&mut self, id: u64, status: ModelStatus) {
+            let (Some(root), Some(switcher)) = (self.models_root.clone(), self.switcher.as_mut())
+            else {
+                return;
+            };
+            let commands =
+                switcher.download_event(id, status, &|build| model_switch::presence(&root, build));
+            self.run_commands(commands);
+        }
+
+        fn on_switched(&mut self, precision: Precision) {
+            let (Some(root), Some(switcher)) = (self.models_root.clone(), self.switcher.as_mut())
+            else {
+                return;
+            };
+            let commands =
+                switcher.switched(precision, &|build| model_switch::presence(&root, build));
+            self.run_commands(commands);
+        }
+
+        fn show_model_status(&mut self, status: ModelStatus) {
+            self.model = status.clone();
+            let _ = self.proxy.send_event(UserEvent::Model(status));
+        }
+
+        fn run_commands(&mut self, commands: Vec<Command>) {
+            let Some(root) = self.models_root.clone() else {
+                return;
+            };
+            for command in commands {
+                match command {
+                    Command::Download { id, precision } => {
+                        let manifest = Manifest::pinned(precision);
+                        self.show_model_status(ModelStatus::Downloading {
+                            done: 0,
+                            total: manifest.total_bytes(),
+                        });
+                        let cancel = Arc::new(AtomicBool::new(false));
+                        self.cancels.insert(id, cancel.clone());
+                        let proxy = self.proxy.clone();
+                        if let Err(error) = model_download::spawn_cancellable(
+                            model_download::build_dir(&root, precision),
+                            manifest,
+                            cancel,
+                            move |status| {
+                                let _ = proxy.send_event(UserEvent::Download { id, status });
+                            },
+                        ) {
+                            tracing::error!(%error, "cannot start the Model download");
+                            self.on_download(id, ModelStatus::Failed(error.to_string()));
+                        }
                     }
-                    let _ = notify_proxy.send_event(UserEvent::Model(status));
-                },
-            ) {
-                tracing::error!(%error, "cannot start the Model download");
-                let status = ModelStatus::Failed(error.to_string());
-                self.model = status.clone();
-                let _ = self.proxy.send_event(UserEvent::Model(status));
+                    Command::Cancel { id } => {
+                        if let Some(cancel) = self.cancels.remove(&id) {
+                            cancel.store(true, Ordering::Relaxed);
+                        }
+                    }
+                    Command::Use(precision) => {
+                        let files =
+                            ModelFiles::new(model_download::build_dir(&root, precision), precision);
+                        let _ = self.inputs.send(Input::SwitchModel(files));
+                    }
+                    Command::Ready => {
+                        let _ = self.inputs.send(Input::ModelReady);
+                    }
+                    Command::Delete(precision) => {
+                        let root = root.clone();
+                        let spawned = std::thread::Builder::new()
+                            .name("model-delete".to_owned())
+                            .spawn(move || {
+                                if let Err(error) = model_switch::delete_build(&root, precision) {
+                                    tracing::warn!(%error, %precision, "cannot delete the old Model");
+                                }
+                            });
+                        if let Err(error) = spawned {
+                            tracing::warn!(%error, "cannot start deleting the old Model");
+                        }
+                    }
+                    Command::Report(status) => self.show_model_status(status),
+                }
             }
         }
     }
@@ -553,7 +666,7 @@ mod macos {
                 }
                 Outcome::RetryModel => match self.custom_model.clone() {
                     Some(files) => self.check_custom_model(&files),
-                    None => self.start_model_download(),
+                    None => self.retry_build(),
                 },
                 Outcome::Grant(permission) => {
                     let _ = self
@@ -600,6 +713,8 @@ mod macos {
                     }
                 }
                 UserEvent::Model(status) => self.on_model(event_loop, status),
+                UserEvent::Download { id, status } => self.on_download(id, status),
+                UserEvent::ModelSwitched(precision) => self.on_switched(precision),
                 UserEvent::HistoryChanged => self.refresh_history(),
                 UserEvent::HistoryEntries(page) => {
                     if let Some(window) = self.history_window.as_mut() {
@@ -684,8 +799,6 @@ mod macos {
             }
             None => None,
         };
-        let model = ModelSource::choose(&args);
-        tracing::info!(model_dir = %model.dir.display(), download = model.download, "starting PimSiang");
 
         let event_loop = EventLoop::<UserEvent>::with_user_event()
             .with_activation_policy(ActivationPolicy::Accessory)
@@ -722,6 +835,8 @@ mod macos {
         if bundled {
             preferences.launch_at_login = start_at_login(preferences.launch_at_login);
         }
+        let (model, mut managed) = ModelSource::choose(&args, preferences.precision);
+        tracing::info!(model_dir = %model.dir.display(), download = model.download, "starting PimSiang");
 
         let (inputs, receiver) = mpsc::channel::<Input>();
         let (finished, controller_done) = mpsc::channel::<()>();
@@ -778,7 +893,9 @@ mod macos {
             bundled,
             model: ModelStatus::Ready,
             model_loading: false,
-            model_dir: model.dir.clone(),
+            models_root: model.root.clone(),
+            switcher: None,
+            cancels: HashMap::new(),
             custom_model,
             model_prompted: false,
             proxy: proxy.clone(),
@@ -792,8 +909,9 @@ mod macos {
             language_overridden,
             settings_window: None,
         };
-        if model.download {
-            app.start_model_download();
+        if let Some((switcher, commands)) = managed.take() {
+            app.switcher = Some(switcher);
+            app.run_commands(commands);
         } else if let Some(files) = &model.custom
             && !model_download::missing_files(files).is_empty()
         {
@@ -822,29 +940,40 @@ mod macos {
         precision: Precision,
         download: bool,
         custom: Option<ModelFiles>,
+        root: Option<PathBuf>,
     }
 
+    type Managed = Option<(Switcher, Vec<Command>)>;
+
     impl ModelSource {
-        fn choose(args: &Args) -> Self {
+        fn choose(args: &Args, wanted: store::Precision) -> (Self, Managed) {
             if let Some(dir) = &args.model_dir {
-                return Self {
+                let source = Self {
                     dir: dir.clone(),
                     precision: args.precision,
                     download: false,
                     custom: Some(ModelFiles::new(dir, args.precision)),
+                    root: None,
                 };
+                return (source, None);
             }
             let home = std::env::var_os("HOME")
                 .map(PathBuf::from)
                 .unwrap_or_default();
-            let dir = model_download::default_dir(&home, Precision::Int8);
-            let download = !model_download::is_ready(&dir, &Manifest::pinned(Precision::Int8));
-            Self {
-                dir,
-                precision: Precision::Int8,
-                download,
+            let root = model_download::models_root(&home);
+            let (switcher, commands) =
+                Switcher::start(model_download::build_of(wanted), &|build| {
+                    model_switch::presence(&root, build)
+                });
+            let precision = switcher.engine_files();
+            let source = Self {
+                dir: model_download::build_dir(&root, precision),
+                precision,
+                download: !switcher.usable(),
                 custom: None,
-            }
+                root: Some(root),
+            };
+            (source, Some((switcher, commands)))
         }
     }
 
@@ -926,6 +1055,12 @@ mod macos {
             }),
         );
         let engine = OnnxEngine::new(ModelFiles::new(&model.dir, model.precision));
+        let model_id = Arc::new(Mutex::new(
+            model
+                .dir
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned()),
+        ));
 
         let trigger_tx = tx.clone();
         let audio_tx = tx.clone();
@@ -950,6 +1085,19 @@ mod macos {
         .on_model_loaded(move || {
             let _ = loaded_tx.send(Input::ModelLoaded);
         })
+        .on_model_switched({
+            let proxy = proxy.clone();
+            let model_id = model_id.clone();
+            move |files| {
+                *model_id
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) = files
+                    .dir
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned());
+                let _ = proxy.send_event(UserEvent::ModelSwitched(files.precision));
+            }
+        })
         .watch_permissions(PERMISSION_POLL, move || {
             let trigger_tx = trigger_tx.clone();
             Box::new(move |event| {
@@ -964,15 +1112,14 @@ mod macos {
             controller = controller.model_pending();
         }
         if let Some(history) = history {
-            let model_id = model
-                .dir
-                .file_name()
-                .map(|name| name.to_string_lossy().into_owned());
             let changed = proxy.clone();
-            controller =
-                controller.record_history(history_view::recorder(history, model_id, move || {
+            controller = controller.record_history(history_view::recorder_following(
+                history,
+                model_id,
+                move || {
                     let _ = changed.send_event(UserEvent::HistoryChanged);
-                }));
+                },
+            ));
         }
         if let Some(path) = settings_path()
             && let Some(id) = Settings::load(&path).microphone

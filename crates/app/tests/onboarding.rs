@@ -24,6 +24,7 @@ fn view(language: Language, report: &PermissionReport, bundled: bool) -> app::on
         report,
         bundled,
         &ModelStatus::Ready,
+        1_000_000_000,
     )
 }
 
@@ -148,6 +149,7 @@ fn model_view(language: Language, status: ModelStatus) -> app::onboarding::View 
         &report(GRANTED, GRANTED, GRANTED),
         true,
         &status,
+        1_000_000_000,
     )
 }
 
@@ -167,6 +169,23 @@ fn a_downloading_model_explains_the_size_and_shows_progress() {
     assert!(!row.failed);
     assert!(row.retry.is_none());
     assert!(!v.done);
+}
+
+#[test]
+fn the_download_size_text_follows_the_real_size() {
+    use app::i18n::download_size;
+    assert_eq!(download_size(2_606_098_275), "2.6 GB");
+    assert_eq!(download_size(994_516_953), "1 GB");
+    assert_eq!(download_size(1_500_000_000), "1.5 GB");
+    let v = view_with(
+        Language::Thai,
+        TriggerKey::RightOption,
+        &report(GRANTED, GRANTED, GRANTED),
+        true,
+        &ModelStatus::Verifying,
+        2_606_098_275,
+    );
+    assert!(v.model.explain.contains("2.6 GB"));
 }
 
 #[test]
@@ -198,7 +217,7 @@ fn model_strings_exist_in_both_languages() {
         let thai = language == Language::Thai;
         let strings = [
             language.model_title().to_owned(),
-            language.model_explain().to_owned(),
+            language.model_explain(1_000_000_000),
             language.model_downloading(1, 2),
             language.model_verifying().to_owned(),
             language.model_failed("x"),
@@ -222,6 +241,7 @@ fn the_texts_name_the_configured_trigger_key() {
             &report(DENIED, DENIED, DENIED),
             true,
             &ModelStatus::Ready,
+            1_000_000_000,
         );
         assert!(v.rows[0].why.contains("Right Command"));
         assert!(v.rows[2].why.contains("Right Command"));
@@ -232,6 +252,7 @@ fn the_texts_name_the_configured_trigger_key() {
             &granted,
             true,
             &ModelStatus::Ready,
+            1_000_000_000,
         );
         assert_eq!(done.trigger_key, TriggerKey::RightControl);
     }
@@ -246,6 +267,7 @@ fn progress_counts_the_model_and_every_granted_permission() {
         &partial,
         true,
         &ModelStatus::Downloading { done: 1, total: 4 },
+        1_000_000_000,
     );
     assert_eq!((downloading.steps_done, downloading.steps_total), (1, 4));
     assert_eq!(downloading.progress, "1 of 4 ready");
@@ -270,6 +292,7 @@ fn the_intro_counts_the_steps_that_are_left() {
         &report(UNKNOWN, UNKNOWN, UNKNOWN),
         true,
         &ModelStatus::Verifying,
+        1_000_000_000,
     );
     assert!(all_open.intro.starts_with("4 steps left"));
 }

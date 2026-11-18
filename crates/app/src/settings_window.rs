@@ -1,6 +1,7 @@
 use anyhow::Result;
 use app::i18n::Language;
 use app::model_chip::ModelChip;
+use app::model_download::{self, ModelStatus};
 use app::preferences::Preferences;
 use engine::LanguageMode;
 use platform::{PillPlacement, PillPosition, TriggerKey};
@@ -26,6 +27,13 @@ pub enum Outcome {
     OpenHistory,
     PlacePill,
     EndPlacement(PlacementEnd),
+    RetryModel,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Build {
+    pub status: ModelStatus,
+    pub keeps_working: bool,
 }
 
 pub struct SettingsWindow {
@@ -37,6 +45,7 @@ pub struct SettingsWindow {
     error: Option<String>,
     section: Section,
     model: ModelChip,
+    build: Option<Build>,
     placing: bool,
     pill_preview: Option<PillPosition>,
 }
@@ -49,6 +58,7 @@ impl SettingsWindow {
         bundled: bool,
         login: LoginItem,
         model: ModelChip,
+        build: Option<Build>,
     ) -> Result<Self> {
         let surface = Surface::open(
             event_loop,
@@ -65,6 +75,7 @@ impl SettingsWindow {
             error: None,
             section: Section::General,
             model,
+            build,
             placing: false,
             pill_preview: None,
         })
@@ -81,6 +92,13 @@ impl SettingsWindow {
     pub fn show_model(&mut self, model: ModelChip) {
         if self.model != model {
             self.model = model;
+            self.surface.request_redraw();
+        }
+    }
+
+    pub fn show_build(&mut self, build: Option<Build>) {
+        if self.build != build {
+            self.build = build;
             self.surface.request_redraw();
         }
     }
@@ -136,6 +154,7 @@ impl SettingsWindow {
             login: self.login,
             error: self.error.clone(),
             model: self.model,
+            build: self.build.clone(),
             version: env!("CARGO_PKG_VERSION"),
             placing: self.placing,
             pill_preview: self.pill_preview,
@@ -150,6 +169,8 @@ impl SettingsWindow {
             Outcome::Close
         } else if actions.open_login_items {
             Outcome::OpenLoginItems
+        } else if actions.retry_model {
+            Outcome::RetryModel
         } else if actions.open_history {
             Outcome::OpenHistory
         } else if actions.place_pill {
@@ -219,6 +240,7 @@ pub(crate) struct Inputs {
     pub(crate) login: LoginItem,
     pub(crate) error: Option<String>,
     pub(crate) model: ModelChip,
+    pub(crate) build: Option<Build>,
     pub(crate) version: &'static str,
     pub(crate) placing: bool,
     pub(crate) pill_preview: Option<PillPosition>,
@@ -228,6 +250,7 @@ pub(crate) struct Inputs {
 pub(crate) struct Actions {
     pub(crate) open_login_items: bool,
     pub(crate) open_history: bool,
+    pub(crate) retry_model: bool,
     pub(crate) place_pill: bool,
     pub(crate) done_placement: bool,
     pub(crate) escape_placement: bool,
@@ -370,6 +393,7 @@ fn general(
         });
         theme::description(ui, language.settings_language_help());
     });
+    precision(ui, inputs, preferences, actions);
     pill_position(ui, inputs, preferences, actions);
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing.y = theme::SPACE_2;
@@ -425,6 +449,65 @@ fn general(
             }
         });
     }
+}
+
+fn precision(
+    ui: &mut egui::Ui,
+    inputs: &Inputs,
+    preferences: &mut Preferences,
+    actions: &mut Actions,
+) {
+    let language = inputs.language;
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = theme::SPACE_2;
+        theme::section_label(ui, language.settings_precision());
+        let gap = 10.0;
+        let width = (ui.available_width() - gap) / 2.0;
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = gap;
+            for precision in store::Precision::ALL {
+                let bytes = model_download::download_bytes(model_download::build_of(precision));
+                let hint = language.settings_precision_hint(precision, bytes);
+                theme::language_card(
+                    ui,
+                    &mut preferences.precision,
+                    precision,
+                    language.settings_precision_name(precision),
+                    &[(hint.as_str(), false)],
+                    width,
+                );
+            }
+        });
+        theme::description(ui, language.settings_precision_help());
+        let Some(build) = &inputs.build else {
+            return;
+        };
+        match &build.status {
+            ModelStatus::Downloading { done, total } => {
+                let fraction = if *total == 0 {
+                    0.0
+                } else {
+                    (*done as f64 / *total as f64) as f32
+                };
+                theme::progress(ui, fraction);
+                theme::description(ui, &language.model_downloading(*done, *total));
+            }
+            ModelStatus::Verifying => {
+                theme::progress(ui, 1.0);
+                theme::description(ui, language.model_verifying());
+            }
+            ModelStatus::Failed(reason) => {
+                theme::destructive(ui, &language.model_failed(reason));
+                if theme::button(ui, Variant::Outline, language.model_retry()).clicked() {
+                    actions.retry_model = true;
+                }
+            }
+            ModelStatus::Ready => {}
+        }
+        if build.keeps_working {
+            theme::description(ui, language.settings_precision_keeps_working());
+        }
+    });
 }
 
 fn pill_position(

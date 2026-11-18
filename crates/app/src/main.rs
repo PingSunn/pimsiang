@@ -88,11 +88,10 @@ mod macos {
 
         fn choose_microphone(&mut self, choice: MicrophoneChoice) {
             if let Some(path) = &self.settings_path {
-                let settings = Settings {
-                    microphone: match &choice {
-                        MicrophoneChoice::SystemDefault => None,
-                        MicrophoneChoice::Device(id) => Some(id.clone()),
-                    },
+                let mut settings = Settings::load(path);
+                settings.microphone = match &choice {
+                    MicrophoneChoice::SystemDefault => None,
+                    MicrophoneChoice::Device(id) => Some(id.clone()),
                 };
                 if let Err(error) = settings.save(path) {
                     tracing::warn!(%error, "cannot save the microphone choice");
@@ -316,9 +315,13 @@ mod macos {
         let engine = OnnxEngine::new(ModelFiles::new(&args.model_dir, args.precision));
 
         let trigger_tx = tx.clone();
-        let audio_tx = tx;
+        let audio_tx = tx.clone();
+        let lost_tx = tx;
         let microphone = MicCapture::new(Arc::new(move |samples| {
             let _ = audio_tx.send(Input::Audio(samples));
+        }))
+        .on_stream_error(Arc::new(move || {
+            let _ = lost_tx.send(Input::MicrophoneLost);
         }));
 
         let mut controller = Controller::new(

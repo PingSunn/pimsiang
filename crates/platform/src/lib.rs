@@ -156,12 +156,14 @@ impl PillError {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PillNotice {
     MicrophoneFellBack,
+    MicrophoneLost,
 }
 
 impl PillNotice {
     pub fn message(self) -> &'static str {
         match self {
             Self::MicrophoneFellBack => "Microphone not found, using the system default",
+            Self::MicrophoneLost => "Microphone disconnected",
         }
     }
 }

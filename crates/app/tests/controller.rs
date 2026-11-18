@@ -18,6 +18,7 @@ fn config() -> Config {
         language: LanguageMode::ThMix,
         pill_linger: LINGER,
         error_linger: ERROR_LINGER,
+        notice_linger: Duration::from_millis(1500),
         double_tap_window: TAP_WINDOW,
         sounds: true,
     }

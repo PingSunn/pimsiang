@@ -30,6 +30,7 @@ pub trait Microphone {
 }
 
 pub type AudioSink = std::sync::Arc<dyn Fn(Vec<f32>) + Send + Sync>;
+pub type StreamErrorSink = std::sync::Arc<dyn Fn() + Send + Sync>;
 
 pub fn read_wav_16k_mono(path: &Path) -> Result<Vec<f32>, AudioError> {
     let mut reader = hound::WavReader::open(path)?;

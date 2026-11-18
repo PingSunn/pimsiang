@@ -6,7 +6,7 @@ use audio::fake::{FakeInputDevices, FakeMicrophone};
 use engine::Engine;
 use engine::fake::FakeEngine;
 use platform::fake::FakePlatform;
-use platform::{MicrophoneEntry, PillError, PillNotice, PillState, TriggerSink};
+use platform::{MicrophoneEntry, PillError, PillNotice, PillState, Status, TriggerSink};
 
 const HOLD: Duration = Duration::from_millis(200);
 const POLL: Duration = Duration::from_secs(1);
@@ -184,4 +184,118 @@ fn no_microphone_at_all_shows_an_error_in_the_pill() {
         Some(&PillState::Error(PillError::MicrophoneUnavailable))
     );
     assert!(c.platform().pastes().is_empty());
+}
+
+#[test]
+fn choosing_the_current_microphone_again_publishes_the_menu_again() {
+    let mut c = controller(two_devices());
+    c.handle(Input::Microphone(headset()));
+    let published = c.platform().microphones().len();
+
+    c.handle(Input::Microphone(headset()));
+
+    assert_eq!(c.platform().microphones().len(), published + 1);
+    assert_eq!(
+        c.platform()
+            .microphones()
+            .last()
+            .unwrap()
+            .selected
+            .as_deref(),
+        Some("usb")
+    );
+}
+
+#[test]
+fn choosing_the_system_default_while_the_choice_is_unplugged_publishes_the_menu_again() {
+    let mut c = controller(two_devices());
+    c.handle(Input::Microphone(headset()));
+    c.microphone_mut().unplug("usb");
+    c.handle(Input::Microphone(headset()));
+    let published = c.platform().microphones().len();
+
+    c.handle(Input::Microphone(MicrophoneChoice::SystemDefault));
+
+    assert_eq!(c.platform().microphones().len(), published + 1);
+    assert_eq!(c.platform().microphones().last().unwrap().selected, None);
+}
+
+#[test]
+fn losing_the_microphone_mid_utterance_delivers_the_text_so_far_and_says_why() {
+    let mut c = controller(two_devices());
+    let t0 = Instant::now();
+    c.handle(Input::Trigger(platform::TriggerEvent::pressed(t0)));
+    c.handle(Input::Tick(t0 + HOLD));
+    c.handle(Input::Audio(vec![0.0; 1_600]));
+
+    c.handle(Input::MicrophoneLost);
+
+    assert_eq!(c.platform().pastes(), ["สวัสดี"]);
+    assert!(!c.microphone().is_capturing());
+    assert_eq!(
+        c.platform().pills().last(),
+        Some(&PillState::Notice(PillNotice::MicrophoneLost))
+    );
+    assert_eq!(c.platform().statuses().last(), Some(&Status::Ready));
+}
+
+#[test]
+fn losing_the_microphone_ends_a_hands_free_utterance() {
+    let mut c = controller(two_devices());
+    let t0 = Instant::now();
+    c.handle(Input::Trigger(platform::TriggerEvent::pressed(t0)));
+    c.handle(Input::Trigger(platform::TriggerEvent::released(
+        t0 + HOLD / 4,
+    )));
+    c.handle(Input::Trigger(platform::TriggerEvent::pressed(
+        t0 + HOLD / 2,
+    )));
+    c.handle(Input::Trigger(platform::TriggerEvent::released(
+        t0 + HOLD * 3 / 4,
+    )));
+    c.handle(Input::Audio(vec![0.0; 1_600]));
+    assert!(c.microphone().is_capturing());
+
+    c.handle(Input::MicrophoneLost);
+
+    assert!(!c.microphone().is_capturing());
+    assert_eq!(c.platform().pastes(), ["สวัสดี"]);
+}
+
+#[test]
+fn a_lost_microphone_report_while_idle_is_ignored() {
+    let mut c = controller(two_devices());
+
+    c.handle(Input::MicrophoneLost);
+
+    assert!(c.platform().pills().is_empty());
+    assert!(c.platform().pastes().is_empty());
+}
+
+#[test]
+fn the_fallback_notice_stays_until_it_has_been_readable_for_a_moment() {
+    let mut c = controller(two_devices());
+    c.handle(Input::Microphone(headset()));
+    c.microphone_mut().unplug("usb");
+    let t0 = Instant::now();
+    c.handle(Input::Trigger(platform::TriggerEvent::pressed(t0)));
+    c.handle(Input::Tick(t0 + HOLD));
+
+    c.handle(Input::Audio(vec![0.0; 1_600]));
+
+    let pills = c.platform().pills();
+    assert_eq!(
+        pills.last(),
+        Some(&PillState::Notice(PillNotice::MicrophoneFellBack))
+    );
+    assert!(!pills.iter().any(|p| matches!(p, PillState::Partial(_))));
+
+    c.handle(Input::Tick(
+        Instant::now() + Config::default().notice_linger,
+    ));
+
+    assert_eq!(
+        c.platform().pills().last(),
+        Some(&PillState::Partial("สวัส".to_owned()))
+    );
 }

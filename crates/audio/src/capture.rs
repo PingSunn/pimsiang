@@ -6,7 +6,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
 use crate::{
     AudioError, AudioSink, InputDevice, InputDevices, Microphone, MicrophoneChoice, Opened,
-    TARGET_SAMPLE_RATE, downmix, resample, select,
+    StreamErrorSink, TARGET_SAMPLE_RATE, downmix, resample, select,
 };
 
 pub struct CpalDevices;
@@ -30,6 +30,7 @@ impl InputDevices for CpalDevices {
 
 pub struct MicCapture {
     sink: AudioSink,
+    on_error: Option<StreamErrorSink>,
     choice: MicrophoneChoice,
     running: Option<Running>,
 }
@@ -43,9 +44,15 @@ impl MicCapture {
     pub fn new(sink: AudioSink) -> Self {
         Self {
             sink,
+            on_error: None,
             choice: MicrophoneChoice::default(),
             running: None,
         }
+    }
+
+    pub fn on_stream_error(mut self, on_error: StreamErrorSink) -> Self {
+        self.on_error = Some(on_error);
+        self
     }
 }
 
@@ -69,7 +76,8 @@ impl Microphone for MicCapture {
         let (stop_tx, stop_rx) = mpsc::channel();
         let (ready_tx, ready_rx) = mpsc::channel();
         let sink = self.sink.clone();
-        let thread = thread::spawn(move || match open_stream(&device.id, sink) {
+        let on_error = self.on_error.clone();
+        let thread = thread::spawn(move || match open_stream(&device.id, sink, on_error) {
             Ok((stream, chunker)) => {
                 let _ = ready_tx.send(Ok(()));
                 let _ = stop_rx.recv();
@@ -124,6 +132,7 @@ fn mic_error(error: impl std::fmt::Display) -> AudioError {
 fn open_stream(
     id: &str,
     sink: AudioSink,
+    on_stream_error: Option<StreamErrorSink>,
 ) -> Result<(cpal::Stream, Arc<Mutex<Chunker>>), AudioError> {
     let host = cpal::default_host();
     let device = id
@@ -138,7 +147,12 @@ fn open_stream(
     let chunker = Arc::new(Mutex::new(Chunker::new(channels, rate, sink)));
     let f32_chunker = Arc::clone(&chunker);
     let i16_chunker = Arc::clone(&chunker);
-    let on_error = |error: cpal::Error| tracing::warn!(%error, "microphone stream error");
+    let on_error = move |error: cpal::Error| {
+        tracing::warn!(%error, "microphone stream error");
+        if let Some(report) = &on_stream_error {
+            report();
+        }
+    };
     let stream = match format {
         SampleFormat::F32 => device
             .build_input_stream(
@@ -148,7 +162,7 @@ fn open_stream(
                         chunker.push(data);
                     }
                 },
-                on_error,
+                on_error.clone(),
                 None,
             )
             .map_err(mic_error)?,

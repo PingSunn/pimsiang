@@ -15,6 +15,7 @@ pub struct Config {
     pub language: LanguageMode,
     pub pill_linger: Duration,
     pub error_linger: Duration,
+    pub notice_linger: Duration,
     pub double_tap_window: Duration,
     pub sounds: bool,
 }
@@ -26,6 +27,7 @@ impl Default for Config {
             language: LanguageMode::default(),
             pill_linger: Duration::from_millis(400),
             error_linger: Duration::from_secs(3),
+            notice_linger: Duration::from_millis(1500),
             double_tap_window: Duration::from_millis(400),
             sounds: true,
         }
@@ -44,6 +46,7 @@ pub enum Input {
     Tick(Instant),
     Permission(PermissionCommand),
     Microphone(MicrophoneChoice),
+    MicrophoneLost,
 }
 
 type TriggerSource = Box<dyn FnMut() -> TriggerSink + Send>;
@@ -72,6 +75,8 @@ pub struct Controller<P, E, M> {
     last_tap: Option<Instant>,
     hide_at: Option<Instant>,
     shown_partial: Option<String>,
+    notice_until: Option<Instant>,
+    held_partial: Option<String>,
     watch: Option<PermissionWatch>,
     shown_microphones: Option<MicrophoneMenu>,
     choice: MicrophoneChoice,
@@ -89,6 +94,8 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
             last_tap: None,
             hide_at: None,
             shown_partial: None,
+            notice_until: None,
+            held_partial: None,
             watch: None,
             shown_microphones: None,
             choice: MicrophoneChoice::default(),
@@ -144,7 +151,11 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
             State::Idle | State::Listening { .. } | State::EndingHandsFree => None,
         };
         let polling = self.watch.as_ref().map(|watch| watch.next_poll);
-        [pending, self.hide_at, polling].into_iter().flatten().min()
+        let notice = self.notice_until.filter(|_| self.held_partial.is_some());
+        [pending, self.hide_at, polling, notice]
+            .into_iter()
+            .flatten()
+            .min()
     }
 
     pub fn run(mut self, inputs: Receiver<Input>) -> Self {
@@ -200,8 +211,10 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
             Input::Microphone(choice) => {
                 self.choice = choice.clone();
                 self.microphone.choose(choice);
+                self.shown_microphones = None;
                 self.publish_microphones();
             }
+            Input::MicrophoneLost => return self.on_microphone_lost(),
         }
         Vec::new()
     }
@@ -261,6 +274,8 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
 
     fn cancel(&mut self) {
         self.microphone.stop();
+        self.held_partial = None;
+        self.notice_until = None;
         self.engine.cancel_utterance();
         self.play(Sound::Stop);
         self.state = State::Idle;
@@ -275,7 +290,24 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
         }
     }
 
+    fn on_microphone_lost(&mut self) -> Vec<Input> {
+        if !matches!(self.state, State::Listening { .. } | State::EndingHandsFree) {
+            return Vec::new();
+        }
+        tracing::warn!("the microphone stream ended in the middle of an Utterance");
+        self.end(None, Some(PillNotice::MicrophoneLost))
+    }
+
     fn on_tick(&mut self, now: Instant) {
+        if let Some(until) = self.notice_until
+            && now >= until
+        {
+            self.notice_until = None;
+            if let Some(text) = self.held_partial.take() {
+                self.shown_partial = Some(text.clone());
+                self.platform.show_pill(PillState::Partial(text));
+            }
+        }
         if let Some(hide_at) = self.hide_at
             && now >= hide_at
         {
@@ -389,6 +421,13 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
         if text.is_empty() || self.shown_partial.as_deref() == Some(text.as_str()) {
             return;
         }
+        if self
+            .notice_until
+            .is_some_and(|until| Instant::now() < until)
+        {
+            self.held_partial = Some(text);
+            return;
+        }
         self.shown_partial = Some(text.clone());
         self.platform.show_pill(PillState::Partial(text));
     }
@@ -432,16 +471,25 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
         self.state = State::Listening { hands_free };
         self.hide_at = None;
         self.shown_partial = None;
+        self.held_partial = None;
+        self.notice_until = None;
         self.platform.show_status(Status::Listening);
         self.platform.show_pill(PillState::Listening);
         if opened == Opened::FellBackToDefault {
+            self.notice_until = Some(Instant::now() + self.config.notice_linger);
             self.platform
                 .show_pill(PillState::Notice(PillNotice::MicrophoneFellBack));
         }
     }
 
     fn finish(&mut self, queued: Option<&Receiver<Input>>) -> Vec<Input> {
+        self.end(queued, None)
+    }
+
+    fn end(&mut self, queued: Option<&Receiver<Input>>, notice: Option<PillNotice>) -> Vec<Input> {
         self.microphone.stop();
+        self.held_partial = None;
+        self.notice_until = None;
         self.play(Sound::Stop);
         let mut waiting = Vec::new();
         if let Some(queued) = queued {
@@ -499,7 +547,13 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
         };
         self.platform.show_status(Status::Ready);
         match delivered {
-            Ok(()) => self.hide_at = Some(Instant::now() + self.config.pill_linger),
+            Ok(()) => match notice {
+                Some(notice) => {
+                    self.hide_at = Some(Instant::now() + self.config.error_linger);
+                    self.platform.show_pill(PillState::Notice(notice));
+                }
+                None => self.hide_at = Some(Instant::now() + self.config.pill_linger),
+            },
             Err(error) => self.fail(error),
         }
         waiting

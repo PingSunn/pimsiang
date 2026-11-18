@@ -1,5 +1,7 @@
 # 0034: A branded PimSiang look instead of plain shadcn zinc
 
+Superseded by 0035 (the look: palette, logo and mascot; the layout and verification stay).
+
 The shadcn zinc theme from ADR 0033 was correct but anonymous: black and white cards that looked like a default toolkit. The user wanted something in the spirit of Linear or Arc, a crafted product with its own identity. The theme module (`crates/app/src/theme/`) now carries a PimSiang identity on top of the same egui `Style` and `Visuals` approach.
 
 Identity: an indigo-violet accent (`#6a5af9` in dark, `#5b45ee` in light, with lighter text variants for use on dark surfaces) used only for primary actions, focus rings, selection and the active sidebar item. A logo mark drawn with egui shapes (a rounded square with a five-bar waveform) sits next to the wordmark "PimSiang พิมพ์เสียง" in every window header, which has a faint accent gradient. Surfaces are layered (background, sidebar, raised card) with low-contrast borders, and the greys are tinted towards the accent. Dark is the primary look and light is tuned separately. Headings use the variable Anuphan font at weight 650 and controls at 500, through `RichText::variation`.

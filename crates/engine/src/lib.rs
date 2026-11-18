@@ -147,6 +147,7 @@ pub trait Engine {
     fn load(&mut self) -> Result<(), EngineError>;
     fn unload(&mut self);
     fn is_loaded(&self) -> bool;
+    fn switch_model(&mut self, _files: ModelFiles) {}
     fn start_utterance(&mut self, options: UtteranceOptions) -> Result<(), EngineError>;
     fn push_audio(&mut self, samples: &[f32]) -> Result<Option<String>, EngineError>;
     fn settled_len(&self) -> usize {
@@ -163,6 +164,7 @@ pub trait Recognizer {
     fn load(&mut self) -> Result<(), EngineError>;
     fn unload(&mut self);
     fn is_loaded(&self) -> bool;
+    fn use_files(&mut self, _files: &ModelFiles) {}
     fn recognize(
         &mut self,
         samples: &[f32],

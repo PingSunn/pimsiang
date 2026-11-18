@@ -26,7 +26,8 @@ const LOGIN_ITEM_DECIDED_KEY: &str = "login_item_decided=";
 const UNLOAD_WHEN_IDLE_KEY: &str = "unload_when_idle=";
 const PILL_PLACEMENT_KEY: &str = "pill_placement=";
 const PILL_POSITION_KEY: &str = "pill_position=";
-const KEYS: [&str; 14] = [
+const PRECISION_KEY: &str = "precision=";
+const KEYS: [&str; 15] = [
     MICROPHONE_KEY,
     LAST_UPDATE_CHECK_KEY,
     AVAILABLE_UPDATE_KEY,
@@ -41,7 +42,32 @@ const KEYS: [&str; 14] = [
     UNLOAD_WHEN_IDLE_KEY,
     PILL_PLACEMENT_KEY,
     PILL_POSITION_KEY,
+    PRECISION_KEY,
 ];
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Precision {
+    #[default]
+    Accurate,
+    Light,
+}
+
+impl Precision {
+    pub const ALL: [Precision; 2] = [Precision::Accurate, Precision::Light];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Accurate => "accurate",
+            Self::Light => "light",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|precision| precision.name() == name)
+    }
+}
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Settings {
@@ -59,6 +85,7 @@ pub struct Settings {
     pub unload_when_idle: Option<bool>,
     pub pill_placement: Option<String>,
     pub pill_position: Option<String>,
+    pub precision: Option<String>,
 }
 
 fn switch(text: &str, key: &str) -> Option<bool> {
@@ -107,6 +134,7 @@ impl Settings {
             unload_when_idle: switch(&text, UNLOAD_WHEN_IDLE_KEY),
             pill_placement: value(&text, PILL_PLACEMENT_KEY).map(str::to_owned),
             pill_position: value(&text, PILL_POSITION_KEY).map(str::to_owned),
+            precision: value(&text, PRECISION_KEY).map(str::to_owned),
         }
     }
 
@@ -124,6 +152,13 @@ impl Settings {
 
     pub fn unload_when_idle(&self) -> bool {
         self.unload_when_idle.unwrap_or(true)
+    }
+
+    pub fn precision(&self) -> Precision {
+        self.precision
+            .as_deref()
+            .and_then(Precision::from_name)
+            .unwrap_or_default()
     }
 
     pub fn login_item_decided(&self) -> bool {
@@ -202,6 +237,7 @@ impl Settings {
             self.pill_placement.as_deref(),
         );
         push(&mut text, PILL_POSITION_KEY, self.pill_position.as_deref());
+        push(&mut text, PRECISION_KEY, self.precision.as_deref());
         let existing = std::fs::read_to_string(path).unwrap_or_default();
         for line in existing.lines().map(|line| line.trim_end_matches('\r')) {
             if !line.is_empty() && !KEYS.iter().any(|key| line.starts_with(key)) {

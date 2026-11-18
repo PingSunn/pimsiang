@@ -1,7 +1,7 @@
 use app::preferences::Preferences;
 use engine::{LanguageMode, RecognitionMode};
 use platform::{PillPlacement, PillPosition, TriggerKey};
-use store::Settings;
+use store::{Precision, Settings};
 
 #[test]
 fn an_empty_settings_file_gives_the_defaults() {
@@ -15,6 +15,7 @@ fn an_empty_settings_file_gives_the_defaults() {
     assert!(preferences.unload_when_idle);
     assert_eq!(preferences.pill_placement, PillPlacement::Floating);
     assert_eq!(preferences.pill_position, PillPosition { x: 0.5, y: 0.12 });
+    assert_eq!(preferences.precision, Precision::Accurate);
 }
 
 #[test]
@@ -29,6 +30,7 @@ fn stored_values_round_trip_through_the_settings() {
         unload_when_idle: false,
         pill_placement: PillPlacement::Notch,
         pill_position: PillPosition { x: 0.25, y: 0.75 },
+        precision: Precision::Light,
     };
     let mut settings = Settings::default();
 
@@ -39,6 +41,7 @@ fn stored_values_round_trip_through_the_settings() {
     assert_eq!(settings.recognition_mode.as_deref(), Some("conversation"));
     assert_eq!(settings.pill_placement.as_deref(), Some("notch"));
     assert_eq!(settings.pill_position.as_deref(), Some("0.2500,0.7500"));
+    assert_eq!(settings.precision.as_deref(), Some("light"));
     assert_eq!(Preferences::from_settings(&settings), preferences);
 }
 
@@ -143,4 +146,17 @@ fn a_recognition_mode_override_is_not_written_to_the_settings() {
 
     assert_eq!(settings.recognition_mode.as_deref(), Some("conversation"));
     assert_eq!(settings.sounds, Some(false));
+}
+
+#[test]
+fn an_unknown_precision_gives_accurate() {
+    let settings = Settings {
+        precision: Some("int8".to_owned()),
+        ..Settings::default()
+    };
+
+    assert_eq!(
+        Preferences::from_settings(&settings).precision,
+        Precision::Accurate
+    );
 }

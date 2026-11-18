@@ -8,6 +8,7 @@ use app::model_download::{
     Downloader, Error, Event, Extracted, Item, Manifest, ModelStatus, is_ready, missing_files,
     space_needed,
 };
+use engine::Precision;
 use sha2::{Digest, Sha256};
 
 fn sha(bytes: &[u8]) -> String {
@@ -457,6 +458,7 @@ fn a_volume_without_room_fails_before_any_request() {
     let downloader = Downloader {
         chunk: 1000,
         free_space: |_| Ok(2999),
+        ..Downloader::default()
     };
 
     let result = downloader.run(dir.path(), &manifest, &mut |_| {});
@@ -550,9 +552,7 @@ fn a_manifest_naming_a_path_outside_the_folder_is_refused() {
     assert!(matches!(result, Err(Error::UnsafeName(_))));
 }
 
-#[test]
-fn the_pinned_manifest_names_the_files_the_engine_loads() {
-    let manifest = Manifest::pinned();
+fn outputs_of(manifest: &Manifest) -> Vec<&str> {
     let mut outputs: Vec<&str> = Vec::new();
     for item in &manifest.items {
         assert_eq!(item.sha256.len(), 64);
@@ -565,22 +565,99 @@ fn the_pinned_manifest_names_the_files_the_engine_loads() {
         }
         assert!(item.url.starts_with("https://"));
     }
-    for name in [
-        "encoder.int8.onnx",
-        "encoder.int8.onnx.data",
-        "decoder_joint.onnx",
-        "tokens.txt",
-        "silero_vad.onnx",
+    outputs
+}
+
+#[test]
+fn the_pinned_manifest_names_the_files_the_engine_loads() {
+    for (precision, encoder, data) in [
+        (
+            Precision::Int8,
+            "encoder.int8.onnx",
+            "encoder.int8.onnx.data",
+        ),
+        (Precision::Fp32, "encoder.onnx", "encoder.onnx.data"),
     ] {
-        assert!(outputs.contains(&name), "{name}");
+        let manifest = Manifest::pinned(precision);
+        let outputs = outputs_of(&manifest);
+        for name in [
+            encoder,
+            data,
+            "decoder_joint.onnx",
+            "tokens.txt",
+            "silero_vad.onnx",
+        ] {
+            assert!(outputs.contains(&name), "{precision}: {name}");
+        }
+        assert!(
+            manifest
+                .items
+                .iter()
+                .filter(|item| item.url.contains("huggingface.co"))
+                .all(|item| item.url.contains(app::model_download::REVISION))
+        );
+        let files = engine::ModelFiles::new("/models", precision);
+        assert!(outputs.contains(&files.encoder().file_name().unwrap().to_str().unwrap()));
     }
+}
+
+#[test]
+fn each_precision_has_its_own_download_size_and_folder() {
+    let light = Manifest::pinned(Precision::Int8);
+    let accurate = Manifest::pinned(Precision::Fp32);
+
+    assert_eq!(light.total_bytes(), 994_516_953);
+    assert_eq!(accurate.total_bytes(), 2_606_098_275);
+    assert!(accurate.total_bytes() > 2 * light.total_bytes());
     assert!(
-        manifest
+        accurate
             .items
             .iter()
-            .filter(|item| item.url.contains("huggingface.co"))
-            .all(|item| item.url.contains(app::model_download::REVISION))
+            .all(|item| !item.name.contains("int8"))
     );
+    assert!(light.items.iter().all(|item| !item.name.contains("fp32")));
+
+    let root = std::path::Path::new("/models");
+    let (a, l) = (
+        app::model_download::build_dir(root, Precision::Fp32),
+        app::model_download::build_dir(root, Precision::Int8),
+    );
+    assert_ne!(a, l);
+    assert!(a.ends_with("fp32-9f142a43"));
+    assert!(l.ends_with("int8-9f142a43"));
+}
+
+#[test]
+fn the_setting_chooses_the_build() {
+    assert_eq!(
+        app::model_download::build_of(store::Precision::Accurate),
+        Precision::Fp32
+    );
+    assert_eq!(
+        app::model_download::build_of(store::Precision::Light),
+        Precision::Int8
+    );
+}
+
+#[test]
+fn a_cancelled_download_stops_and_reports_nothing() {
+    let content = bytes(16, 5000);
+    let server = Server::start(vec![("a.bin", content.clone())]);
+    let manifest = Manifest {
+        items: vec![plain(&server, "a.bin", &content)],
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let cancel = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let downloader = Downloader {
+        chunk: 1000,
+        cancel: Some(cancel),
+        ..Downloader::default()
+    };
+
+    let result = downloader.run(dir.path(), &manifest, &mut |_| {});
+
+    assert!(matches!(result, Err(Error::Cancelled)));
+    assert!(!dir.path().join("a.bin").exists());
 }
 
 #[test]

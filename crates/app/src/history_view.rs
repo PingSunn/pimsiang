@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use std::ops::Range;
 
@@ -30,9 +30,21 @@ pub fn recorder(
     model_id: Option<String>,
     on_recorded: impl Fn() + Send + Sync + 'static,
 ) -> impl FnMut(&str, Kind) + Send + 'static {
+    recorder_following(service, Arc::new(Mutex::new(model_id)), on_recorded)
+}
+
+pub fn recorder_following(
+    service: Arc<HistoryService>,
+    model_id: Arc<Mutex<Option<String>>>,
+    on_recorded: impl Fn() + Send + Sync + 'static,
+) -> impl FnMut(&str, Kind) + Send + 'static {
     let on_recorded = Arc::new(on_recorded);
     move |text, kind| {
-        service.add(text.to_owned(), kind, model_id.clone(), |error| {
+        let model_id = model_id
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        service.add(text.to_owned(), kind, model_id, |error| {
             tracing::warn!(%error, "cannot record the Final text in History");
         });
         let on_recorded = on_recorded.clone();

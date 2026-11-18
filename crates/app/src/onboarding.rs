@@ -24,7 +24,7 @@ pub struct Row {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ModelRow {
     pub title: &'static str,
-    pub explain: &'static str,
+    pub explain: String,
     pub detail: String,
     pub fraction: Option<f32>,
     pub failed: bool,
@@ -56,10 +56,10 @@ pub fn is_bundled(executable: &Path) -> bool {
         .any(|part| part.as_os_str().to_string_lossy().ends_with(".app"))
 }
 
-fn model_row(language: Language, status: &ModelStatus) -> ModelRow {
+fn model_row(language: Language, status: &ModelStatus, size: u64) -> ModelRow {
     let row = |detail: String, fraction, failed, retry| ModelRow {
         title: language.model_title(),
-        explain: language.model_explain(),
+        explain: language.model_explain(size),
         detail,
         fraction,
         failed,
@@ -102,6 +102,7 @@ pub fn view(
     report: &PermissionReport,
     bundled: bool,
     model: &ModelStatus,
+    size: u64,
 ) -> View {
     let rows = Permission::ALL
         .into_iter()
@@ -143,7 +144,7 @@ pub fn view(
         } else {
             language.terminal_note()
         },
-        model: model_row(language, model),
+        model: model_row(language, model, size),
         rows,
         done,
         steps_done,

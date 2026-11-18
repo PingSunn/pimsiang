@@ -22,7 +22,7 @@ impl OnnxEngine {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Precision {
     #[default]
     Int8,
@@ -141,6 +141,10 @@ impl Recognizer for OnnxRecognizer {
 
     fn unload(&mut self) {
         self.model = None;
+    }
+
+    fn use_files(&mut self, files: &ModelFiles) {
+        self.files = files.clone();
     }
 
     fn is_loaded(&self) -> bool {

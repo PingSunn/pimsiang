@@ -1,6 +1,6 @@
 use engine::{LanguageMode, RecognitionMode};
 use platform::{PillPlacement, PillPosition, TriggerKey};
-use store::Settings;
+use store::{Precision, Settings};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Preferences {
@@ -13,6 +13,7 @@ pub struct Preferences {
     pub unload_when_idle: bool,
     pub pill_placement: PillPlacement,
     pub pill_position: PillPosition,
+    pub precision: Precision,
 }
 
 impl Default for Preferences {
@@ -53,6 +54,7 @@ impl Preferences {
                 .as_deref()
                 .and_then(PillPosition::parse)
                 .unwrap_or_default(),
+            precision: settings.precision(),
         }
     }
 
@@ -75,5 +77,6 @@ impl Preferences {
         settings.unload_when_idle = Some(self.unload_when_idle);
         settings.pill_placement = Some(self.pill_placement.name().to_owned());
         settings.pill_position = Some(self.pill_position.text());
+        settings.precision = Some(self.precision.name().to_owned());
     }
 }

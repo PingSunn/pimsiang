@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use app::history_view::Page;
 use app::i18n::Language;
 use app::model_chip::ModelChip;
-use app::model_download::ModelStatus;
+use app::model_download::{self, ModelStatus};
 use app::onboarding;
 use app::preferences::Preferences;
 use egui::{Pos2, Theme, Vec2, pos2, vec2};
@@ -13,7 +13,7 @@ use platform_macos::login_item::LoginItem;
 use store::{Entry, Kind};
 
 use crate::history_window::{self, Clock, Outcome as HistoryOutcome};
-use crate::settings_window::{self, Actions, Inputs, Section};
+use crate::settings_window::{self, Actions, Build, Inputs, Section};
 use crate::{egui_surface, onboarding_window, theme};
 
 const MARGIN: f32 = 8.0;
@@ -92,8 +92,14 @@ fn setup(name: &str, bundled: bool, report: PermissionReport, model: ModelStatus
         name,
         vec2(560.0, 800.0),
         |ui, language| {
-            let view =
-                onboarding::view(language, TriggerKey::RightOption, &report, bundled, &model);
+            let view = onboarding::view(
+                language,
+                TriggerKey::RightOption,
+                &report,
+                bundled,
+                &model,
+                model_download::download_bytes(engine::Precision::Fp32),
+            );
             onboarding_window::show(ui, &view, &mut None, &mut false, &mut false);
         },
         |_| {},
@@ -109,8 +115,8 @@ fn setup_snapshots() {
         true,
         report(Granted, Denied, NotDetermined),
         ModelStatus::Downloading {
-            done: 412_000_000,
-            total: 1_000_000_000,
+            done: 1_070_000_000,
+            total: 2_606_098_275,
         },
     );
     setup(
@@ -134,6 +140,8 @@ struct SettingsCase {
     login: LoginItem,
     error: Option<&'static str>,
     model: ModelChip,
+    build: Option<Build>,
+    precision: store::Precision,
     height: f32,
     placement: PillPlacement,
     position: PillPosition,
@@ -148,6 +156,8 @@ fn settings(case: SettingsCase) {
         login,
         error,
         model,
+        build,
+        precision,
         height,
         placement,
         position,
@@ -163,6 +173,7 @@ fn settings(case: SettingsCase) {
                 login,
                 error: error.map(str::to_owned),
                 model,
+                build: build.clone(),
                 version: "0.1",
                 placing,
                 pill_preview: None,
@@ -172,6 +183,7 @@ fn settings(case: SettingsCase) {
                 sounds: false,
                 pill_placement: placement,
                 pill_position: position,
+                precision,
                 ..Preferences::default()
             };
             settings_window::show(
@@ -196,13 +208,15 @@ fn settings_snapshots() {
         login,
         error,
         model,
+        build: None,
+        precision: store::Precision::Accurate,
         height: 560.0,
         placement: PillPlacement::Floating,
         position: PillPosition::default(),
         placing: false,
     };
     let general = |case: SettingsCase| SettingsCase {
-        height: 700.0,
+        height: 960.0,
         ..case
     };
     settings(general(case(
@@ -227,6 +241,36 @@ fn settings_snapshots() {
             LoginItem::Unavailable,
             None,
             ModelChip::Loading,
+        )
+    }));
+    settings(general(SettingsCase {
+        precision: store::Precision::Light,
+        build: Some(Build {
+            status: ModelStatus::Downloading {
+                done: 1_070_000_000,
+                total: 2_606_098_275,
+            },
+            keeps_working: true,
+        }),
+        ..case(
+            "settings-general-precision-downloading",
+            Section::General,
+            LoginItem::Disabled,
+            None,
+            ModelChip::Downloading { percent: 41 },
+        )
+    }));
+    settings(general(SettingsCase {
+        build: Some(Build {
+            status: ModelStatus::Failed("the server answered 500".to_owned()),
+            keeps_working: true,
+        }),
+        ..case(
+            "settings-general-precision-failed",
+            Section::General,
+            LoginItem::Disabled,
+            None,
+            ModelChip::Ready,
         )
     }));
     settings(general(SettingsCase {

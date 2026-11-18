@@ -235,16 +235,91 @@ impl Language {
         self.pick("Speech model", "โมเดลถอดเสียง")
     }
 
-    pub fn model_explain(self) -> &'static str {
+    pub fn model_explain(self, bytes: u64) -> String {
+        let size = download_size(bytes);
+        match self {
+            Self::English => format!(
+                "One-time download, about {size}. If it drops, it resumes where it stopped."
+            ),
+            Self::Thai => format!(
+                th!("ดาวน์โหลด"
+                    | "ครั้งเดียว ราว {size} หลุด"
+                    | "แล้ว"
+                    | "ต่อ"
+                    | "จาก"
+                    | "เดิม"
+                    | "ได้"),
+                size = size
+            ),
+        }
+    }
+
+    pub fn settings_precision(self) -> &'static str {
+        self.pick("Precision", "ความแม่นยำ")
+    }
+
+    pub fn settings_precision_name(self, precision: store::Precision) -> &'static str {
+        match precision {
+            store::Precision::Accurate => self.pick("Accurate", "แม่นยำ"),
+            store::Precision::Light => self.pick("Light", "เบา"),
+        }
+    }
+
+    pub fn settings_precision_hint(self, precision: store::Precision, bytes: u64) -> String {
+        let size = download_size(bytes);
+        match (self, precision) {
+            (Self::English, store::Precision::Accurate) => {
+                format!("Best accuracy. Downloads about {size}.")
+            }
+            (Self::English, store::Precision::Light) => {
+                format!("Downloads about {size} and uses less memory.")
+            }
+            (Self::Thai, store::Precision::Accurate) => {
+                format!(th!("ถูกต้อง" | "ที่สุด · ดาวน์โหลด" | "ราว {size}"), size = size)
+            }
+            (Self::Thai, store::Precision::Light) => format!(
+                th!("ดาวน์โหลด" | "ราว {size} และ" | "ใช้" | "หน่วยความจำ" | "น้อยกว่า"),
+                size = size
+            ),
+        }
+    }
+
+    pub fn settings_precision_help(self) -> &'static str {
         self.pick(
-            "One-time download, about 1 GB. If it drops, it resumes where it stopped.",
-            th!("ดาวน์โหลด"
-                | "ครั้งเดียว ราว 1 GB หลุด"
-                | "แล้ว"
-                | "ต่อ"
-                | "จาก"
+            "Changing it downloads the other build in the background. The new one starts with your next Utterance once it is checked.",
+            th!("เมื่อ"
+                | "เปลี่ยน"
+                | "ระบบ"
+                | "จะ"
+                | "ดาวน์โหลด"
+                | "ตัว"
+                | "ใหม่"
+                | "ในพื้นหลัง"
+                | "และ"
+                | "เริ่ม"
+                | "ใช้"
+                | "กับ"
+                | "การ"
+                | "พูด"
+                | "ครั้ง"
+                | "ถัดไป"
+                | "หลัง"
+                | "ตรวจสอบ"
+                | "เสร็จ"),
+        )
+    }
+
+    pub fn settings_precision_keeps_working(self) -> &'static str {
+        self.pick(
+            "The current model keeps working meanwhile.",
+            th!("ระหว่าง"
+                | "นี้"
+                | "โมเดล"
                 | "เดิม"
-                | "ได้"),
+                | "ยัง"
+                | "ใช้งาน"
+                | "ได้"
+                | "ตามปกติ"),
         )
     }
 
@@ -1043,4 +1118,13 @@ fn group_thousands(value: u64) -> String {
         grouped.push(digit);
     }
     grouped
+}
+
+pub fn download_size(bytes: u64) -> String {
+    let tenths = (bytes + 50_000_000) / 100_000_000;
+    if tenths.is_multiple_of(10) {
+        format!("{} GB", tenths / 10)
+    } else {
+        format!("{}.{} GB", tenths / 10, tenths % 10)
+    }
 }

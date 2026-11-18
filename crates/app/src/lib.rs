@@ -3,6 +3,7 @@ pub mod history_view;
 pub mod i18n;
 pub mod model_chip;
 pub mod model_download;
+pub mod model_switch;
 pub mod onboarding;
 pub mod preferences;
 pub mod shortcuts;

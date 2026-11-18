@@ -1,11 +1,13 @@
 use engine::{
-    Engine, EngineError, LanguageMode, RecognitionMode, Recognizer, StreamingEngine,
-    UtteranceOptions,
+    Engine, EngineError, LanguageMode, ModelFiles, Precision, RecognitionMode, Recognizer,
+    StreamingEngine, UtteranceOptions,
 };
+use std::sync::{Arc, Mutex};
 
 #[derive(Default)]
 struct CountingRecognizer {
     loaded: bool,
+    files: Arc<Mutex<Option<ModelFiles>>>,
 }
 
 impl Recognizer for CountingRecognizer {
@@ -20,6 +22,10 @@ impl Recognizer for CountingRecognizer {
 
     fn is_loaded(&self) -> bool {
         self.loaded
+    }
+
+    fn use_files(&mut self, files: &ModelFiles) {
+        *self.files.lock().unwrap() = Some(files.clone());
     }
 
     fn recognize(
@@ -189,4 +195,23 @@ impl Recognizer for ModeRecognizer {
     fn recognize(&mut self, _: &[f32], options: UtteranceOptions) -> Result<String, EngineError> {
         Ok(options.recognition_mode.to_string())
     }
+}
+
+#[test]
+fn switching_the_model_unloads_it_and_points_the_recognizer_at_the_new_files() {
+    let recognizer = CountingRecognizer::default();
+    let files = recognizer.files.clone();
+    let mut engine = StreamingEngine::with_recognizer(recognizer);
+    engine.load().unwrap();
+    assert!(engine.is_loaded());
+
+    engine.switch_model(ModelFiles::new("/models/fp32", Precision::Fp32));
+
+    assert!(!engine.is_loaded());
+    assert_eq!(
+        *files.lock().unwrap(),
+        Some(ModelFiles::new("/models/fp32", Precision::Fp32))
+    );
+    engine.load().unwrap();
+    assert!(engine.is_loaded());
 }

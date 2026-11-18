@@ -1,6 +1,7 @@
 use app::history_view::Page;
 use app::i18n::Language;
 use app::model_chip::ModelChip;
+use app::model_download::ModelStatus;
 use app::preferences::Preferences;
 use egui::{Id, Key, Modifiers, Role};
 use egui_kittest::Harness;
@@ -11,7 +12,7 @@ use platform_macos::login_item::LoginItem;
 use store::{Entry, Kind};
 
 use crate::history_window::{self, Clock, Outcome};
-use crate::settings_window::{self, Actions, Inputs, Section};
+use crate::settings_window::{self, Actions, Build, Inputs, Section};
 use crate::{egui_surface, theme};
 
 struct HistoryFixture {
@@ -166,12 +167,13 @@ struct SettingsFixture {
     login: LoginItem,
     bundled: bool,
     model: ModelChip,
+    build: Option<Build>,
     placing: bool,
 }
 
 fn settings(fixture: SettingsFixture) -> Harness<'static, SettingsFixture> {
     let mut harness = Harness::builder()
-        .with_size(egui::vec2(780.0, 640.0))
+        .with_size(egui::vec2(780.0, 760.0))
         .with_context_setup(|context| {
             context.set_fonts(egui_surface::fonts());
             theme::apply(context);
@@ -184,6 +186,7 @@ fn settings(fixture: SettingsFixture) -> Harness<'static, SettingsFixture> {
                     login: fixture.login,
                     error: None,
                     model: fixture.model,
+                    build: fixture.build.clone(),
                     version: "0.1",
                     placing: fixture.placing,
                     pill_preview: None,
@@ -210,6 +213,7 @@ fn settings_fixture() -> SettingsFixture {
         login: LoginItem::Disabled,
         bundled: true,
         model: ModelChip::Ready,
+        build: None,
         placing: false,
     }
 }
@@ -298,6 +302,81 @@ fn choosing_a_recognition_mode_changes_the_saved_preference() {
         harness.state().preferences.recognition_mode,
         RecognitionMode::Standard
     );
+}
+
+#[test]
+fn choosing_a_precision_changes_the_saved_preference_and_accurate_is_the_default() {
+    let mut harness = settings(settings_fixture());
+    assert_eq!(
+        harness.state().preferences.precision,
+        store::Precision::Accurate
+    );
+    harness
+        .get_by_role_and_label(Role::RadioButton, "Light")
+        .click();
+    harness.run();
+    assert_eq!(
+        harness.state().preferences.precision,
+        store::Precision::Light
+    );
+    harness
+        .get_by_role_and_label(Role::RadioButton, "Accurate")
+        .click();
+    harness.run();
+    assert_eq!(
+        harness.state().preferences.precision,
+        store::Precision::Accurate
+    );
+}
+
+#[test]
+fn the_precision_cards_name_the_real_download_sizes() {
+    let size =
+        |precision| app::model_download::download_bytes(app::model_download::build_of(precision));
+    assert_eq!(
+        Language::English
+            .settings_precision_hint(store::Precision::Accurate, size(store::Precision::Accurate)),
+        "Best accuracy. Downloads about 2.6 GB."
+    );
+    assert_eq!(
+        Language::English
+            .settings_precision_hint(store::Precision::Light, size(store::Precision::Light)),
+        "Downloads about 1 GB and uses less memory."
+    );
+    assert!(
+        Language::Thai
+            .settings_precision_hint(store::Precision::Accurate, size(store::Precision::Accurate))
+            .contains("2.6 GB")
+    );
+}
+
+#[test]
+fn a_background_download_shows_its_progress_and_that_the_old_model_keeps_working() {
+    let mut fixture = settings_fixture();
+    fixture.build = Some(Build {
+        status: ModelStatus::Downloading {
+            done: 500_000_000,
+            total: 2_606_000_000,
+        },
+        keeps_working: true,
+    });
+    let harness = settings(fixture);
+    harness.get_by_label("500 of 2,606 MB");
+    harness.get_by_label("The current model keeps working meanwhile.");
+}
+
+#[test]
+fn a_failed_download_shows_the_error_and_retry_asks_for_another_attempt() {
+    let mut fixture = settings_fixture();
+    fixture.build = Some(Build {
+        status: ModelStatus::Failed("the server answered 500".to_owned()),
+        keeps_working: true,
+    });
+    let mut harness = settings(fixture);
+    harness.get_by_label("Download failed: the server answered 500");
+    harness.get_by_label("Try again").click();
+    harness.run();
+    assert!(harness.state().actions.retry_model);
 }
 
 #[test]

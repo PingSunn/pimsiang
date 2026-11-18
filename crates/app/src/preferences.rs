@@ -1,8 +1,8 @@
 use engine::LanguageMode;
-use platform::TriggerKey;
+use platform::{PillPlacement, PillPosition, TriggerKey};
 use store::Settings;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Preferences {
     pub trigger_key: TriggerKey,
     pub language: LanguageMode,
@@ -10,6 +10,8 @@ pub struct Preferences {
     pub clipboard_restore: bool,
     pub launch_at_login: bool,
     pub unload_when_idle: bool,
+    pub pill_placement: PillPlacement,
+    pub pill_position: PillPosition,
 }
 
 impl Default for Preferences {
@@ -35,6 +37,16 @@ impl Preferences {
             clipboard_restore: settings.clipboard_restore(),
             launch_at_login: settings.launch_at_login(),
             unload_when_idle: settings.unload_when_idle(),
+            pill_placement: settings
+                .pill_placement
+                .as_deref()
+                .and_then(PillPlacement::from_name)
+                .unwrap_or_default(),
+            pill_position: settings
+                .pill_position
+                .as_deref()
+                .and_then(PillPosition::parse)
+                .unwrap_or_default(),
         }
     }
 
@@ -47,5 +59,7 @@ impl Preferences {
         settings.clipboard_restore = Some(self.clipboard_restore);
         settings.launch_at_login = Some(self.launch_at_login);
         settings.unload_when_idle = Some(self.unload_when_idle);
+        settings.pill_placement = Some(self.pill_placement.name().to_owned());
+        settings.pill_position = Some(self.pill_position.text());
     }
 }

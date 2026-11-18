@@ -23,7 +23,9 @@ const CLIPBOARD_RESTORE_KEY: &str = "clipboard_restore=";
 const LAUNCH_AT_LOGIN_KEY: &str = "launch_at_login=";
 const LOGIN_ITEM_DECIDED_KEY: &str = "login_item_decided=";
 const UNLOAD_WHEN_IDLE_KEY: &str = "unload_when_idle=";
-const KEYS: [&str; 11] = [
+const PILL_PLACEMENT_KEY: &str = "pill_placement=";
+const PILL_POSITION_KEY: &str = "pill_position=";
+const KEYS: [&str; 13] = [
     MICROPHONE_KEY,
     LAST_UPDATE_CHECK_KEY,
     AVAILABLE_UPDATE_KEY,
@@ -35,6 +37,8 @@ const KEYS: [&str; 11] = [
     LAUNCH_AT_LOGIN_KEY,
     LOGIN_ITEM_DECIDED_KEY,
     UNLOAD_WHEN_IDLE_KEY,
+    PILL_PLACEMENT_KEY,
+    PILL_POSITION_KEY,
 ];
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -50,6 +54,8 @@ pub struct Settings {
     pub launch_at_login: Option<bool>,
     pub login_item_decided: Option<bool>,
     pub unload_when_idle: Option<bool>,
+    pub pill_placement: Option<String>,
+    pub pill_position: Option<String>,
 }
 
 fn switch(text: &str, key: &str) -> Option<bool> {
@@ -95,6 +101,8 @@ impl Settings {
             launch_at_login: switch(&text, LAUNCH_AT_LOGIN_KEY),
             login_item_decided: switch(&text, LOGIN_ITEM_DECIDED_KEY),
             unload_when_idle: switch(&text, UNLOAD_WHEN_IDLE_KEY),
+            pill_placement: value(&text, PILL_PLACEMENT_KEY).map(str::to_owned),
+            pill_position: value(&text, PILL_POSITION_KEY).map(str::to_owned),
         }
     }
 
@@ -179,6 +187,12 @@ impl Settings {
             UNLOAD_WHEN_IDLE_KEY,
             switch_text(self.unload_when_idle),
         );
+        push(
+            &mut text,
+            PILL_PLACEMENT_KEY,
+            self.pill_placement.as_deref(),
+        );
+        push(&mut text, PILL_POSITION_KEY, self.pill_position.as_deref());
         let existing = std::fs::read_to_string(path).unwrap_or_default();
         for line in existing.lines().map(|line| line.trim_end_matches('\r')) {
             if !line.is_empty() && !KEYS.iter().any(|key| line.starts_with(key)) {

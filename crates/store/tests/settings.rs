@@ -291,3 +291,23 @@ fn unload_when_idle_defaults_to_on_and_round_trips() {
 
     assert!(!Settings::load(&path).unload_when_idle());
 }
+
+#[test]
+fn the_pill_placement_and_position_round_trip_in_the_settings_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("settings");
+    assert_eq!(Settings::load(&path).pill_placement, None);
+
+    Settings::update(&path, |settings| {
+        settings.pill_placement = Some("floating".to_owned());
+        settings.pill_position = Some("0.5000,0.1200".to_owned());
+    })
+    .unwrap();
+
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(text.contains("pill_placement=floating\n"));
+    assert!(text.contains("pill_position=0.5000,0.1200\n"));
+    let loaded = Settings::load(&path);
+    assert_eq!(loaded.pill_placement.as_deref(), Some("floating"));
+    assert_eq!(loaded.pill_position.as_deref(), Some("0.5000,0.1200"));
+}

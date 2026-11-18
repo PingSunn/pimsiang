@@ -1,7 +1,9 @@
 use anyhow::Result;
+use app::app_menu::EditCommand;
 use app::history_view::{self, PAGE_SIZE, Page};
 use app::i18n::Language;
 use chrono::{FixedOffset, Local};
+use platform_macos::read_text;
 use store::{Entry, Kind};
 use winit::dpi::LogicalSize;
 use winit::event::WindowEvent;
@@ -69,6 +71,15 @@ impl HistoryWindow {
 
     pub fn focus(&self) {
         self.surface.focus();
+    }
+
+    pub fn edit(&mut self, command: EditCommand) {
+        let clipboard = if command.needs_clipboard() {
+            read_text()
+        } else {
+            None
+        };
+        self.surface.inject(command.events(clipboard.as_deref()));
     }
 
     pub fn query(&self) -> &str {

@@ -17,6 +17,7 @@ mod macos {
     use app::i18n::Language;
     use app::model_download::{self, Manifest, ModelStatus};
     use app::onboarding;
+    use app::single_instance::InstanceLock;
     use app::update;
     use audio::{MicCapture, MicrophoneChoice};
     use clap::Parser;
@@ -308,6 +309,18 @@ mod macos {
         let args = Args::parse();
         let log_dir = logging::log_dir()?;
         let _guard = logging::init(&log_dir)?;
+        let _instance = match lock_path().map(|path| InstanceLock::acquire(&path)) {
+            Some(Ok(Some(lock))) => Some(lock),
+            Some(Ok(None)) => {
+                tracing::info!("PimSiang is already running, exiting");
+                return Ok(());
+            }
+            Some(Err(error)) => {
+                tracing::warn!(%error, "cannot take the single-instance lock");
+                None
+            }
+            None => None,
+        };
         let model = ModelSource::choose(&args);
         tracing::info!(model_dir = %model.dir.display(), download = model.download, "starting PimSiang");
 
@@ -411,6 +424,11 @@ mod macos {
                 download,
             }
         }
+    }
+
+    fn lock_path() -> Option<PathBuf> {
+        let home = std::env::var_os("HOME")?;
+        Some(PathBuf::from(home).join("Library/Application Support/PimSiang/instance.lock"))
     }
 
     fn settings_path() -> Option<PathBuf> {

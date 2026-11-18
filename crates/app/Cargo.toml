@@ -25,6 +25,7 @@ platform.workspace = true
 platform-macos.workspace = true
 anyhow.workspace = true
 clap.workspace = true
+objc2 = "0.6"
 winit = "0.30.13"
 tray-icon = "0.26.1"
 tracing = "0.1.44"

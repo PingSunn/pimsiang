@@ -6,6 +6,10 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
+mod pill;
+
+pub use pill::PillPanel;
+
 use core_foundation::runloop::{CFRunLoop, kCFRunLoopCommonModes, kCFRunLoopDefaultMode};
 use core_foundation::string::CFStringRef;
 use core_graphics::event::{
@@ -13,20 +17,22 @@ use core_graphics::event::{
     CGEventType, CallbackResult, EventField, KeyCode,
 };
 use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
-use platform::{Platform, PlatformError, Status, TriggerEvent, TriggerSink};
+use platform::{PillState, Platform, PlatformError, Status, TriggerEvent, TriggerSink};
 
 const RIGHT_OPTION_DEVICE_MASK: u64 = 0x40;
 const TAP_POLL: Duration = Duration::from_millis(500);
 
 pub type StatusSink = Box<dyn Fn(Status) + Send>;
+pub type PillSink = Box<dyn Fn(PillState) + Send>;
 
 pub struct MacPlatform {
     status: StatusSink,
+    pill: PillSink,
 }
 
 impl MacPlatform {
-    pub fn new(status: StatusSink) -> Self {
-        Self { status }
+    pub fn new(status: StatusSink, pill: PillSink) -> Self {
+        Self { status, pill }
     }
 }
 
@@ -44,6 +50,10 @@ impl Platform for MacPlatform {
 
     fn show_status(&mut self, status: Status) {
         (self.status)(status);
+    }
+
+    fn show_pill(&mut self, state: PillState) {
+        (self.pill)(state);
     }
 
     fn paste(&mut self, text: &str) -> Result<(), PlatformError> {

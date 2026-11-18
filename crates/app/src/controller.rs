@@ -3,12 +3,14 @@ use std::time::{Duration, Instant};
 
 use audio::Microphone;
 use engine::{Engine, LanguageMode, UtteranceOptions};
-use platform::{Platform, Status, TriggerEvent, TriggerState};
+use platform::{PillError, PillState, Platform, Status, TriggerEvent, TriggerState};
 
 #[derive(Clone, Copy, Debug)]
 pub struct Config {
     pub hold_threshold: Duration,
     pub language: LanguageMode,
+    pub pill_linger: Duration,
+    pub error_linger: Duration,
 }
 
 impl Default for Config {
@@ -16,6 +18,8 @@ impl Default for Config {
         Self {
             hold_threshold: Duration::from_millis(250),
             language: LanguageMode::default(),
+            pill_linger: Duration::from_millis(400),
+            error_linger: Duration::from_secs(3),
         }
     }
 }
@@ -39,6 +43,8 @@ pub struct Controller<P, E, M> {
     microphone: M,
     config: Config,
     state: State,
+    hide_at: Option<Instant>,
+    shown_partial: Option<String>,
 }
 
 impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
@@ -49,6 +55,8 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
             microphone,
             config,
             state: State::Idle,
+            hide_at: None,
+            shown_partial: None,
         }
     }
 
@@ -65,26 +73,44 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
     }
 
     pub fn next_deadline(&self) -> Option<Instant> {
-        match self.state {
+        let pending = match self.state {
             State::Pending { since } => Some(since + self.config.hold_threshold),
             State::Idle | State::Listening => None,
+        };
+        match (pending, self.hide_at) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
         }
     }
 
     pub fn run(mut self, inputs: Receiver<Input>) -> Self {
+        let mut carried = None;
         loop {
-            let input = match self.next_deadline() {
-                Some(deadline) => {
-                    match inputs.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
-                        Ok(input) => input,
-                        Err(RecvTimeoutError::Timeout) => Input::Tick(Instant::now()),
-                        Err(RecvTimeoutError::Disconnected) => return self,
+            let input = match carried.take() {
+                Some(input) => input,
+                None => match self.next_deadline() {
+                    Some(deadline) => {
+                        match inputs
+                            .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+                        {
+                            Ok(input) => input,
+                            Err(RecvTimeoutError::Timeout) => Input::Tick(Instant::now()),
+                            Err(RecvTimeoutError::Disconnected) => return self,
+                        }
                     }
-                }
-                None => match inputs.recv() {
-                    Ok(input) => input,
-                    Err(_) => return self,
+                    None => match inputs.recv() {
+                        Ok(input) => input,
+                        Err(_) => return self,
+                    },
                 },
+            };
+            let input = match input {
+                Input::Audio(samples) => {
+                    let (samples, next) = coalesce(samples, &inputs);
+                    carried = next;
+                    Input::Audio(samples)
+                }
+                other => other,
             };
             self.dispatch(input, Some(&inputs));
         }
@@ -120,6 +146,12 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
     }
 
     fn on_tick(&mut self, now: Instant) {
+        if let Some(hide_at) = self.hide_at
+            && now >= hide_at
+        {
+            self.hide_at = None;
+            self.platform.show_pill(PillState::Hidden);
+        }
         if let Some(deadline) = self.next_deadline()
             && now >= deadline
         {
@@ -131,9 +163,25 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
         if !matches!(self.state, State::Listening) {
             return;
         }
-        if let Err(error) = self.engine.push_audio(samples) {
-            tracing::warn!(%error, "decoding failed while listening");
+        match self.engine.push_audio(samples) {
+            Ok(Some(text)) => self.show_partial(text),
+            Ok(None) => {}
+            Err(error) => tracing::warn!(%error, "decoding failed while listening"),
         }
+    }
+
+    fn show_partial(&mut self, text: String) {
+        let text = text.trim().to_owned();
+        if text.is_empty() || self.shown_partial.as_deref() == Some(text.as_str()) {
+            return;
+        }
+        self.shown_partial = Some(text.clone());
+        self.platform.show_pill(PillState::Partial(text));
+    }
+
+    fn fail(&mut self, error: PillError) {
+        self.hide_at = Some(Instant::now() + self.config.error_linger);
+        self.platform.show_pill(PillState::Error(error));
     }
 
     fn begin(&mut self) {
@@ -142,6 +190,7 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
             && let Err(error) = self.engine.load()
         {
             tracing::error!(%error, "cannot load the Model");
+            self.fail(PillError::ModelNotLoaded);
             return;
         }
         let options = UtteranceOptions {
@@ -149,43 +198,80 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
         };
         if let Err(error) = self.engine.start_utterance(options) {
             tracing::error!(%error, "cannot start an Utterance");
+            self.fail(PillError::TranscriptionFailed);
             return;
         }
         if let Err(error) = self.microphone.start() {
             tracing::error!(%error, "cannot start the microphone");
             self.engine.cancel_utterance();
+            self.fail(PillError::MicrophoneUnavailable);
             return;
         }
         self.state = State::Listening;
+        self.hide_at = None;
+        self.shown_partial = None;
         self.platform.show_status(Status::Listening);
+        self.platform.show_pill(PillState::Listening);
     }
 
     fn finish(&mut self, queued: Option<&Receiver<Input>>) {
         self.microphone.stop();
         if let Some(queued) = queued {
-            for input in queued.try_iter() {
-                if let Input::Audio(samples) = input {
-                    self.on_audio(&samples);
-                }
+            let tail: Vec<f32> = queued
+                .try_iter()
+                .filter_map(|input| match input {
+                    Input::Audio(samples) => Some(samples),
+                    _ => None,
+                })
+                .flatten()
+                .collect();
+            if !tail.is_empty()
+                && let Err(error) = self.engine.push_tail(&tail)
+            {
+                tracing::warn!(%error, "decoding failed while draining the last audio");
             }
         }
         self.state = State::Idle;
         self.platform.show_status(Status::Transcribing);
-        match self.engine.finish_utterance() {
+        self.platform.show_pill(PillState::Transcribing);
+        let delivered = match self.engine.finish_utterance() {
             Ok(text) => self.deliver(text.trim()),
-            Err(error) => tracing::error!(%error, "cannot finish the Utterance"),
-        }
+            Err(error) => {
+                tracing::error!(%error, "cannot finish the Utterance");
+                Err(PillError::TranscriptionFailed)
+            }
+        };
         self.platform.show_status(Status::Ready);
+        match delivered {
+            Ok(()) => self.hide_at = Some(Instant::now() + self.config.pill_linger),
+            Err(error) => self.fail(error),
+        }
     }
 
-    fn deliver(&mut self, text: &str) {
+    fn deliver(&mut self, text: &str) -> Result<(), PillError> {
         if text.is_empty() {
             tracing::info!("Utterance produced no text");
-            return;
+            return Ok(());
         }
         match self.platform.paste(text) {
-            Ok(()) => tracing::info!(chars = text.chars().count(), "pasted Final text"),
-            Err(error) => tracing::error!(%error, "cannot paste the Final text"),
+            Ok(()) => {
+                tracing::info!(chars = text.chars().count(), "pasted Final text");
+                Ok(())
+            }
+            Err(error) => {
+                tracing::error!(%error, "cannot paste the Final text");
+                Err(PillError::PasteFailed)
+            }
+        }
+    }
+}
+
+fn coalesce(mut samples: Vec<f32>, inputs: &Receiver<Input>) -> (Vec<f32>, Option<Input>) {
+    loop {
+        match inputs.try_recv() {
+            Ok(Input::Audio(more)) => samples.extend_from_slice(&more),
+            Ok(other) => return (samples, Some(other)),
+            Err(_) => return (samples, None),
         }
     }
 }

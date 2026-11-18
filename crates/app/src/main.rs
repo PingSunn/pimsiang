@@ -14,8 +14,9 @@ mod macos {
     use audio::MicCapture;
     use clap::Parser;
     use engine::{Engine, LanguageMode, ModelFiles, OnnxEngine, Precision};
-    use platform::{Platform, Status};
-    use platform_macos::MacPlatform;
+    use objc2::MainThreadMarker;
+    use platform::{PillState, Platform, Status};
+    use platform_macos::{MacPlatform, PillPanel};
     use tray_icon::menu::MenuEvent;
     use winit::application::ApplicationHandler;
     use winit::event::{StartCause, WindowEvent};
@@ -41,6 +42,7 @@ mod macos {
 
     enum UserEvent {
         Status(Status),
+        Pill(PillState),
         Menu(MenuEvent),
         Fatal(String),
     }
@@ -48,6 +50,7 @@ mod macos {
     struct App {
         log_dir: PathBuf,
         menu_bar: Option<MenuBar>,
+        pill: Option<PillPanel>,
         failure: Option<String>,
     }
 
@@ -76,6 +79,14 @@ mod macos {
                         && let Err(error) = menu_bar.show(status)
                     {
                         tracing::warn!(%error, "cannot update the menu bar icon");
+                    }
+                }
+                UserEvent::Pill(state) => {
+                    if self.pill.is_none() {
+                        self.pill = MainThreadMarker::new().map(PillPanel::new);
+                    }
+                    if let Some(pill) = &self.pill {
+                        pill.show(&state);
                     }
                 }
                 UserEvent::Menu(event) => {
@@ -130,6 +141,7 @@ mod macos {
         let mut app = App {
             log_dir,
             menu_bar: None,
+            pill: None,
             failure: None,
         };
         event_loop
@@ -145,9 +157,15 @@ mod macos {
         let (tx, rx) = mpsc::channel::<Input>();
 
         let status_proxy = proxy.clone();
-        let mut platform = MacPlatform::new(Box::new(move |status| {
-            let _ = status_proxy.send_event(UserEvent::Status(status));
-        }));
+        let pill_proxy = proxy.clone();
+        let mut platform = MacPlatform::new(
+            Box::new(move |status| {
+                let _ = status_proxy.send_event(UserEvent::Status(status));
+            }),
+            Box::new(move |state| {
+                let _ = pill_proxy.send_event(UserEvent::Pill(state));
+            }),
+        );
         let mut engine = OnnxEngine::new(ModelFiles::new(&args.model_dir, args.precision));
         engine.load().context("loading the Model")?;
         tracing::info!("Model loaded");
@@ -171,6 +189,7 @@ mod macos {
             Config {
                 hold_threshold: Duration::from_millis(args.hold_ms),
                 language: args.language,
+                ..Config::default()
             },
         );
         controller.run(rx);

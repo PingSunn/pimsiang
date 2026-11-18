@@ -5,14 +5,18 @@ use audio::fake::FakeMicrophone;
 use engine::fake::FakeEngine;
 use engine::{Engine, LanguageMode, UtteranceOptions};
 use platform::fake::FakePlatform;
-use platform::{Status, TriggerEvent};
+use platform::{PillError, PillState, Status, TriggerEvent};
 
 const HOLD: Duration = Duration::from_millis(200);
+const LINGER: Duration = Duration::from_millis(400);
+const ERROR_LINGER: Duration = Duration::from_secs(3);
 
 fn config() -> Config {
     Config {
         hold_threshold: HOLD,
         language: LanguageMode::ThMix,
+        pill_linger: LINGER,
+        error_linger: ERROR_LINGER,
     }
 }
 
@@ -219,7 +223,7 @@ fn run_turns_channel_events_into_ticks_and_returns_when_the_channel_closes() {
         FakeMicrophone::new(),
         Config {
             hold_threshold: Duration::from_millis(20),
-            language: LanguageMode::ThMix,
+            ..config()
         },
     );
     let worker = std::thread::spawn(move || c.run(rx));
@@ -257,4 +261,183 @@ fn audio_queued_behind_the_release_still_reaches_the_engine() {
 
     assert_eq!(c.engine().pushed_samples(), 2_800);
     assert_eq!(c.platform().pastes(), ["จบประโยค"]);
+}
+
+fn after_linger(c: &mut TestController) {
+    c.handle(Input::Tick(
+        Instant::now() + LINGER + Duration::from_secs(1),
+    ));
+}
+
+#[test]
+fn pill_follows_listening_partial_transcribing_then_hides() {
+    let mut c = controller("สวัสดีครับ");
+    let t0 = Instant::now();
+
+    hold(&mut c, t0);
+    c.handle(Input::Audio(vec![0.0; 1_600]));
+    release(&mut c, t0 + Duration::from_secs(2));
+    assert_eq!(
+        c.platform().pills(),
+        [
+            PillState::Listening,
+            PillState::Partial("สวัส".to_owned()),
+            PillState::Transcribing
+        ]
+    );
+
+    after_linger(&mut c);
+    assert_eq!(c.platform().pills().last(), Some(&PillState::Hidden));
+}
+
+#[test]
+fn pill_stays_until_the_linger_has_passed() {
+    let mut c = controller("สวัสดี");
+    let t0 = Instant::now();
+
+    hold(&mut c, t0);
+    release(&mut c, t0 + Duration::from_secs(1));
+    c.handle(Input::Tick(Instant::now()));
+
+    assert_eq!(c.platform().pills().last(), Some(&PillState::Transcribing));
+    assert!(c.next_deadline().is_some());
+}
+
+#[test]
+fn repeated_partial_text_is_not_shown_twice() {
+    let mut engine = FakeEngine::new(["สวัส", "สวัส", "สวัสดี"], "สวัสดี");
+    engine.load().unwrap();
+    let mut c = Controller::new(FakePlatform::new(), engine, FakeMicrophone::new(), config());
+
+    hold(&mut c, Instant::now());
+    for _ in 0..3 {
+        c.handle(Input::Audio(vec![0.0; 1_600]));
+    }
+
+    assert_eq!(
+        c.platform().pills(),
+        [
+            PillState::Listening,
+            PillState::Partial("สวัส".to_owned()),
+            PillState::Partial("สวัสดี".to_owned())
+        ]
+    );
+}
+
+#[test]
+fn a_new_utterance_cancels_the_pending_hide() {
+    let mut c = controller("หนึ่ง");
+    let t0 = Instant::now();
+
+    hold(&mut c, t0);
+    release(&mut c, t0 + Duration::from_secs(1));
+    hold(&mut c, t0 + Duration::from_secs(2));
+    after_linger(&mut c);
+
+    assert_eq!(c.platform().pills().last(), Some(&PillState::Listening));
+}
+
+#[test]
+fn microphone_failure_is_shown_in_the_pill_then_hidden() {
+    let mut engine = FakeEngine::new(Vec::<String>::new(), "x");
+    engine.load().unwrap();
+    let mut c = Controller::new(
+        FakePlatform::new(),
+        engine,
+        FakeMicrophone::failing(),
+        config(),
+    );
+
+    hold(&mut c, Instant::now());
+    assert_eq!(
+        c.platform().pills(),
+        [PillState::Error(PillError::MicrophoneUnavailable)]
+    );
+
+    c.handle(Input::Tick(
+        Instant::now() + LINGER + Duration::from_secs(1),
+    ));
+    assert_eq!(
+        c.platform().pills().last(),
+        Some(&PillState::Error(PillError::MicrophoneUnavailable))
+    );
+    c.handle(Input::Tick(
+        Instant::now() + ERROR_LINGER + Duration::from_secs(1),
+    ));
+    assert_eq!(c.platform().pills().last(), Some(&PillState::Hidden));
+}
+
+#[test]
+fn model_that_cannot_load_is_shown_in_the_pill() {
+    let engine = FakeEngine::new(Vec::<String>::new(), "x").failing_load();
+    let mut c = Controller::new(FakePlatform::new(), engine, FakeMicrophone::new(), config());
+
+    hold(&mut c, Instant::now());
+
+    assert_eq!(
+        c.platform().pills(),
+        [PillState::Error(PillError::ModelNotLoaded)]
+    );
+    assert_eq!(c.microphone().start_count(), 0);
+}
+
+#[test]
+fn paste_failure_is_shown_in_the_pill() {
+    let mut engine = FakeEngine::new(Vec::<String>::new(), "x");
+    engine.load().unwrap();
+    let mut c = Controller::new(
+        FakePlatform::new().failing_paste(),
+        engine,
+        FakeMicrophone::new(),
+        config(),
+    );
+    let t0 = Instant::now();
+
+    hold(&mut c, t0);
+    release(&mut c, t0 + Duration::from_secs(1));
+
+    assert_eq!(
+        c.platform().pills().last(),
+        Some(&PillState::Error(PillError::PasteFailed))
+    );
+}
+
+#[test]
+fn empty_final_text_still_hides_the_pill() {
+    let mut c = controller("  ");
+    let t0 = Instant::now();
+
+    hold(&mut c, t0);
+    release(&mut c, t0 + Duration::from_secs(1));
+    after_linger(&mut c);
+
+    assert_eq!(c.platform().pills().last(), Some(&PillState::Hidden));
+}
+
+#[test]
+fn backlog_of_audio_costs_one_decode_and_does_not_delay_the_release() {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let mut engine = FakeEngine::new(["a", "ab", "abc", "abcd"], "abcd");
+    engine.load().unwrap();
+    let c = Controller::new(FakePlatform::new(), engine, FakeMicrophone::new(), config());
+    let t0 = Instant::now();
+
+    tx.send(Input::Trigger(TriggerEvent::pressed(t0))).unwrap();
+    tx.send(Input::Tick(t0 + HOLD)).unwrap();
+    for _ in 0..4 {
+        tx.send(Input::Audio(vec![0.0; 1_600])).unwrap();
+    }
+    tx.send(Input::Trigger(TriggerEvent::released(
+        t0 + Duration::from_secs(1),
+    )))
+    .unwrap();
+    for _ in 0..3 {
+        tx.send(Input::Audio(vec![0.0; 1_600])).unwrap();
+    }
+    drop(tx);
+    let c = c.run(rx);
+
+    assert_eq!(c.engine().pushed_samples(), 7 * 1_600);
+    assert_eq!(c.engine().push_count(), 2);
+    assert_eq!(c.platform().pills()[1], PillState::Partial("a".to_owned()));
 }

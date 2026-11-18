@@ -1,9 +1,10 @@
-use crate::{Platform, PlatformError, Status, TriggerEvent, TriggerSink};
+use crate::{PillState, Platform, PlatformError, Status, TriggerEvent, TriggerSink};
 
 #[derive(Default)]
 pub struct FakePlatform {
     sink: Option<TriggerSink>,
     statuses: Vec<Status>,
+    pills: Vec<PillState>,
     pastes: Vec<String>,
     paste_fails: bool,
 }
@@ -32,6 +33,10 @@ impl FakePlatform {
         &self.statuses
     }
 
+    pub fn pills(&self) -> &[PillState] {
+        &self.pills
+    }
+
     pub fn pastes(&self) -> &[String] {
         &self.pastes
     }
@@ -45,6 +50,10 @@ impl Platform for FakePlatform {
 
     fn show_status(&mut self, status: Status) {
         self.statuses.push(status);
+    }
+
+    fn show_pill(&mut self, state: PillState) {
+        self.pills.push(state);
     }
 
     fn paste(&mut self, text: &str) -> Result<(), PlatformError> {

@@ -465,6 +465,54 @@ impl Language {
         self.pick("Paste last transcript", "วางข้อความล่าสุด")
     }
 
+    pub fn menu_about(self) -> &'static str {
+        self.pick("About PimSiang", "เกี่ยวกับ PimSiang")
+    }
+
+    pub fn menu_hide(self) -> &'static str {
+        self.pick("Hide PimSiang", "ซ่อน PimSiang")
+    }
+
+    pub fn menu_edit(self) -> &'static str {
+        self.pick("Edit", "แก้ไข")
+    }
+
+    pub fn menu_undo(self) -> &'static str {
+        self.pick("Undo", "เลิกทำ")
+    }
+
+    pub fn menu_redo(self) -> &'static str {
+        self.pick("Redo", "ทำซ้ำ")
+    }
+
+    pub fn menu_cut(self) -> &'static str {
+        self.pick("Cut", "ตัด")
+    }
+
+    pub fn menu_copy(self) -> &'static str {
+        self.pick("Copy", "คัดลอก")
+    }
+
+    pub fn menu_paste(self) -> &'static str {
+        self.pick("Paste", "วาง")
+    }
+
+    pub fn menu_select_all(self) -> &'static str {
+        self.pick("Select All", "เลือกทั้งหมด")
+    }
+
+    pub fn menu_window(self) -> &'static str {
+        self.pick("Window", "หน้าต่าง")
+    }
+
+    pub fn menu_close_window(self) -> &'static str {
+        self.pick("Close", "ปิด")
+    }
+
+    pub fn menu_minimize(self) -> &'static str {
+        self.pick("Minimize", "ย่อเก็บ")
+    }
+
     pub fn menu_settings(self) -> &'static str {
         self.pick("Settings…", "ตั้งค่า…")
     }

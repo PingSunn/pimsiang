@@ -16,6 +16,14 @@ impl GeneralPasteboard {
     }
 }
 
+impl GeneralPasteboard {
+    pub fn read_text(&self) -> Option<String> {
+        self.pasteboard
+            .stringForType(string_type())
+            .map(|text| text.to_string())
+    }
+}
+
 impl Pasteboard for GeneralPasteboard {
     type Snapshot = Vec<Item>;
 

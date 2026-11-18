@@ -79,6 +79,10 @@ pub fn copy_text(text: &str) -> Result<(), PlatformError> {
         .map_err(PlatformError::Copy)
 }
 
+pub fn read_text() -> Option<String> {
+    pasteboard::GeneralPasteboard::new().read_text()
+}
+
 impl Platform for MacPlatform {
     fn listen_trigger(&mut self, sink: TriggerSink) -> Result<(), PlatformError> {
         self.stop_trigger();

@@ -18,7 +18,7 @@ mod macos {
     use app::onboarding;
     use audio::MicCapture;
     use clap::Parser;
-    use engine::{Engine, LanguageMode, ModelFiles, OnnxEngine, Precision};
+    use engine::{LanguageMode, ModelFiles, OnnxEngine, Precision};
     use objc2::MainThreadMarker;
     use platform::{PermissionReport, PillState, Status};
     use platform_macos::{MacPlatform, PillPanel};
@@ -271,9 +271,7 @@ mod macos {
                 let _ = permissions_proxy.send_event(UserEvent::Permissions(report));
             }),
         );
-        let mut engine = OnnxEngine::new(ModelFiles::new(&args.model_dir, args.precision));
-        engine.load().context("loading the Model")?;
-        tracing::info!("Model loaded");
+        let engine = OnnxEngine::new(ModelFiles::new(&args.model_dir, args.precision));
 
         let trigger_tx = tx.clone();
         let audio_tx = tx;
@@ -281,7 +279,7 @@ mod macos {
             let _ = audio_tx.send(Input::Audio(samples));
         }));
 
-        let controller = Controller::new(
+        let mut controller = Controller::new(
             platform,
             engine,
             microphone,
@@ -297,6 +295,8 @@ mod macos {
                 let _ = trigger_tx.send(Input::Trigger(event));
             })
         });
+        controller.handle(Input::Tick(Instant::now()));
+        controller.preload_model();
         controller.run(rx);
         Ok(())
     }

@@ -186,18 +186,6 @@ fn a_denied_microphone_opens_its_settings_pane() {
 }
 
 #[test]
-fn accessibility_is_requested_then_its_pane_opens() {
-    let (mut c, _) = watching(missing(Permission::Accessibility, PermissionStatus::Denied));
-
-    c.handle(Input::Permission(PermissionCommand::Grant(
-        Permission::Accessibility,
-    )));
-
-    assert_eq!(c.platform().requested(), [Permission::Accessibility]);
-    assert_eq!(c.platform().opened(), [Permission::Accessibility]);
-}
-
-#[test]
 fn input_monitoring_is_requested_then_its_pane_opens() {
     let (mut c, _) = watching(missing(
         Permission::InputMonitoring,
@@ -292,4 +280,69 @@ fn run_polls_permissions_without_any_input() {
 
     let c = handle.join().unwrap();
     assert_eq!(c.platform().reports().len(), 1);
+}
+
+#[test]
+fn a_model_that_fails_to_load_is_a_pill_error_after_permissions_were_polled() {
+    let engine = FakeEngine::new(["a"], "a").failing_load();
+    let mut c = Controller::new(
+        missing(Permission::Accessibility, PermissionStatus::Denied),
+        engine,
+        FakeMicrophone::new(),
+        config(),
+    )
+    .watch_permissions(POLL, || -> TriggerSink { Box::new(|_| {}) });
+
+    c.handle(Input::Tick(Instant::now()));
+    c.preload_model();
+
+    assert_eq!(c.platform().reports().len(), 1);
+    assert_eq!(
+        c.platform().pills(),
+        [PillState::Error(PillError::ModelNotLoaded)]
+    );
+}
+
+#[test]
+fn a_loaded_model_shows_nothing_on_preload() {
+    let (mut c, _) = watching(FakePlatform::new());
+
+    c.preload_model();
+
+    assert!(c.platform().pills().is_empty());
+}
+
+#[test]
+fn revoked_input_monitoring_stops_watching_and_a_regrant_watches_again() {
+    let (mut c, sinks) = watching(FakePlatform::new());
+    let t0 = Instant::now();
+    c.handle(Input::Tick(t0));
+    assert!(c.platform().is_listening());
+
+    c.platform_mut()
+        .set_permission(Permission::InputMonitoring, PermissionStatus::NotDetermined);
+    c.handle(Input::Tick(t0 + POLL));
+    assert!(!c.platform().is_listening());
+
+    c.platform_mut()
+        .set_permission(Permission::InputMonitoring, PermissionStatus::Granted);
+    c.handle(Input::Tick(t0 + POLL * 2));
+
+    assert!(c.platform().is_listening());
+    assert_eq!(c.platform().listen_attempts(), 2);
+    assert_eq!(sinks.load(Ordering::SeqCst), 2);
+}
+
+#[test]
+fn accessibility_prompts_first_and_opens_its_pane_on_the_next_click() {
+    let (mut c, _) = watching(missing(Permission::Accessibility, PermissionStatus::Denied));
+    let grant = || Input::Permission(PermissionCommand::Grant(Permission::Accessibility));
+
+    c.handle(grant());
+    assert_eq!(c.platform().requested(), [Permission::Accessibility]);
+    assert!(c.platform().opened().is_empty());
+
+    c.handle(grant());
+    assert_eq!(c.platform().requested(), [Permission::Accessibility]);
+    assert_eq!(c.platform().opened(), [Permission::Accessibility]);
 }

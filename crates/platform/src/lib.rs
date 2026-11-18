@@ -152,6 +152,7 @@ pub type TriggerSink = Box<dyn FnMut(TriggerEvent) + Send>;
 
 pub trait Platform {
     fn listen_trigger(&mut self, sink: TriggerSink) -> Result<(), PlatformError>;
+    fn stop_trigger(&mut self);
     fn show_status(&mut self, status: Status);
     fn show_pill(&mut self, state: PillState);
     fn paste(&mut self, text: &str) -> Result<(), PlatformError>;

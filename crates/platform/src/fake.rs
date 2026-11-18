@@ -120,6 +120,10 @@ impl Platform for FakePlatform {
         Ok(())
     }
 
+    fn stop_trigger(&mut self) {
+        self.sink = None;
+    }
+
     fn show_status(&mut self, status: Status) {
         self.statuses.push(status);
     }

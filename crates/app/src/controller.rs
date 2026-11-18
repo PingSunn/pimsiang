@@ -65,6 +65,7 @@ pub struct Controller<P, E, M> {
     hide_at: Option<Instant>,
     shown_partial: Option<String>,
     watch: Option<PermissionWatch>,
+    prompted: Vec<Permission>,
 }
 
 impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
@@ -78,6 +79,7 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
             hide_at: None,
             shown_partial: None,
             watch: None,
+            prompted: Vec::new(),
         }
     }
 
@@ -94,6 +96,13 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
             listening: false,
         });
         self
+    }
+
+    pub fn preload_model(&mut self) {
+        if let Err(error) = self.engine.load() {
+            tracing::error!(%error, "cannot load the Model");
+            self.fail(PillError::ModelNotLoaded);
+        }
     }
 
     pub fn platform(&self) -> &P {
@@ -219,6 +228,11 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
             watch.shown = Some(report);
             self.platform.show_permissions(report);
         }
+        if watch.listening && report.input_monitoring != PermissionStatus::Granted {
+            watch.listening = false;
+            self.platform.stop_trigger();
+            tracing::warn!("Input Monitoring was revoked; the Trigger key is no longer watched");
+        }
         if !watch.listening && report.input_monitoring == PermissionStatus::Granted {
             match self.platform.listen_trigger((watch.trigger_source)()) {
                 Ok(()) => {
@@ -236,10 +250,15 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
             Permission::Microphone if status == PermissionStatus::NotDetermined => {
                 self.platform.request_permission(permission);
             }
-            Permission::Accessibility | Permission::InputMonitoring => {
+            Permission::Accessibility if !self.prompted.contains(&permission) => {
+                self.prompted.push(permission);
+                self.platform.request_permission(permission);
+            }
+            Permission::InputMonitoring => {
                 self.platform.request_permission(permission);
                 self.platform.open_settings(permission);
             }
+            Permission::Accessibility => self.platform.open_settings(permission),
             Permission::Microphone => self.platform.open_settings(permission),
         }
     }

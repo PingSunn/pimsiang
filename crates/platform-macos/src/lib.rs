@@ -34,6 +34,7 @@ pub struct MacPlatform {
     status: StatusSink,
     pill: PillSink,
     permissions: PermissionSink,
+    tap_stop: Option<Arc<AtomicBool>>,
 }
 
 impl MacPlatform {
@@ -42,20 +43,32 @@ impl MacPlatform {
             status,
             pill,
             permissions,
+            tap_stop: None,
         }
     }
 }
 
 impl Platform for MacPlatform {
     fn listen_trigger(&mut self, sink: TriggerSink) -> Result<(), PlatformError> {
+        self.stop_trigger();
         let (ready_tx, ready_rx) = mpsc::channel();
+        let stop = Arc::new(AtomicBool::new(false));
+        let tap_stop = stop.clone();
         thread::Builder::new()
             .name("trigger-key".to_owned())
-            .spawn(move || run_event_tap(sink, ready_tx))
+            .spawn(move || run_event_tap(sink, ready_tx, tap_stop))
             .map_err(|error| PlatformError::TriggerKey(error.to_string()))?;
         ready_rx
             .recv()
-            .map_err(|_| PlatformError::TriggerKey("event tap thread ended".to_owned()))?
+            .map_err(|_| PlatformError::TriggerKey("event tap thread ended".to_owned()))??;
+        self.tap_stop = Some(stop);
+        Ok(())
+    }
+
+    fn stop_trigger(&mut self) {
+        if let Some(stop) = self.tap_stop.take() {
+            stop.store(true, Ordering::SeqCst);
+        }
     }
 
     fn show_status(&mut self, status: Status) {
@@ -111,7 +124,11 @@ fn emit(sink: &Mutex<TriggerSink>, event: TriggerEvent) {
     }
 }
 
-fn run_event_tap(sink: TriggerSink, ready: mpsc::Sender<Result<(), PlatformError>>) {
+fn run_event_tap(
+    sink: TriggerSink,
+    ready: mpsc::Sender<Result<(), PlatformError>>,
+    stop: Arc<AtomicBool>,
+) {
     let sink = Arc::new(Mutex::new(sink));
     let disabled = Arc::new(AtomicBool::new(false));
     let down = Arc::new(AtomicBool::new(false));
@@ -168,7 +185,7 @@ fn run_event_tap(sink: TriggerSink, ready: mpsc::Sender<Result<(), PlatformError
     tap.enable();
     let _ = ready.send(Ok(()));
 
-    loop {
+    while !stop.load(Ordering::SeqCst) {
         CFRunLoop::run_in_mode(default_mode(), TAP_POLL, false);
         if disabled.swap(false, Ordering::SeqCst) {
             tap.enable();

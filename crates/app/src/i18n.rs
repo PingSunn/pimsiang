@@ -560,6 +560,36 @@ impl Language {
         )
     }
 
+    pub fn settings_recognition_mode(self) -> &'static str {
+        self.pick("Recognition mode", th!("โหมด" | "การ" | "ฟัง"))
+    }
+
+    pub fn settings_recognition_standard(self) -> &'static str {
+        self.pick("Standard", "มาตรฐาน")
+    }
+
+    pub fn settings_recognition_conversation(self) -> &'static str {
+        self.pick("Conversation", "บทสนทนา")
+    }
+
+    pub fn settings_recognition_help(self) -> &'static str {
+        self.pick(
+            "Standard: for dictating clearly \u{b7} Conversation: for relaxed talk",
+            th!("มาตรฐาน:"
+                | "สำหรับ"
+                | "พูด"
+                | "ให้"
+                | "จด"
+                | "ตาม"
+                | "\u{b7}"
+                | "บทสนทนา:"
+                | "สำหรับ"
+                | "คุย"
+                | "แบบ"
+                | "สบายๆ"),
+        )
+    }
+
     pub fn settings_sounds(self) -> &'static str {
         self.pick(
             "Play a sound when listening starts and stops",

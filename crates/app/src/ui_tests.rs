@@ -5,6 +5,7 @@ use app::preferences::Preferences;
 use egui::{Id, Key, Modifiers, Role};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
+use engine::RecognitionMode;
 use platform::PillPlacement;
 use platform_macos::login_item::LoginItem;
 use store::{Entry, Kind};
@@ -170,7 +171,7 @@ struct SettingsFixture {
 
 fn settings(fixture: SettingsFixture) -> Harness<'static, SettingsFixture> {
     let mut harness = Harness::builder()
-        .with_size(egui::vec2(780.0, 560.0))
+        .with_size(egui::vec2(780.0, 640.0))
         .with_context_setup(|context| {
             context.set_fonts(egui_surface::fonts());
             theme::apply(context);
@@ -271,6 +272,31 @@ fn choosing_notch_or_floating_changes_the_saved_placement() {
     assert_eq!(
         harness.state().preferences.pill_placement,
         PillPlacement::Floating
+    );
+}
+
+#[test]
+fn choosing_a_recognition_mode_changes_the_saved_preference() {
+    let mut harness = settings(settings_fixture());
+    assert_eq!(
+        harness.state().preferences.recognition_mode,
+        RecognitionMode::Standard
+    );
+    harness
+        .get_by_role_and_label(Role::RadioButton, "Conversation")
+        .click();
+    harness.run();
+    assert_eq!(
+        harness.state().preferences.recognition_mode,
+        RecognitionMode::Conversation
+    );
+    harness
+        .get_by_role_and_label(Role::RadioButton, "Standard")
+        .click();
+    harness.run();
+    assert_eq!(
+        harness.state().preferences.recognition_mode,
+        RecognitionMode::Standard
     );
 }
 

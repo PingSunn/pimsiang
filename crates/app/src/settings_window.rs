@@ -2,7 +2,7 @@ use anyhow::Result;
 use app::i18n::Language;
 use app::model_chip::ModelChip;
 use app::preferences::Preferences;
-use engine::LanguageMode;
+use engine::{LanguageMode, RecognitionMode};
 use platform::{PillPlacement, PillPosition, TriggerKey};
 use platform_macos::PlacementEnd;
 use platform_macos::login_item::{self, LoginItem};
@@ -15,7 +15,7 @@ use crate::egui_surface::Surface;
 use crate::theme::{self, Icon, Variant};
 
 const WIDTH: f64 = 780.0;
-const HEIGHT: f64 = 560.0;
+const HEIGHT: f64 = 640.0;
 const SIDEBAR_WIDTH: f32 = 220.0;
 
 pub enum Outcome {
@@ -369,6 +369,24 @@ fn general(
             );
         });
         theme::description(ui, language.settings_language_help());
+    });
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = theme::SPACE_2;
+        theme::section_label(ui, language.settings_recognition_mode());
+        let options = [
+            (
+                RecognitionMode::Standard,
+                vec![theme::Part::Text(language.settings_recognition_standard())],
+            ),
+            (
+                RecognitionMode::Conversation,
+                vec![theme::Part::Text(
+                    language.settings_recognition_conversation(),
+                )],
+            ),
+        ];
+        theme::segmented(ui, &mut preferences.recognition_mode, &options);
+        theme::description(ui, language.settings_recognition_help());
     });
     pill_position(ui, inputs, preferences, actions);
     ui.vertical(|ui| {

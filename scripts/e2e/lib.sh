@@ -127,3 +127,5 @@ preflight() {
   [ "$(setting trigger_key)" = right-option ] \
     || { echo "the Trigger key must be Right Option (settings say '$(setting trigger_key)'); change it yourself" >&2; return 1; }
 }
+
+esc_key() { osascript -e 'tell application "System Events" to key code 53' >/dev/null; }

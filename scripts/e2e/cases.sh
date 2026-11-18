@@ -68,7 +68,7 @@ case_esc_ptt() {
   count="$(db_count)"
   keys down:ropt sleep:1.2
   say_th "$SENTENCE_A"
-  keys esc sleep:0.5 up:ropt
+  esc_key; keys sleep:0.5 up:ropt
   sleep 3
   assert_log_has "$mark" 'cancelled the Utterance' "Esc while holding did not cancel"
   assert_log_lacks "$mark" 'pasted Final text' "Esc while holding still pasted"
@@ -84,7 +84,7 @@ case_esc_hands_free() {
   double_tap
   sleep 1.2
   say_th "$SENTENCE_A"
-  keys esc
+  esc_key
   sleep 3
   log_has "$mark" 'cancelled the Utterance' && cancelled=1
   log_has "$mark" 'pasted Final text' && pasted=1
@@ -94,7 +94,7 @@ case_esc_hands_free() {
     tap
     wait_log "$recovery_mark" 'pasted Final text|Utterance produced no text|kept' 10 || true
   fi
-  [ "$cancelled" -eq 1 ] || die "Esc in Hands-free did not cancel the Utterance (suspected bug)"
+  [ "$cancelled" -eq 1 ] || die "Esc in Hands-free did not cancel the Utterance"
   [ "$pasted" -eq 0 ] || die "Esc in Hands-free still pasted"
   [ -z "$text" ] || die "TextEdit has text after Esc in Hands-free"
   [ "$(db_count)" -eq "$count" ] || die "History changed after Esc in Hands-free"

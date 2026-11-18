@@ -14,3 +14,15 @@
 - **An explicit `-r` designated requirement:** the default is already certificate-based; a hand-written one adds a second place to get wrong.
 - **Publishing the cask by pushing from the script:** the push is the one irreversible step, so it stays manual.
 - **An ad-hoc fallback for releases:** every build would get a new requirement and reset users' grants (ADR 0007).
+
+## Release safety and manual recovery
+
+The script is bash 3.2 safe (macOS `/bin/bash`): the optional keychain argument is expanded as `${keychain_args[@]+"${keychain_args[@]}"}`. The identity check uses `security find-identity -v -p codesigning`, so an untrusted certificate does not count. In real mode the script also asks `origin` for the tag (`git ls-remote --tags`; never in `--dry-run`). If the GitHub release already exists, the script downloads its zip asset and compares the sha256 with the one just built: equal means the upload is skipped and the tap step continues, different stops the release. A tag on `origin` without a release also stops it. Zips are not byte-reproducible, so a rebuild normally differs; in that case recover by hand.
+
+Manual recovery:
+
+1. Release failed after `gh release create` but before the tap commit: do not re-run. Copy `target/release-dist/pimsiang.rb` to `$PIMSIANG_TAP_DIR/Casks/pimsiang.rb`, commit it as `pimsiang X.Y.Z`, and push the tap yourself.
+2. Release exists but the asset is wrong: delete it with `gh release delete vX.Y.Z --cleanup-tag`, then re-run `scripts/release.sh X.Y.Z`. Once users installed it, bump the version instead.
+3. Tag on `origin` without a release: delete the remote tag (`git push origin :refs/tags/vX.Y.Z`) and re-run, or create the release by hand.
+4. Back up the signing certificate before the first release: export "PimSiang Self-Signed" with its private key as a `.p12` from Keychain Access (File, Export Items) to a safe place such as a password manager. Losing it changes the designated requirement and every user must grant the permissions again.
+5. Make the repository public before telling anyone to `brew install`; the cask downloads from the GitHub release URL, which fails with 404 while the repository is private.

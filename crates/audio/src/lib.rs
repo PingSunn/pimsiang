@@ -1,6 +1,11 @@
 use std::f64::consts::PI;
 use std::path::Path;
 
+mod capture;
+pub mod fake;
+
+pub use capture::MicCapture;
+
 pub const TARGET_SAMPLE_RATE: u32 = 16_000;
 
 const SINC_ZERO_CROSSINGS: f64 = 16.0;
@@ -11,7 +16,16 @@ pub enum AudioError {
     Wav(#[from] hound::Error),
     #[error("WAV file has no channels")]
     NoChannels,
+    #[error("microphone error: {0}")]
+    Microphone(String),
 }
+
+pub trait Microphone {
+    fn start(&mut self) -> Result<(), AudioError>;
+    fn stop(&mut self);
+}
+
+pub type AudioSink = std::sync::Arc<dyn Fn(Vec<f32>) + Send + Sync>;
 
 pub fn read_wav_16k_mono(path: &Path) -> Result<Vec<f32>, AudioError> {
     let mut reader = hound::WavReader::open(path)?;

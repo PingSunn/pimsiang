@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/engine", "crates/audio", "crates/store", "crates/platform-macos", "crates/app"]
+members = ["crates/platform", "crates/engine", "crates/audio", "crates/store", "crates/platform-macos", "crates/app"]
 
 [workspace.package]
 version = "0.1.0"
@@ -13,6 +13,7 @@ engine = { path = "crates/engine" }
 audio = { path = "crates/audio" }
 store = { path = "crates/store" }
 platform-macos = { path = "crates/platform-macos" }
+platform = { path = "crates/platform" }
 thiserror = "2"
 anyhow = "1"
 hound = "3.5"

@@ -7,3 +7,9 @@ publish.workspace = true
 
 [lints]
 workspace = true
+
+[dependencies]
+arboard = "3.7.0"
+core-graphics = "0.25.0"
+platform.workspace = true
+tracing = "0.1.44"

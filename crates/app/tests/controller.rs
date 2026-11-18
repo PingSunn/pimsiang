@@ -441,3 +441,26 @@ fn backlog_of_audio_costs_one_decode_and_does_not_delay_the_release() {
     assert_eq!(c.engine().push_count(), 2);
     assert_eq!(c.platform().pills()[1], PillState::Partial("a".to_owned()));
 }
+
+#[test]
+fn a_trigger_press_queued_behind_the_release_starts_the_next_utterance() {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let mut engine = FakeEngine::new(["a"], "one");
+    engine.load().unwrap();
+    let c = Controller::new(FakePlatform::new(), engine, FakeMicrophone::new(), config());
+    let t0 = Instant::now();
+    let t1 = t0 + Duration::from_secs(1);
+
+    tx.send(Input::Trigger(TriggerEvent::pressed(t0))).unwrap();
+    tx.send(Input::Tick(t0 + HOLD)).unwrap();
+    tx.send(Input::Audio(vec![0.0; 1_600])).unwrap();
+    tx.send(Input::Trigger(TriggerEvent::released(t1))).unwrap();
+    tx.send(Input::Audio(vec![0.0; 800])).unwrap();
+    tx.send(Input::Trigger(TriggerEvent::pressed(t1))).unwrap();
+    tx.send(Input::Tick(t1 + HOLD)).unwrap();
+    drop(tx);
+    let c = c.run(rx);
+
+    assert_eq!(c.microphone().start_count(), 2);
+    assert!(c.microphone().is_capturing());
+}

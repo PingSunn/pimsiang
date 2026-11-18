@@ -112,7 +112,9 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
                 }
                 other => other,
             };
-            self.dispatch(input, Some(&inputs));
+            if let Some(next) = self.dispatch(input, Some(&inputs)) {
+                carried = Some(next);
+            }
         }
     }
 
@@ -120,15 +122,16 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
         self.dispatch(input, None);
     }
 
-    fn dispatch(&mut self, input: Input, queued: Option<&Receiver<Input>>) {
+    fn dispatch(&mut self, input: Input, queued: Option<&Receiver<Input>>) -> Option<Input> {
         match input {
             Input::Trigger(event) => match event.state {
                 TriggerState::Pressed => self.on_pressed(event.at),
-                TriggerState::Released => self.on_released(queued),
+                TriggerState::Released => return self.on_released(queued),
             },
             Input::Audio(samples) => self.on_audio(&samples),
             Input::Tick(now) => self.on_tick(now),
         }
+        None
     }
 
     fn on_pressed(&mut self, at: Instant) {
@@ -137,10 +140,13 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
         }
     }
 
-    fn on_released(&mut self, queued: Option<&Receiver<Input>>) {
+    fn on_released(&mut self, queued: Option<&Receiver<Input>>) -> Option<Input> {
         match self.state {
-            State::Idle => {}
-            State::Pending { .. } => self.state = State::Idle,
+            State::Idle => None,
+            State::Pending { .. } => {
+                self.state = State::Idle;
+                None
+            }
             State::Listening => self.finish(queued),
         }
     }
@@ -214,17 +220,12 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
         self.platform.show_pill(PillState::Listening);
     }
 
-    fn finish(&mut self, queued: Option<&Receiver<Input>>) {
+    fn finish(&mut self, queued: Option<&Receiver<Input>>) -> Option<Input> {
         self.microphone.stop();
+        let mut next = None;
         if let Some(queued) = queued {
-            let tail: Vec<f32> = queued
-                .try_iter()
-                .filter_map(|input| match input {
-                    Input::Audio(samples) => Some(samples),
-                    _ => None,
-                })
-                .flatten()
-                .collect();
+            let (tail, other) = coalesce(Vec::new(), queued);
+            next = other;
             if !tail.is_empty()
                 && let Err(error) = self.engine.push_tail(&tail)
             {
@@ -246,6 +247,7 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
             Ok(()) => self.hide_at = Some(Instant::now() + self.config.pill_linger),
             Err(error) => self.fail(error),
         }
+        next
     }
 
     fn deliver(&mut self, text: &str) -> Result<(), PillError> {

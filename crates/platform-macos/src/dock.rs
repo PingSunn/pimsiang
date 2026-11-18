@@ -57,7 +57,7 @@ pub fn on_reopen(callback: impl Fn() + Send + Sync + 'static) {
         tracing::warn!("the Dock click handler can only be set on the main thread");
         return;
     };
-    if REOPEN.set(Box::new(callback)).is_err() {
+    if REOPEN.get().is_some() {
         return;
     }
     let Some(delegate) = NSApplication::sharedApplication(mtm).delegate() else {
@@ -87,5 +87,7 @@ pub fn on_reopen(callback: impl Fn() + Send + Sync + 'static) {
     };
     if !added.as_bool() {
         tracing::warn!("cannot add the Dock click handler");
+        return;
     }
+    let _ = REOPEN.set(Box::new(callback));
 }

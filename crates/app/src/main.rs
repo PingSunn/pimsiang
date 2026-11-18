@@ -33,7 +33,7 @@ mod macos {
     use objc2::MainThreadMarker;
     use platform::{MicrophoneMenu, PermissionReport, PillState, Sound, Status};
     use platform_macos::login_item::{self, LoginItem};
-    use platform_macos::{MacPlatform, PillPanel, play_sound};
+    use platform_macos::{MacPlatform, PillPanel, copy_text, play_sound};
     use store::{Entry, HistoryService, Settings};
     use tray_icon::menu::MenuEvent;
     use winit::application::ApplicationHandler;
@@ -48,7 +48,7 @@ mod macos {
     use crate::logging;
     use crate::onboarding_window::{OnboardingWindow, Outcome};
     use crate::settings_window::{Outcome as SettingsOutcome, SettingsWindow};
-    use crate::tray::{MenuAction, MenuBar, copy_to_clipboard, open_folder};
+    use crate::tray::{MenuAction, MenuBar, open_folder};
 
     #[derive(Parser)]
     #[command(about = "PimSiang: hold the trigger key and speak Thai")]
@@ -241,7 +241,7 @@ mod macos {
                 HistoryOutcome::Close => self.history_window = None,
                 HistoryOutcome::Refresh => self.refresh_history(),
                 HistoryOutcome::Copy(text) => {
-                    if let Err(error) = copy_to_clipboard(&text) {
+                    if let Err(error) = copy_text(&text) {
                         tracing::warn!(%error, "cannot copy the History entry");
                     }
                 }
@@ -487,7 +487,7 @@ mod macos {
                         Some(MenuAction::PasteLast) => self.paste_last(event_loop),
                         Some(MenuAction::OpenSettings) => self.open_settings(event_loop),
                         Some(MenuAction::CopyUpgradeCommand) => {
-                            match copy_to_clipboard(update::UPGRADE_COMMAND) {
+                            match copy_text(update::UPGRADE_COMMAND) {
                                 Ok(()) => {
                                     if let Some(menu_bar) = &self.menu_bar {
                                         menu_bar.flash_update_copied();

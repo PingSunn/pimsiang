@@ -70,6 +70,14 @@ impl MacPlatform {
     }
 }
 
+pub fn copy_text(text: &str) -> Result<(), PlatformError> {
+    let mut pasteboard = pasteboard::GeneralPasteboard::new();
+    CLIPBOARD
+        .put_text(&mut pasteboard, text, false)
+        .map(|_| ())
+        .map_err(PlatformError::Copy)
+}
+
 impl Platform for MacPlatform {
     fn listen_trigger(&mut self, sink: TriggerSink) -> Result<(), PlatformError> {
         self.stop_trigger();
@@ -135,11 +143,7 @@ impl Platform for MacPlatform {
     }
 
     fn copy(&mut self, text: &str) -> Result<(), PlatformError> {
-        let mut pasteboard = pasteboard::GeneralPasteboard::new();
-        CLIPBOARD
-            .put_text(&mut pasteboard, text, false)
-            .map(|_| ())
-            .map_err(PlatformError::Copy)
+        copy_text(text)
     }
 
     fn paste(&mut self, text: &str, restore_clipboard: bool) -> Result<(), PlatformError> {

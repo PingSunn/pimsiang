@@ -221,22 +221,6 @@ pub fn open_folder(path: &PathBuf) -> Result<()> {
     Ok(())
 }
 
-pub fn copy_to_clipboard(text: &str) -> Result<()> {
-    use std::io::Write;
-    let mut child = std::process::Command::new("/usr/bin/pbcopy")
-        .stdin(std::process::Stdio::piped())
-        .spawn()
-        .context("starting pbcopy")?;
-    child
-        .stdin
-        .take()
-        .context("opening pbcopy input")?
-        .write_all(text.as_bytes())
-        .context("writing to pbcopy")?;
-    child.wait().context("waiting for pbcopy")?;
-    Ok(())
-}
-
 fn icon_for(status: Status, warning: bool) -> Result<Icon> {
     let (r, g, b) = if warning {
         (255, 204, 0)

@@ -232,6 +232,9 @@ pub(crate) fn show(
                 egui::Frame::new()
                     .inner_margin(theme::SPACE_5)
                     .show(ui, |ui| {
+                        ui.vertical_centered(|ui| {
+                            theme::mascot::show(ui, theme::Pose::Oops, 120.0);
+                        });
                         theme::banner(ui, colors.warning, |ui| {
                             theme::warning(ui, language.history_unavailable());
                         });
@@ -315,25 +318,12 @@ fn empty(ui: &mut egui::Ui, language: Language, no_query: bool) {
     ui.add_space(theme::SPACE_8 * 1.5);
     ui.vertical_centered(|ui| {
         ui.spacing_mut().item_spacing.y = theme::SPACE_4;
-        let (rect, _) = ui.allocate_exact_size(egui::vec2(72.0, 72.0), egui::Sense::hover());
-        let painter = ui.painter();
-        painter.circle_filled(rect.center(), 36.0, colors.accent_soft);
-        painter.circle_stroke(
-            rect.center(),
-            36.0,
-            egui::Stroke::new(1.0, theme::tint(colors.accent, 0x44)),
-        );
-        let icon = if no_query {
-            Icon::Waveform
+        let pose = if no_query {
+            theme::Pose::Sleeping
         } else {
-            Icon::Search
+            theme::Pose::Searching
         };
-        theme::icons::paint(
-            painter,
-            egui::Rect::from_center_size(rect.center(), egui::Vec2::splat(30.0)),
-            icon,
-            colors.accent_text,
-        );
+        theme::mascot::show(ui, pose, 120.0);
         ui.scope(|ui| {
             ui.set_max_width(320.0);
             ui.label(

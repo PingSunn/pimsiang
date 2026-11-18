@@ -112,9 +112,9 @@ fn hero(ui: &mut egui::Ui, view: &View) {
             ui.set_width(width - 2.0 * theme::SPACE_8);
             ui.vertical_centered(|ui| {
                 ui.spacing_mut().item_spacing.y = theme::SPACE_2;
-                theme::logo(ui, 48.0);
+                theme::mascot::show(ui, theme::Pose::Waving, 112.0);
                 ui.add_space(theme::SPACE_1);
-                ui.label(theme::bold(view.heading, theme::TEXT_TITLE));
+                ui.label(theme::display(view.heading, theme::TEXT_TITLE));
                 ui.label(
                     egui::RichText::new(theme::WORDMARK_THAI)
                         .size(theme::TEXT_SM)
@@ -145,35 +145,59 @@ fn steps(ui: &mut egui::Ui, view: &View, grant: &mut Option<Permission>, retry: 
     if !view.note.is_empty() {
         theme::banner(ui, colors.warning, |ui| theme::warning(ui, view.note));
     }
-    ui.label(theme::medium(&view.progress, theme::TEXT_SM).color(colors.muted_foreground));
-    theme::segments(ui, view.steps_done, view.steps_total);
-    ui.add_space(theme::SPACE_1);
+    let missing = view
+        .rows
+        .iter()
+        .any(|row| row.status != PermissionStatus::Granted);
+    let mascot = if missing { 56.0 } else { 0.0 };
+    theme::with_control(
+        ui,
+        mascot,
+        |ui| {
+            ui.spacing_mut().item_spacing.y = theme::SPACE_3;
+            ui.label(theme::medium(&view.progress, theme::TEXT_SM).color(colors.muted_foreground));
+            theme::segments(ui, view.steps_done, view.steps_total);
+        },
+        |ui| {
+            if missing {
+                theme::mascot::show(ui, theme::Pose::Confused, mascot);
+            }
+        },
+    );
+    ui.add_space(theme::SPACE_2);
     let mut number = 0;
     if let Some(model) = &view.model {
         number += 1;
         theme::card(ui, |ui| {
-            ui.horizontal_top(|ui| {
-                theme::step_marker(ui, number, false);
-                ui.vertical(|ui| {
-                    ui.spacing_mut().item_spacing.y = theme::SPACE_2;
-                    theme::heading(ui, model.title);
-                    theme::description(ui, model.explain);
-                    if let Some(fraction) = model.fraction {
-                        ui.add_space(theme::SPACE_1);
-                        theme::progress(ui, fraction);
-                    }
-                    if model.failed {
-                        theme::destructive(ui, &model.detail);
-                    } else {
-                        theme::description(ui, &model.detail);
-                    }
-                    if let Some(label) = model.retry
-                        && theme::button(ui, Variant::Primary, label).clicked()
-                    {
-                        *retry = true;
-                    }
-                });
-            });
+            theme::with_control(
+                ui,
+                64.0,
+                |ui| {
+                    ui.horizontal_top(|ui| {
+                        theme::step_marker(ui, number, false);
+                        ui.vertical(|ui| {
+                            ui.spacing_mut().item_spacing.y = theme::SPACE_2;
+                            theme::heading(ui, model.title);
+                            theme::description(ui, model.explain);
+                            if let Some(fraction) = model.fraction {
+                                ui.add_space(theme::SPACE_1);
+                                theme::progress(ui, fraction);
+                            }
+                            if model.failed {
+                                theme::destructive(ui, &model.detail);
+                            } else {
+                                theme::description(ui, &model.detail);
+                            }
+                            if let Some(label) = model.retry
+                                && theme::button(ui, Variant::Primary, label).clicked()
+                            {
+                                *retry = true;
+                            }
+                        });
+                    });
+                },
+                |ui| theme::mascot::show(ui, theme::Pose::Writing, 56.0),
+            );
         });
     } else {
         number += 1;

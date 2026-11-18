@@ -69,3 +69,5 @@ PimSiang is MIT licensed (see `LICENSE`). Bundled and downloaded components keep
 ## Development
 
 `scripts/check.sh` runs format, build, clippy and tests. `scripts/make-signing-cert.sh` creates the local signing certificate once. `scripts/release.sh X.Y.Z --dry-run` builds, signs and zips a release into `target/release-dist/` without publishing.
+
+`scripts/e2e/run.sh --yes` drives the running app with synthetic keys and Thai text-to-speech to check the whole flow; it takes over the keyboard and speakers (see `docs/adr/0041-e2e-harness-synthetic-events-and-tts.md`).

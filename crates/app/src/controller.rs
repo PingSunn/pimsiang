@@ -294,6 +294,11 @@ impl<P: Platform, E: Engine + Send + 'static, M: Microphone> Controller<P, E, M>
             Input::Tick(now) => self.now = self.now.max(*now),
             _ => {}
         }
+        if let Input::Trigger(event) = &input
+            && event.state == TriggerState::Escape
+        {
+            tracing::info!(state = ?self.state, "the controller received Esc");
+        }
         match input {
             Input::Trigger(event) => match event.state {
                 TriggerState::Pressed => self.on_pressed(event.at, event.shift),

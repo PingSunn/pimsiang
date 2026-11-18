@@ -1361,3 +1361,74 @@ fn escape_queued_behind_audio_cancels_without_decoding_it_first() {
     assert!(is_hidden(&c));
     assert!(c.platform().pastes().is_empty());
 }
+
+struct SlowEngine {
+    inner: FakeEngine,
+    delay: Duration,
+}
+
+impl Engine for SlowEngine {
+    fn load(&mut self) -> Result<(), engine::EngineError> {
+        self.inner.load()
+    }
+    fn unload(&mut self) {
+        self.inner.unload();
+    }
+    fn is_loaded(&self) -> bool {
+        self.inner.is_loaded()
+    }
+    fn start_utterance(&mut self, options: UtteranceOptions) -> Result<(), engine::EngineError> {
+        self.inner.start_utterance(options)
+    }
+    fn push_audio(&mut self, samples: &[f32]) -> Result<Option<String>, engine::EngineError> {
+        std::thread::sleep(self.delay);
+        self.inner.push_audio(samples)
+    }
+    fn finish_utterance(&mut self) -> Result<String, engine::EngineError> {
+        self.inner.finish_utterance()
+    }
+    fn cancel_utterance(&mut self) {
+        self.inner.cancel_utterance();
+    }
+}
+
+#[test]
+fn escape_arriving_during_a_slow_decode_still_cancels_hands_free() {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let mut inner = FakeEngine::new(["a", "ab", "abc"], "ไม่ควรถูกวาง");
+    inner.load().unwrap();
+    let engine = SlowEngine {
+        inner,
+        delay: ms(300),
+    };
+    let c = Controller::new(FakePlatform::new(), engine, FakeMicrophone::new(), config());
+    let t0 = Instant::now();
+
+    tx.send(Input::Trigger(TriggerEvent::pressed(t0))).unwrap();
+    tx.send(Input::Trigger(TriggerEvent::released(t0 + ms(80))))
+        .unwrap();
+    tx.send(Input::Trigger(TriggerEvent::pressed(t0 + ms(200))))
+        .unwrap();
+    tx.send(Input::Trigger(TriggerEvent::released(t0 + ms(280))))
+        .unwrap();
+    tx.send(Input::Audio(vec![0.0; 1_600])).unwrap();
+    let sender = std::thread::spawn(move || {
+        std::thread::sleep(ms(100));
+        tx.send(Input::Trigger(TriggerEvent::escape(Instant::now())))
+            .unwrap();
+        tx.send(Input::Audio(vec![0.0; 1_600])).unwrap();
+        std::thread::sleep(ms(50));
+        tx.send(Input::Trigger(TriggerEvent::pressed(Instant::now())))
+            .unwrap();
+        tx.send(Input::Trigger(TriggerEvent::released(Instant::now())))
+            .unwrap();
+    });
+    let c = c.run(rx);
+    sender.join().unwrap();
+
+    assert_eq!(c.engine().inner.cancel_count(), 1);
+    assert!(!c.microphone().is_capturing());
+    assert_eq!(c.platform().pills().last(), Some(&PillState::Hidden));
+    assert!(c.platform().pastes().is_empty());
+    assert_eq!(c.microphone().start_count(), 1);
+}

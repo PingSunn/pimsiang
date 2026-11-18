@@ -32,7 +32,7 @@ static CLIPBOARD: LazyLock<clipboard::Clipboard<Vec<clipboard::Item>>> =
     LazyLock::new(clipboard::Clipboard::new);
 
 const RESTORE_DELAY: Duration = Duration::from_millis(400);
-const TAP_POLL: Duration = Duration::from_millis(500);
+const TAP_POLL: Duration = Duration::from_millis(20);
 
 pub type StatusSink = Box<dyn Fn(Status) + Send>;
 pub type PillSink = Box<dyn Fn(PillState) + Send>;
@@ -261,6 +261,7 @@ fn run_event_tap(
         move |_proxy, event_type, event| {
             match event_type {
                 CGEventType::TapDisabledByTimeout | CGEventType::TapDisabledByUserInput => {
+                    tracing::info!(?event_type, "macOS disabled the event tap");
                     callback_disabled.store(true, Ordering::SeqCst);
                 }
                 CGEventType::FlagsChanged => {
@@ -287,6 +288,7 @@ fn run_event_tap(
                     let keycode = event.get_integer_value_field(EventField::KEYBOARD_EVENT_KEYCODE);
                     let at = Instant::now();
                     if keycode == i64::from(KeyCode::ESCAPE) {
+                        tracing::info!("the event tap saw Esc");
                         emit(&callback_sink, TriggerEvent::escape(at));
                     } else if callback_down.load(Ordering::SeqCst) {
                         emit(&callback_sink, TriggerEvent::combined(at));
@@ -310,6 +312,7 @@ fn run_event_tap(
         )));
         return;
     };
+    raise_thread_priority();
     CFRunLoop::get_current().add_source(&source, common_modes());
     tap.enable();
     let _ = ready.send(Ok(()));
@@ -326,6 +329,7 @@ fn run_event_tap(
         }
         if disabled.swap(false, Ordering::SeqCst) {
             tap.enable();
+            tracing::info!("re-enabled the event tap");
             if down.swap(false, Ordering::SeqCst) {
                 emit(&sink, TriggerEvent::released(Instant::now()));
             }
@@ -333,6 +337,16 @@ fn run_event_tap(
     }
     if down.swap(false, Ordering::SeqCst) {
         emit(&sink, TriggerEvent::released(Instant::now()));
+    }
+}
+
+#[allow(unsafe_code)]
+fn raise_thread_priority() {
+    let status = unsafe {
+        libc::pthread_set_qos_class_self_np(libc::qos_class_t::QOS_CLASS_USER_INTERACTIVE, 0)
+    };
+    if status != 0 {
+        tracing::warn!(status, "cannot raise the event tap thread priority");
     }
 }
 

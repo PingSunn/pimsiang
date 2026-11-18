@@ -21,4 +21,5 @@ objc2-av-foundation = { version = "0.3", default-features = false, features = ["
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSAttributedString", "NSData", "NSDictionary", "NSRange", "NSValue", "NSEnumerator", "NSError", "NSGeometry", "NSLocale", "NSString", "NSURL"] }
 objc2-service-management = "0.3"
 platform.workspace = true
+libc = "0.2"
 tracing = "0.1.44"

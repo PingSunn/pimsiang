@@ -53,7 +53,11 @@ impl EditCommand {
             Self::Cut => vec![Event::Cut],
             Self::Copy => vec![Event::Copy],
             Self::Paste => clipboard
-                .map(|text| text.replace("\r\n", "\n"))
+                .map(|text| {
+                    text.replace("\r\n", " ")
+                        .replace('\r', " ")
+                        .replace('\n', " ")
+                })
                 .filter(|text| !text.is_empty())
                 .map(Event::Paste)
                 .into_iter()
@@ -122,8 +126,8 @@ mod tests {
     #[test]
     fn paste_carries_the_clipboard_text_including_thai() {
         assert_eq!(
-            EditCommand::Paste.events(Some("สวัสดี\r\nครับ")),
-            vec![Event::Paste("สวัสดี\nครับ".to_owned())]
+            EditCommand::Paste.events(Some("สวัสดี\r\nครับ\rผม\nชื่อ")),
+            vec![Event::Paste("สวัสดี ครับ ผม ชื่อ".to_owned())]
         );
     }
 

@@ -23,7 +23,7 @@ mod ui_tests;
 mod macos {
     use std::path::PathBuf;
     use std::sync::mpsc::Sender;
-    use std::sync::{Arc, Mutex, mpsc};
+    use std::sync::{Arc, mpsc};
     use std::time::{Duration, Instant};
 
     use anyhow::{Context, Result};
@@ -846,11 +846,9 @@ mod macos {
             .build()
             .context("creating the event loop")?;
         let proxy = event_loop.create_proxy();
-        let reopen_proxy = Mutex::new(proxy.clone());
+        let reopen_proxy = proxy.clone();
         dock::on_reopen(move || {
-            if let Ok(proxy) = reopen_proxy.lock() {
-                let _ = proxy.send_event(UserEvent::DockReopen);
-            }
+            let _ = reopen_proxy.send_event(UserEvent::DockReopen);
         });
         let menu_proxy = proxy.clone();
         MenuEvent::set_event_handler(Some(move |event| {

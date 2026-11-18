@@ -252,6 +252,13 @@ impl Language {
         )
     }
 
+    pub fn settings_unload_when_idle(self) -> &'static str {
+        self.pick(
+            "Free the Model's memory after 10 idle minutes",
+            "คืนหน่วยความจำของโมเดลเมื่อไม่ได้ใช้งาน 10 นาที",
+        )
+    }
+
     pub fn settings_launch_at_login(self) -> &'static str {
         self.pick("Open PimSiang at login", "เปิด PimSiang เมื่อเข้าสู่ระบบ")
     }

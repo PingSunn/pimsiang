@@ -192,6 +192,10 @@ fn show(
             &mut preferences.clipboard_restore,
             RichText::new(language.settings_clipboard_restore()).size(14.0),
         );
+        ui.checkbox(
+            &mut preferences.unload_when_idle,
+            RichText::new(language.settings_unload_when_idle()).size(14.0),
+        );
         ui.add_enabled(
             bundled,
             egui::Checkbox::new(

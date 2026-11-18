@@ -9,6 +9,7 @@ pub struct Preferences {
     pub sounds: bool,
     pub clipboard_restore: bool,
     pub launch_at_login: bool,
+    pub unload_when_idle: bool,
 }
 
 impl Default for Preferences {
@@ -33,6 +34,7 @@ impl Preferences {
             sounds: settings.sounds(),
             clipboard_restore: settings.clipboard_restore(),
             launch_at_login: settings.launch_at_login(),
+            unload_when_idle: settings.unload_when_idle(),
         }
     }
 
@@ -48,5 +50,6 @@ impl Preferences {
         settings.sounds = Some(self.sounds);
         settings.clipboard_restore = Some(self.clipboard_restore);
         settings.launch_at_login = Some(self.launch_at_login);
+        settings.unload_when_idle = Some(self.unload_when_idle);
     }
 }

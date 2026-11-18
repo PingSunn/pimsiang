@@ -12,6 +12,7 @@ fn an_empty_settings_file_gives_the_defaults() {
     assert!(preferences.sounds);
     assert!(preferences.clipboard_restore);
     assert!(preferences.launch_at_login);
+    assert!(preferences.unload_when_idle);
 }
 
 #[test]
@@ -22,6 +23,7 @@ fn stored_values_round_trip_through_the_settings() {
         sounds: false,
         clipboard_restore: false,
         launch_at_login: false,
+        unload_when_idle: false,
     };
     let mut settings = Settings::default();
 

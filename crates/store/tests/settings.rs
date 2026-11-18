@@ -280,3 +280,14 @@ fn saving_the_launch_at_login_choice_does_not_mark_the_login_item_decided() {
     assert!(loaded.login_item_decided());
     assert_eq!(loaded.launch_at_login, Some(true));
 }
+
+#[test]
+fn unload_when_idle_defaults_to_on_and_round_trips() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("settings");
+    assert!(Settings::load(&path).unload_when_idle());
+
+    Settings::update(&path, |settings| settings.unload_when_idle = Some(false)).unwrap();
+
+    assert!(!Settings::load(&path).unload_when_idle());
+}

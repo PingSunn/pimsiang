@@ -3,5 +3,6 @@ pub mod history_view;
 pub mod i18n;
 pub mod model_download;
 pub mod onboarding;
+pub mod preferences;
 pub mod single_instance;
 pub mod update;

@@ -1,3 +1,4 @@
+pub mod clipboard;
 pub mod fake;
 
 use std::time::Instant;
@@ -8,6 +9,42 @@ pub enum TriggerState {
     Released,
     Combined,
     Escape,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum TriggerKey {
+    #[default]
+    RightOption,
+    RightCommand,
+    RightControl,
+}
+
+impl TriggerKey {
+    pub const ALL: [TriggerKey; 3] = [
+        TriggerKey::RightOption,
+        TriggerKey::RightCommand,
+        TriggerKey::RightControl,
+    ];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::RightOption => "right-option",
+            Self::RightCommand => "right-command",
+            Self::RightControl => "right-control",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|key| key.name() == name)
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::RightOption => "Right Option",
+            Self::RightCommand => "Right Command",
+            Self::RightControl => "Right Control",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -210,7 +247,8 @@ pub trait Platform {
     fn show_status(&mut self, status: Status);
     fn show_pill(&mut self, state: PillState);
     fn play_sound(&mut self, sound: Sound);
-    fn paste(&mut self, text: &str) -> Result<(), PlatformError>;
+    fn set_trigger_key(&mut self, key: TriggerKey);
+    fn paste(&mut self, text: &str, restore_clipboard: bool) -> Result<(), PlatformError>;
     fn permission_status(&self, permission: Permission) -> PermissionStatus;
     fn request_permission(&mut self, permission: Permission);
     fn open_settings(&mut self, permission: Permission);

@@ -1,11 +1,13 @@
 #![cfg(target_os = "macos")]
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
+pub mod login_item;
+mod pasteboard;
 mod permissions;
 mod pill;
 mod sound;
@@ -22,10 +24,10 @@ use core_graphics::event::{
 use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
 use platform::{
     MicrophoneMenu, Permission, PermissionReport, PermissionStatus, PillState, Platform,
-    PlatformError, Sound, Status, TriggerEvent, TriggerSink,
+    PlatformError, Sound, Status, TriggerEvent, TriggerKey, TriggerSink, clipboard,
 };
 
-const RIGHT_OPTION_DEVICE_MASK: u64 = 0x40;
+const RESTORE_DELAY: Duration = Duration::from_millis(400);
 const TAP_POLL: Duration = Duration::from_millis(500);
 
 pub type StatusSink = Box<dyn Fn(Status) + Send>;
@@ -41,6 +43,7 @@ pub struct MacPlatform {
     sound: SoundSink,
     microphones: MicrophoneSink,
     tap_stop: Option<Arc<AtomicBool>>,
+    trigger_key: Arc<AtomicU8>,
 }
 
 impl MacPlatform {
@@ -58,6 +61,7 @@ impl MacPlatform {
             sound,
             microphones,
             tap_stop: None,
+            trigger_key: Arc::new(AtomicU8::new(key_index(TriggerKey::default()))),
         }
     }
 }
@@ -68,9 +72,10 @@ impl Platform for MacPlatform {
         let (ready_tx, ready_rx) = mpsc::channel();
         let stop = Arc::new(AtomicBool::new(false));
         let tap_stop = stop.clone();
+        let key = self.trigger_key.clone();
         thread::Builder::new()
             .name("trigger-key".to_owned())
-            .spawn(move || run_event_tap(sink, ready_tx, tap_stop))
+            .spawn(move || run_event_tap(sink, ready_tx, tap_stop, key))
             .map_err(|error| PlatformError::TriggerKey(error.to_string()))?;
         ready_rx
             .recv()
@@ -117,14 +122,66 @@ impl Platform for MacPlatform {
         (self.microphones)(menu);
     }
 
-    fn paste(&mut self, text: &str) -> Result<(), PlatformError> {
-        let paste_error = |error: String| PlatformError::Paste(error);
-        let mut clipboard =
-            arboard::Clipboard::new().map_err(|error| paste_error(error.to_string()))?;
-        clipboard
-            .set_text(text)
-            .map_err(|error| paste_error(error.to_string()))?;
-        send_command_v().map_err(paste_error)
+    fn set_trigger_key(&mut self, key: TriggerKey) {
+        self.trigger_key.store(key_index(key), Ordering::SeqCst);
+    }
+
+    fn paste(&mut self, text: &str, restore_clipboard: bool) -> Result<(), PlatformError> {
+        let mut pasteboard = pasteboard::GeneralPasteboard::new();
+        let pending = clipboard::put_text(&mut pasteboard, text, restore_clipboard)
+            .map_err(PlatformError::Paste)?;
+        send_command_v().map_err(PlatformError::Paste)?;
+        if let Some(pending) = pending {
+            let spawned = thread::Builder::new()
+                .name("clipboard-restore".to_owned())
+                .spawn(move || {
+                    thread::sleep(RESTORE_DELAY);
+                    let mut pasteboard = pasteboard::GeneralPasteboard::new();
+                    match pending.restore(&mut pasteboard) {
+                        clipboard::Restore::Restored => {}
+                        clipboard::Restore::ClipboardChanged => {
+                            tracing::info!("the clipboard changed after the paste; not restoring");
+                        }
+                        clipboard::Restore::Failed(error) => {
+                            tracing::warn!(%error, "cannot restore the clipboard");
+                        }
+                    }
+                });
+            if let Err(error) = spawned {
+                tracing::warn!(%error, "cannot schedule the clipboard restore");
+            }
+        }
+        Ok(())
+    }
+}
+
+fn key_index(key: TriggerKey) -> u8 {
+    TriggerKey::ALL
+        .iter()
+        .position(|candidate| *candidate == key)
+        .map_or(0, |index| index as u8)
+}
+
+fn key_from_index(index: u8) -> TriggerKey {
+    TriggerKey::ALL
+        .get(usize::from(index))
+        .copied()
+        .unwrap_or_default()
+}
+
+fn key_code(key: TriggerKey) -> i64 {
+    match key {
+        TriggerKey::RightOption => i64::from(KeyCode::RIGHT_OPTION),
+        TriggerKey::RightCommand => i64::from(KeyCode::RIGHT_COMMAND),
+        TriggerKey::RightControl => i64::from(KeyCode::RIGHT_CONTROL),
+    }
+}
+
+fn device_mask(key: TriggerKey) -> u64 {
+    match key {
+        TriggerKey::RightOption => 0x40,
+        TriggerKey::RightCommand => 0x10,
+        TriggerKey::RightControl => 0x2000,
     }
 }
 
@@ -150,6 +207,7 @@ fn run_event_tap(
     sink: TriggerSink,
     ready: mpsc::Sender<Result<(), PlatformError>>,
     stop: Arc<AtomicBool>,
+    key: Arc<AtomicU8>,
 ) {
     let sink = Arc::new(Mutex::new(sink));
     let disabled = Arc::new(AtomicBool::new(false));
@@ -157,6 +215,7 @@ fn run_event_tap(
     let callback_sink = sink.clone();
     let callback_disabled = disabled.clone();
     let callback_down = down.clone();
+    let callback_key = key.clone();
 
     let tap = CGEventTap::new(
         CGEventTapLocation::Session,
@@ -170,8 +229,9 @@ fn run_event_tap(
                 }
                 CGEventType::FlagsChanged => {
                     let keycode = event.get_integer_value_field(EventField::KEYBOARD_EVENT_KEYCODE);
-                    if keycode == i64::from(KeyCode::RIGHT_OPTION) {
-                        let pressed = event.get_flags().bits() & RIGHT_OPTION_DEVICE_MASK != 0;
+                    let trigger = key_from_index(callback_key.load(Ordering::SeqCst));
+                    if keycode == key_code(trigger) {
+                        let pressed = event.get_flags().bits() & device_mask(trigger) != 0;
                         if callback_down.swap(pressed, Ordering::SeqCst) != pressed {
                             let at = Instant::now();
                             emit(
@@ -216,8 +276,16 @@ fn run_event_tap(
     tap.enable();
     let _ = ready.send(Ok(()));
 
+    let mut watched = key.load(Ordering::SeqCst);
     while !stop.load(Ordering::SeqCst) {
         CFRunLoop::run_in_mode(default_mode(), TAP_POLL, false);
+        let current = key.load(Ordering::SeqCst);
+        if current != watched {
+            watched = current;
+            if down.swap(false, Ordering::SeqCst) {
+                emit(&sink, TriggerEvent::released(Instant::now()));
+            }
+        }
         if disabled.swap(false, Ordering::SeqCst) {
             tap.enable();
             if down.swap(false, Ordering::SeqCst) {

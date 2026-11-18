@@ -12,13 +12,13 @@ unsafe_code = "deny"
 all = { level = "warn", priority = -1 }
 
 [dependencies]
-arboard = "3.7.0"
 block2 = "0.6"
 core-foundation = "0.10"
 core-graphics = "0.25.0"
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSBox", "NSColor", "NSControl", "NSEvent", "NSFont", "NSGraphics", "NSPanel", "NSParagraphStyle", "NSResponder", "NSScreen", "NSSound", "NSText", "NSTextField", "NSView", "NSWindow", "objc2-core-foundation"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSBox", "NSColor", "NSControl", "NSEvent", "NSFont", "NSGraphics", "NSPanel", "NSPasteboard", "NSPasteboardItem", "NSParagraphStyle", "NSResponder", "NSScreen", "NSSound", "NSText", "NSTextField", "NSView", "NSWindow", "objc2-core-foundation"] }
 objc2-av-foundation = { version = "0.3", default-features = false, features = ["std", "AVCaptureDevice", "AVMediaFormat", "block2"] }
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSGeometry", "NSLocale", "NSString"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSData", "NSEnumerator", "NSError", "NSGeometry", "NSLocale", "NSString"] }
+objc2-service-management = "0.3"
 platform.workspace = true
 tracing = "0.1.44"

@@ -7,7 +7,7 @@ use audio::fake::FakeMicrophone;
 use engine::fake::FakeEngine;
 use engine::{Engine, LanguageMode};
 use platform::fake::FakePlatform;
-use platform::{PillNotice, PillState, TriggerEvent};
+use platform::{PillNotice, PillState, TriggerEvent, TriggerKey};
 use store::{History, HistoryService, Kind};
 
 const HOLD: Duration = Duration::from_millis(200);
@@ -21,6 +21,8 @@ fn config() -> Config {
         notice_linger: Duration::from_millis(1500),
         double_tap_window: Duration::from_millis(300),
         sounds: true,
+        clipboard_restore: true,
+        trigger_key: TriggerKey::RightOption,
     }
 }
 

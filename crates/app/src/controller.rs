@@ -6,9 +6,12 @@ use audio::{Microphone, MicrophoneChoice, Opened};
 use engine::{Engine, LanguageMode, UtteranceOptions};
 use platform::{
     MicrophoneEntry, MicrophoneMenu, Permission, PermissionReport, PermissionStatus, PillError,
-    PillNotice, PillState, Platform, Sound, Status, TriggerEvent, TriggerSink, TriggerState,
+    PillNotice, PillState, Platform, Sound, Status, TriggerEvent, TriggerKey, TriggerSink,
+    TriggerState,
 };
 use store::Kind;
+
+use crate::preferences::Preferences;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Config {
@@ -19,6 +22,8 @@ pub struct Config {
     pub notice_linger: Duration,
     pub double_tap_window: Duration,
     pub sounds: bool,
+    pub clipboard_restore: bool,
+    pub trigger_key: TriggerKey,
 }
 
 impl Default for Config {
@@ -31,6 +36,8 @@ impl Default for Config {
             notice_linger: Duration::from_millis(1500),
             double_tap_window: Duration::from_millis(400),
             sounds: true,
+            clipboard_restore: true,
+            trigger_key: TriggerKey::default(),
         }
     }
 }
@@ -51,6 +58,7 @@ pub enum Input {
     ModelReady,
     PasteText(String),
     NoTranscript,
+    Preferences(Preferences),
 }
 
 type HistorySink = Box<dyn FnMut(&str, Kind) + Send>;
@@ -243,8 +251,19 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
             }
             Input::PasteText(text) => self.paste_again(&text),
             Input::NoTranscript => self.show_notice(PillNotice::NoTranscriptYet),
+            Input::Preferences(preferences) => self.apply_preferences(preferences),
         }
         Vec::new()
+    }
+
+    fn apply_preferences(&mut self, preferences: Preferences) {
+        self.config.language = preferences.language;
+        self.config.sounds = preferences.sounds;
+        self.config.clipboard_restore = preferences.clipboard_restore;
+        if preferences.trigger_key != self.config.trigger_key {
+            self.config.trigger_key = preferences.trigger_key;
+            self.platform.set_trigger_key(preferences.trigger_key);
+        }
     }
 
     fn on_pressed(&mut self, at: Instant) {
@@ -596,7 +615,7 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
             tracing::info!("Utterance produced no text");
             return Ok(());
         }
-        match self.platform.paste(text) {
+        match self.platform.paste(text, self.config.clipboard_restore) {
             Ok(()) => {
                 tracing::info!(chars = text.chars().count(), "pasted Final text");
                 self.record(text, Kind::Pasted);
@@ -628,7 +647,7 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
         if !matches!(self.state, State::Idle) || text.is_empty() {
             return;
         }
-        if let Err(error) = self.platform.paste(text) {
+        if let Err(error) = self.platform.paste(text, self.config.clipboard_restore) {
             tracing::error!(%error, "cannot paste the last transcript");
             self.fail(PillError::PasteFailed);
         }

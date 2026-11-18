@@ -1,6 +1,6 @@
 use crate::{
     MicrophoneMenu, Permission, PermissionReport, PermissionStatus, PillState, Platform,
-    PlatformError, Sound, Status, TriggerEvent, TriggerSink,
+    PlatformError, Sound, Status, TriggerEvent, TriggerKey, TriggerSink,
 };
 
 pub struct FakePlatform {
@@ -8,6 +8,9 @@ pub struct FakePlatform {
     statuses: Vec<Status>,
     pills: Vec<PillState>,
     pastes: Vec<String>,
+    paste_restores: Vec<bool>,
+    trigger_key: TriggerKey,
+    trigger_key_changes: usize,
     sounds: Vec<Sound>,
     paste_fails: bool,
     permissions: PermissionReport,
@@ -26,6 +29,9 @@ impl Default for FakePlatform {
             statuses: Vec::new(),
             pills: Vec::new(),
             pastes: Vec::new(),
+            paste_restores: Vec::new(),
+            trigger_key: TriggerKey::default(),
+            trigger_key_changes: 0,
             sounds: Vec::new(),
             paste_fails: false,
             permissions: PermissionReport {
@@ -117,6 +123,18 @@ impl FakePlatform {
         &self.pastes
     }
 
+    pub fn paste_restores(&self) -> &[bool] {
+        &self.paste_restores
+    }
+
+    pub fn trigger_key(&self) -> TriggerKey {
+        self.trigger_key
+    }
+
+    pub fn trigger_key_changes(&self) -> usize {
+        self.trigger_key_changes
+    }
+
     pub fn sounds(&self) -> &[Sound] {
         &self.sounds
     }
@@ -148,11 +166,17 @@ impl Platform for FakePlatform {
         self.sounds.push(sound);
     }
 
-    fn paste(&mut self, text: &str) -> Result<(), PlatformError> {
+    fn set_trigger_key(&mut self, key: TriggerKey) {
+        self.trigger_key = key;
+        self.trigger_key_changes += 1;
+    }
+
+    fn paste(&mut self, text: &str, restore_clipboard: bool) -> Result<(), PlatformError> {
         if self.paste_fails {
             return Err(PlatformError::Paste("scripted failure".to_owned()));
         }
         self.pastes.push(text.to_owned());
+        self.paste_restores.push(restore_clipboard);
         Ok(())
     }
 

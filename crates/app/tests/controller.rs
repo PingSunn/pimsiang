@@ -1,11 +1,12 @@
 use std::time::{Duration, Instant};
 
 use app::controller::{Config, Controller, Input};
+use app::preferences::Preferences;
 use audio::fake::FakeMicrophone;
 use engine::fake::FakeEngine;
 use engine::{Engine, LanguageMode, UtteranceOptions};
 use platform::fake::FakePlatform;
-use platform::{PillError, PillState, Sound, Status, TriggerEvent};
+use platform::{PillError, PillState, Sound, Status, TriggerEvent, TriggerKey};
 
 const HOLD: Duration = Duration::from_millis(200);
 const TAP_WINDOW: Duration = Duration::from_millis(300);
@@ -21,6 +22,8 @@ fn config() -> Config {
         notice_linger: Duration::from_millis(1500),
         double_tap_window: TAP_WINDOW,
         sounds: true,
+        clipboard_restore: true,
+        trigger_key: TriggerKey::RightOption,
     }
 }
 
@@ -994,4 +997,171 @@ fn dictation_is_unavailable_until_the_model_is_ready() {
     let t1 = t0 + Duration::from_secs(10);
     hold(&mut c, t1);
     assert!(c.microphone().is_capturing());
+}
+
+fn preferences() -> Preferences {
+    Preferences::default()
+}
+
+#[test]
+fn a_dictation_asks_the_platform_to_restore_the_clipboard_by_default() {
+    let mut c = controller("x");
+    let t0 = Instant::now();
+
+    hold(&mut c, t0);
+    release(&mut c, t0 + Duration::from_secs(1));
+
+    assert_eq!(c.platform().pastes(), ["x"]);
+    assert_eq!(c.platform().paste_restores(), [true]);
+}
+
+#[test]
+fn clipboard_restoring_can_be_switched_off() {
+    let mut c = controller("x");
+    c.handle(Input::Preferences(Preferences {
+        clipboard_restore: false,
+        ..preferences()
+    }));
+    let t0 = Instant::now();
+
+    hold(&mut c, t0);
+    release(&mut c, t0 + Duration::from_secs(1));
+
+    assert_eq!(c.platform().paste_restores(), [false]);
+}
+
+#[test]
+fn clipboard_restoring_can_be_switched_back_on() {
+    let mut c = controller("x");
+    for restore in [false, true] {
+        c.handle(Input::Preferences(Preferences {
+            clipboard_restore: restore,
+            ..preferences()
+        }));
+    }
+    let t0 = Instant::now();
+
+    hold(&mut c, t0);
+    release(&mut c, t0 + Duration::from_secs(1));
+
+    assert_eq!(c.platform().paste_restores(), [true]);
+}
+
+#[test]
+fn paste_last_transcript_follows_the_clipboard_restore_switch() {
+    let mut c = controller("x");
+    c.handle(Input::Preferences(Preferences {
+        clipboard_restore: false,
+        ..preferences()
+    }));
+
+    c.handle(Input::PasteText("ข้อความล่าสุด".to_owned()));
+
+    assert_eq!(c.platform().pastes(), ["ข้อความล่าสุด"]);
+    assert_eq!(c.platform().paste_restores(), [false]);
+}
+
+#[test]
+fn sounds_switched_off_in_the_settings_are_silent() {
+    let mut c = controller("x");
+    c.handle(Input::Preferences(Preferences {
+        sounds: false,
+        ..preferences()
+    }));
+    let t0 = Instant::now();
+
+    hold(&mut c, t0);
+    release(&mut c, t0 + Duration::from_secs(1));
+
+    assert_eq!(c.platform().pastes(), ["x"]);
+    assert!(c.platform().sounds().is_empty());
+}
+
+#[test]
+fn sounds_switched_back_on_play_again() {
+    let mut c = controller("x");
+    for sounds in [false, true] {
+        c.handle(Input::Preferences(Preferences {
+            sounds,
+            ..preferences()
+        }));
+    }
+    let t0 = Instant::now();
+
+    hold(&mut c, t0);
+    release(&mut c, t0 + Duration::from_secs(1));
+
+    assert_eq!(c.platform().sounds(), [Sound::Start, Sound::Stop]);
+}
+
+#[test]
+fn a_language_mode_change_applies_to_the_next_utterance_only() {
+    let mut c = controller("x");
+    let t0 = Instant::now();
+    hold(&mut c, t0);
+
+    c.handle(Input::Preferences(Preferences {
+        language: LanguageMode::ThTh,
+        ..preferences()
+    }));
+
+    assert_eq!(
+        c.engine().last_options(),
+        Some(UtteranceOptions {
+            language: LanguageMode::ThMix
+        })
+    );
+    release(&mut c, t0 + Duration::from_secs(1));
+    hold(&mut c, t0 + Duration::from_secs(5));
+    assert_eq!(
+        c.engine().last_options(),
+        Some(UtteranceOptions {
+            language: LanguageMode::ThTh
+        })
+    );
+}
+
+#[test]
+fn a_trigger_key_change_reaches_the_platform_without_a_restart() {
+    let mut c = controller("x");
+    assert_eq!(c.platform().trigger_key(), TriggerKey::RightOption);
+
+    c.handle(Input::Preferences(Preferences {
+        trigger_key: TriggerKey::RightCommand,
+        ..preferences()
+    }));
+
+    assert_eq!(c.platform().trigger_key(), TriggerKey::RightCommand);
+}
+
+#[test]
+fn the_new_trigger_key_starts_an_utterance_straight_away() {
+    let mut c = controller("สวัสดี");
+    c.handle(Input::Preferences(Preferences {
+        trigger_key: TriggerKey::RightControl,
+        ..preferences()
+    }));
+    let t0 = Instant::now();
+
+    hold(&mut c, t0);
+    release(&mut c, t0 + Duration::from_secs(1));
+
+    assert_eq!(c.platform().pastes(), ["สวัสดี"]);
+}
+
+#[test]
+fn saving_the_other_preferences_does_not_touch_the_trigger_key_watcher() {
+    let mut c = controller("x");
+    c.handle(Input::Preferences(Preferences {
+        trigger_key: TriggerKey::RightCommand,
+        ..preferences()
+    }));
+    c.handle(Input::Preferences(Preferences {
+        trigger_key: TriggerKey::RightCommand,
+        sounds: false,
+        ..preferences()
+    }));
+
+    assert_eq!(c.platform().trigger_key(), TriggerKey::RightCommand);
+    assert_eq!(c.platform().trigger_key_changes(), 1);
 }

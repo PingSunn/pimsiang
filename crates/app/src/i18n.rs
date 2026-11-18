@@ -4,6 +4,12 @@ use platform::{
 };
 use store::Kind;
 
+macro_rules! th {
+    ($first:literal $(| $rest:literal)*) => {
+        concat!($first $(, "\u{200a}", $rest)*)
+    };
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Language {
     English,
@@ -36,14 +42,14 @@ impl Language {
     pub fn intro(self) -> &'static str {
         self.pick(
             "PimSiang needs three permissions to type what you say. This window closes by itself once they are granted.",
-            "PimSiang ต้องการสิทธิ์สามอย่างเพื่อพิมพ์สิ่งที่คุณพูด เมื่ออนุญาตครบแล้วหน้าต่างนี้จะปิดเอง",
+            th!("PimSiang ต้องการ" | "สิทธิ์" | "สามอย่าง" | "เพื่อ" | "พิมพ์" | "สิ่งที่" | "คุณ" | "พูด เมื่อ" | "อนุญาต" | "ครบแล้ว" | "หน้าต่าง" | "นี้" | "จะ" | "ปิดเอง"),
         )
     }
 
     pub fn terminal_note(self) -> &'static str {
         self.pick(
             "PimSiang is running from a terminal, so these permissions belong to the terminal app that started it. Grant them to that app.",
-            "PimSiang กำลังทำงานผ่านเทอร์มินัล สิทธิ์เหล่านี้จึงเป็นของแอปเทอร์มินัลที่เปิดมัน ให้อนุญาตกับแอปนั้น",
+            th!("PimSiang กำลัง" | "ทำงาน" | "ผ่าน" | "เทอร์มินัล สิทธิ์" | "เหล่านี้" | "จึง" | "เป็นของ" | "แอป" | "เทอร์มินัล" | "ที่" | "เปิด" | "มัน ให้" | "อนุญาต" | "กับ" | "แอป" | "นั้น"),
         )
     }
 
@@ -51,7 +57,15 @@ impl Language {
         let key = key.label();
         match self {
             Self::English => format!("All set. Hold {key} and speak."),
-            Self::Thai => format!("พร้อมใช้งานแล้ว กด {key} ค้างไว้แล้วพูดได้เลย"),
+            Self::Thai => format!(
+                th!("พร้อม"
+                    | "ใช้งาน"
+                    | "แล้ว กด {key} ค้างไว้"
+                    | "แล้ว"
+                    | "พูด"
+                    | "ได้เลย"),
+                key = key
+            ),
         }
     }
 
@@ -115,19 +129,59 @@ impl Language {
                 format!("Hears you while you hold {key}. Audio never leaves this Mac.")
             }
             (Permission::Microphone, Self::Thai) => {
-                format!("ใช้ฟังเสียงของคุณขณะกด {key} ค้างไว้ เสียงจะไม่ถูกส่งออกจากเครื่องนี้")
+                format!(
+                    th!("ใช้"
+                        | "ฟัง"
+                        | "เสียง"
+                        | "ของ"
+                        | "คุณ"
+                        | "ขณะ"
+                        | "กด {key} ค้างไว้ เสียง"
+                        | "จะ"
+                        | "ไม่"
+                        | "ถูก"
+                        | "ส่งออก"
+                        | "จาก"
+                        | "เครื่อง"
+                        | "นี้"),
+                    key = key
+                )
             }
             (Permission::Accessibility, _) => self
                 .pick(
                     "Pastes the transcribed text into the app you are typing in.",
-                    "ใช้วางข้อความที่ถอดเสียงได้ลงในแอปที่คุณกำลังพิมพ์",
+                    th!("ใช้"
+                        | "วาง"
+                        | "ข้อความ"
+                        | "ที่"
+                        | "ถอดเสียง"
+                        | "ได้"
+                        | "ลง"
+                        | "ใน"
+                        | "แอป"
+                        | "ที่"
+                        | "คุณ"
+                        | "กำลัง"
+                        | "พิมพ์"),
                 )
                 .to_owned(),
             (Permission::InputMonitoring, Self::English) => {
                 format!("Notices when you hold {key} so PimSiang knows when to listen.")
             }
             (Permission::InputMonitoring, Self::Thai) => {
-                format!("ใช้ตรวจว่าคุณกด {key} ค้างไว้ เพื่อให้ PimSiang รู้ว่าต้องเริ่มฟังเมื่อไร")
+                format!(
+                    th!("ใช้"
+                        | "ตรวจ"
+                        | "ว่า"
+                        | "คุณ"
+                        | "กด {key} ค้างไว้ เพื่อให้ PimSiang รู้"
+                        | "ว่า"
+                        | "ต้อง"
+                        | "เริ่ม"
+                        | "ฟัง"
+                        | "เมื่อไร"),
+                    key = key
+                )
             }
         }
     }
@@ -155,7 +209,7 @@ impl Language {
     pub fn model_explain(self) -> &'static str {
         self.pick(
             "PimSiang downloads its speech model once, about 1 GB. Keep this Mac online. If the download is interrupted it resumes where it stopped.",
-            "PimSiang ดาวน์โหลดโมเดลถอดเสียงครั้งเดียว ขนาดประมาณ 1 GB กรุณาเชื่อมต่ออินเทอร์เน็ตไว้ หากการดาวน์โหลดสะดุดจะต่อจากเดิมได้",
+            th!("PimSiang ดาวน์โหลด" | "โมเดล" | "ถอดเสียง" | "ครั้งเดียว ขนาด" | "ประมาณ 1 GB กรุณา" | "เชื่อมต่อ" | "อินเทอร์เน็ต" | "ไว้ หาก" | "การ" | "ดาวน์โหลด" | "สะดุด" | "จะ" | "ต่อ" | "จาก" | "เดิม" | "ได้"),
         )
     }
 
@@ -170,7 +224,10 @@ impl Language {
     }
 
     pub fn model_verifying(self) -> &'static str {
-        self.pick("Checking the download...", "กำลังตรวจสอบไฟล์ที่ดาวน์โหลด...")
+        self.pick(
+            "Checking the download...",
+            th!("กำลัง" | "ตรวจสอบ" | "ไฟล์" | "ที่" | "ดาวน์โหลด..."),
+        )
     }
 
     pub fn model_failed(self, reason: &str) -> String {
@@ -328,7 +385,20 @@ impl Language {
     pub fn settings_trigger_key_help(self) -> &'static str {
         self.pick(
             "Hold it to talk, double-tap it for hands-free, hold it with Shift for a Quick note.",
-            "กดค้างเพื่อพูด แตะสองครั้งเพื่อพูดต่อเนื่อง กดค้างพร้อม Shift เพื่อจดเป็นโน้ตด่วน",
+            th!("กด"
+                | "ค้าง"
+                | "เพื่อ"
+                | "พูด แตะ"
+                | "สองครั้ง"
+                | "เพื่อ"
+                | "พูด"
+                | "ต่อเนื่อง กด"
+                | "ค้าง"
+                | "พร้อม Shift เพื่อ"
+                | "จด"
+                | "เป็น"
+                | "โน้ต"
+                | "ด่วน"),
         )
     }
 
@@ -339,50 +409,96 @@ impl Language {
     pub fn settings_language_mix(self) -> &'static str {
         self.pick(
             "th-mix: Thai, with English words written in English",
-            "th-mix: ภาษาไทย คำอังกฤษเขียนเป็นตัวอักษรอังกฤษ",
+            th!("th-mix: ภาษา"
+                | "ไทย คำ"
+                | "อังกฤษ"
+                | "เขียน"
+                | "เป็น"
+                | "ตัวอักษร"
+                | "อังกฤษ"),
         )
     }
 
     pub fn settings_language_thai(self) -> &'static str {
         self.pick(
             "th-TH: Thai only, English words written in Thai",
-            "th-TH: ภาษาไทยล้วน คำอังกฤษเขียนทับศัพท์เป็นไทย",
+            th!("th-TH: ภาษา"
+                | "ไทย"
+                | "ล้วน คำ"
+                | "อังกฤษ"
+                | "เขียน"
+                | "ทับศัพท์"
+                | "เป็น"
+                | "ไทย"),
         )
     }
 
     pub fn settings_language_help(self) -> &'static str {
-        self.pick("Takes effect on your next Utterance.", "มีผลกับการพูดครั้งถัดไป")
+        self.pick(
+            "Takes effect on your next Utterance.",
+            th!("มีผล" | "กับ" | "การ" | "พูด" | "ครั้ง" | "ถัดไป"),
+        )
     }
 
     pub fn settings_sounds(self) -> &'static str {
         self.pick(
             "Play a sound when listening starts and stops",
-            "เล่นเสียงเมื่อเริ่มและหยุดฟัง",
+            th!("เล่น"
+                | "เสียง"
+                | "เมื่อ"
+                | "เริ่ม"
+                | "และ"
+                | "หยุด"
+                | "ฟัง"),
         )
     }
 
     pub fn settings_clipboard_restore(self) -> &'static str {
         self.pick(
             "Restore the clipboard after pasting",
-            "คืนค่าคลิปบอร์ดเดิมหลังวางข้อความ",
+            th!("คืน"
+                | "ค่า"
+                | "คลิปบอร์ด"
+                | "เดิม"
+                | "หลัง"
+                | "วาง"
+                | "ข้อความ"),
         )
     }
 
     pub fn settings_unload_when_idle(self) -> &'static str {
         self.pick(
             "Free the Model's memory after 10 idle minutes",
-            "คืนหน่วยความจำของโมเดลเมื่อไม่ได้ใช้งาน 10 นาที",
+            th!("คืน"
+                | "หน่วยความจำ"
+                | "ของ"
+                | "โมเดล"
+                | "เมื่อ"
+                | "ไม่ได้"
+                | "ใช้งาน 10 นาที"),
         )
     }
 
     pub fn settings_launch_at_login(self) -> &'static str {
-        self.pick("Open PimSiang at login", "เปิด PimSiang เมื่อเข้าสู่ระบบ")
+        self.pick(
+            "Open PimSiang at login",
+            th!("เปิด PimSiang เมื่อ" | "เข้าสู่" | "ระบบ"),
+        )
     }
 
     pub fn settings_login_unbundled(self) -> &'static str {
         self.pick(
             "Only works from the installed PimSiang app, not when it runs from a terminal.",
-            "ใช้ได้เฉพาะแอป PimSiang ที่ติดตั้งแล้ว ไม่รองรับเมื่อรันจากเทอร์มินัล",
+            th!("ใช้ได้"
+                | "เฉพาะ"
+                | "แอป PimSiang ที่"
+                | "ติดตั้ง"
+                | "แล้ว ไม่"
+                | "รองรับ"
+                | "เมื่อ"
+                | "รัน"
+                | "จาก"
+                | "เทอร์มินัล"),
         )
     }
 
@@ -402,7 +518,14 @@ impl Language {
             "{}{reason}",
             self.pick(
                 "Could not change the login item: ",
-                "เปลี่ยนการเปิดตอนเข้าสู่ระบบไม่สำเร็จ: "
+                th!("เปลี่ยน"
+                    | "การ"
+                    | "เปิด"
+                    | "ตอน"
+                    | "เข้าสู่"
+                    | "ระบบ"
+                    | "ไม่"
+                    | "สำเร็จ: ")
             )
         )
     }
@@ -418,12 +541,29 @@ impl Language {
     pub fn history_empty(self) -> &'static str {
         self.pick(
             "Nothing here yet. Everything you dictate is kept here, on this Mac only.",
-            "ยังไม่มีรายการ ทุกอย่างที่คุณพูดจะถูกเก็บไว้ที่นี่ ในเครื่องนี้เท่านั้น",
+            th!("ยัง"
+                | "ไม่มี"
+                | "รายการ ทุก"
+                | "อย่าง"
+                | "ที่"
+                | "คุณ"
+                | "พูด"
+                | "จะ"
+                | "ถูก"
+                | "เก็บ"
+                | "ไว้"
+                | "ที่นี่ ใน"
+                | "เครื่อง"
+                | "นี้"
+                | "เท่านั้น"),
         )
     }
 
     pub fn history_no_match(self) -> &'static str {
-        self.pick("No entries match your search.", "ไม่พบรายการที่ตรงกับคำค้นหา")
+        self.pick(
+            "No entries match your search.",
+            th!("ไม่พบ" | "รายการ" | "ที่" | "ตรง" | "กับ" | "คำค้นหา"),
+        )
     }
 
     pub fn history_kind(self, kind: Kind) -> &'static str {
@@ -452,7 +592,13 @@ impl Language {
     pub fn history_confirm_clear(self) -> &'static str {
         self.pick(
             "Delete all history? This cannot be undone.",
-            "ลบประวัติทั้งหมด? การลบนี้ย้อนกลับไม่ได้",
+            th!("ลบ"
+                | "ประวัติ"
+                | "ทั้งหมด? การ"
+                | "ลบ"
+                | "นี้"
+                | "ย้อนกลับ"
+                | "ไม่ได้"),
         )
     }
 
@@ -471,7 +617,12 @@ impl Language {
     pub fn history_unavailable(self) -> &'static str {
         self.pick(
             "History is unavailable: the database could not be opened.",
-            "ใช้งานประวัติไม่ได้: เปิดฐานข้อมูลไม่สำเร็จ",
+            th!("ใช้งาน"
+                | "ประวัติ"
+                | "ไม่ได้: เปิด"
+                | "ฐานข้อมูล"
+                | "ไม่"
+                | "สำเร็จ"),
         )
     }
 }

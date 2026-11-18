@@ -2,6 +2,7 @@ use egui::{ColorImage, Id, TextureHandle, TextureOptions, Theme, Ui, Vec2};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Pose {
+    Default,
     Writing,
     Confused,
     Sleeping,
@@ -23,6 +24,7 @@ macro_rules! art {
 impl Pose {
     fn bytes(self, theme: Theme) -> &'static [u8] {
         let (light, dark) = match self {
+            Pose::Default => art!("default"),
             Pose::Writing => art!("writing"),
             Pose::Confused => art!("confused"),
             Pose::Sleeping => art!("sleeping"),

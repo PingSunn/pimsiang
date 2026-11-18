@@ -59,6 +59,7 @@ Never set "พิมพ์เสียง" in a font in place of the logo; use t
 
 - **Light and dark.** `-dark.svg` adds a Side (`#F6F1E4`) rim around the feather so it does not vanish on a dark surface, and lightens the wing, shadow, `z` letters and the microphone. Pick the variant by the background, never the other way round. The Pill is always a Feather capsule, so it uses the dark heads.
 - **Minimum size.** About 64 px tall for the full body; below that use the head. Heads go down to 16 px. The menu bar glyph is drawn for 18 pt and must stay legible at 18 px.
+- **One pose per view.** A window or page shows at most one mascot pose. In Setup it is the hero and follows the overall state: `confused` if a permission was denied, `writing` when the model download is the only step left, `default` when everything is done, `waving` otherwise. The head in a window header is the brand mark and does not count. Do not put small mascots in cards or progress rows.
 - **Decorative.** The mascot never carries meaning alone: the text beside it says what happened. Mark it `aria-hidden`.
 - **Don'ts.** Do not recolour, stretch, rotate or redraw the bird, do not substitute an emoji, do not put the light variant on a dark background, do not add effects to the SVGs.
 - **Motion.** Gentle and slow: a 3 px float over 2.4 s, or a 1.4 s opacity pulse for the listening dot. Any animation must stop under `prefers-reduced-motion: reduce`. The files here are still.

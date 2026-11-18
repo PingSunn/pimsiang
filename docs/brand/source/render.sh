@@ -50,7 +50,7 @@ for svg in "$brand"/mascot/pimsiang-myna-*.svg; do
   name="${name#pimsiang-myna-}"
   case "$name" in
     head-default | head-default-dark) png "$svg" "$assets/mascot/$name.png" 128 ;;
-    waving | waving-dark | writing | writing-dark | confused | confused-dark | sleeping | sleeping-dark | searching | searching-dark | oops | oops-dark)
+    default | default-dark | waving | waving-dark | writing | writing-dark | confused | confused-dark | sleeping | sleeping-dark | searching | searching-dark | oops | oops-dark)
       png "$svg" "$assets/mascot/$name.png" 360 ;;
   esac
 done

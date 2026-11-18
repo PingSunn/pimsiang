@@ -8,9 +8,9 @@ use objc2::runtime::AnyObject;
 use objc2::{AnyThread, MainThreadMarker};
 use objc2_app_kit::{
     NSBackingStoreType, NSBox, NSBoxType, NSColor, NSEvent, NSEventMask, NSFont,
-    NSForegroundColorAttributeName, NSImage, NSImageView, NSLineBreakMode, NSPanel, NSScreen,
-    NSTextAlignment, NSTextField, NSTitlePosition, NSView, NSWindowCollectionBehavior,
-    NSWindowLevel, NSWindowStyleMask,
+    NSForegroundColorAttributeName, NSImage, NSImageView, NSLineBreakMode, NSMutableParagraphStyle,
+    NSPanel, NSParagraphStyleAttributeName, NSScreen, NSTextAlignment, NSTextField,
+    NSTitlePosition, NSView, NSWindowCollectionBehavior, NSWindowLevel, NSWindowStyleMask,
 };
 use objc2_foundation::{
     NSData, NSMutableAttributedString, NSPoint, NSRange, NSRect, NSSize, NSString,
@@ -413,10 +413,18 @@ fn styled(content: &PillContent) -> Retained<NSMutableAttributedString> {
         }
     }
     let font = NSFont::systemFontOfSize(FONT_SIZE);
+    let paragraph = NSMutableParagraphStyle::new();
+    paragraph.setLineBreakMode(NSLineBreakMode::ByTruncatingHead);
+    paragraph.setAlignment(NSTextAlignment::Left);
     unsafe {
         attributed.addAttribute_value_range(
             objc2_app_kit::NSFontAttributeName,
             &font,
+            NSRange::new(0, text.length()),
+        );
+        attributed.addAttribute_value_range(
+            NSParagraphStyleAttributeName,
+            &paragraph,
             NSRange::new(0, text.length()),
         );
     }
@@ -449,4 +457,49 @@ fn contains(frame: NSRect, point: NSPoint) -> bool {
         && point.x < frame.origin.x + frame.size.width
         && point.y >= frame.origin.y
         && point.y < frame.origin.y + frame.size.height
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use objc2_app_kit::NSParagraphStyle;
+    use objc2_foundation::NSAttributedString;
+
+    fn content(settled: &str, tentative: &str) -> PillContent {
+        PillContent {
+            settled: settled.to_owned(),
+            tentative: tentative.to_owned(),
+            caret: true,
+            dots: false,
+            badge: None,
+        }
+    }
+
+    #[allow(unsafe_code)]
+    fn line_break_at(text: &NSAttributedString, index: usize) -> Option<NSLineBreakMode> {
+        let value = unsafe {
+            text.attribute_atIndex_effectiveRange(
+                NSParagraphStyleAttributeName,
+                index,
+                ptr::null_mut(),
+            )
+        }?;
+        let style = value.downcast::<NSParagraphStyle>().ok()?;
+        Some(style.lineBreakMode())
+    }
+
+    #[test]
+    fn the_label_text_truncates_its_head_across_settled_and_tentative_text() {
+        let text = styled(&content("ประเทศไทยมีประวัติศาสตร์", "ยาวนานหลายร้อยปี"));
+        let last = text.length() - 1;
+
+        assert_eq!(
+            line_break_at(&text, 0),
+            Some(NSLineBreakMode::ByTruncatingHead)
+        );
+        assert_eq!(
+            line_break_at(&text, last),
+            Some(NSLineBreakMode::ByTruncatingHead)
+        );
+    }
 }

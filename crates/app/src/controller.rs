@@ -3,7 +3,10 @@ use std::time::{Duration, Instant};
 
 use audio::Microphone;
 use engine::{Engine, LanguageMode, UtteranceOptions};
-use platform::{PillError, PillState, Platform, Status, TriggerEvent, TriggerState};
+use platform::{
+    Permission, PermissionReport, PermissionStatus, PillError, PillState, Platform, Status,
+    TriggerEvent, TriggerSink, TriggerState,
+};
 
 #[derive(Clone, Copy, Debug)]
 pub struct Config {
@@ -24,11 +27,27 @@ impl Default for Config {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PermissionCommand {
+    Grant(Permission),
+}
+
 #[derive(Debug)]
 pub enum Input {
     Trigger(TriggerEvent),
     Audio(Vec<f32>),
     Tick(Instant),
+    Permission(PermissionCommand),
+}
+
+type TriggerSource = Box<dyn FnMut() -> TriggerSink + Send>;
+
+struct PermissionWatch {
+    interval: Duration,
+    next_poll: Instant,
+    trigger_source: TriggerSource,
+    shown: Option<PermissionReport>,
+    listening: bool,
 }
 
 enum State {
@@ -45,6 +64,7 @@ pub struct Controller<P, E, M> {
     state: State,
     hide_at: Option<Instant>,
     shown_partial: Option<String>,
+    watch: Option<PermissionWatch>,
 }
 
 impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
@@ -57,11 +77,31 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
             state: State::Idle,
             hide_at: None,
             shown_partial: None,
+            watch: None,
         }
+    }
+
+    pub fn watch_permissions(
+        mut self,
+        interval: Duration,
+        trigger_source: impl FnMut() -> TriggerSink + Send + 'static,
+    ) -> Self {
+        self.watch = Some(PermissionWatch {
+            interval,
+            next_poll: Instant::now(),
+            trigger_source: Box::new(trigger_source),
+            shown: None,
+            listening: false,
+        });
+        self
     }
 
     pub fn platform(&self) -> &P {
         &self.platform
+    }
+
+    pub fn platform_mut(&mut self) -> &mut P {
+        &mut self.platform
     }
 
     pub fn engine(&self) -> &E {
@@ -77,10 +117,8 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
             State::Pending { since } => Some(since + self.config.hold_threshold),
             State::Idle | State::Listening => None,
         };
-        match (pending, self.hide_at) {
-            (Some(a), Some(b)) => Some(a.min(b)),
-            (a, b) => a.or(b),
-        }
+        let polling = self.watch.as_ref().map(|watch| watch.next_poll);
+        [pending, self.hide_at, polling].into_iter().flatten().min()
     }
 
     pub fn run(mut self, inputs: Receiver<Input>) -> Self {
@@ -130,6 +168,7 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
             },
             Input::Audio(samples) => self.on_audio(&samples),
             Input::Tick(now) => self.on_tick(now),
+            Input::Permission(PermissionCommand::Grant(permission)) => self.grant(permission),
         }
         None
     }
@@ -158,11 +197,59 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
             self.hide_at = None;
             self.platform.show_pill(PillState::Hidden);
         }
-        if let Some(deadline) = self.next_deadline()
-            && now >= deadline
+        if let State::Pending { since } = self.state
+            && now >= since + self.config.hold_threshold
         {
             self.begin();
         }
+        if let Some(watch) = &self.watch
+            && now >= watch.next_poll
+        {
+            self.poll_permissions(now);
+        }
+    }
+
+    fn poll_permissions(&mut self, now: Instant) {
+        let report = PermissionReport::read(&self.platform);
+        let Some(watch) = self.watch.as_mut() else {
+            return;
+        };
+        watch.next_poll = now + watch.interval;
+        if watch.shown != Some(report) {
+            watch.shown = Some(report);
+            self.platform.show_permissions(report);
+        }
+        if !watch.listening && report.input_monitoring == PermissionStatus::Granted {
+            match self.platform.listen_trigger((watch.trigger_source)()) {
+                Ok(()) => {
+                    watch.listening = true;
+                    tracing::info!("watching the Trigger key");
+                }
+                Err(error) => tracing::warn!(%error, "cannot watch the Trigger key yet"),
+            }
+        }
+    }
+
+    fn grant(&mut self, permission: Permission) {
+        let status = self.platform.permission_status(permission);
+        match permission {
+            Permission::Microphone if status == PermissionStatus::NotDetermined => {
+                self.platform.request_permission(permission);
+            }
+            Permission::Accessibility | Permission::InputMonitoring => {
+                self.platform.request_permission(permission);
+                self.platform.open_settings(permission);
+            }
+            Permission::Microphone => self.platform.open_settings(permission),
+        }
+    }
+
+    fn missing_permission(&self) -> Option<Permission> {
+        [Permission::Microphone, Permission::Accessibility]
+            .into_iter()
+            .find(|permission| {
+                self.platform.permission_status(*permission) != PermissionStatus::Granted
+            })
     }
 
     fn on_audio(&mut self, samples: &[f32]) {
@@ -192,6 +279,11 @@ impl<P: Platform, E: Engine, M: Microphone> Controller<P, E, M> {
 
     fn begin(&mut self) {
         self.state = State::Idle;
+        if let Some(permission) = self.missing_permission() {
+            tracing::warn!(permission = permission.name(), "permission is missing");
+            self.fail(PillError::PermissionMissing(permission));
+            return;
+        }
         if !self.engine.is_loaded()
             && let Err(error) = self.engine.load()
         {

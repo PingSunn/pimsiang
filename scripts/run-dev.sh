@@ -3,7 +3,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 export PATH="$HOME/.cargo/bin:$PATH"
 
-export PIMSIANG_MODEL_DIR="${PIMSIANG_MODEL_DIR:-$PWD/models/int8}"
+if [ -z "${PIMSIANG_MODEL_DIR:-}" ] && [ -d "$PWD/models/int8" ]; then
+  export PIMSIANG_MODEL_DIR="$PWD/models/int8"
+fi
 
 if [ "${1:-}" = "--plain" ]; then
   cargo build -q -p app
@@ -25,4 +27,7 @@ if pgrep -f "$app/Contents/MacOS/pimsiang" > /dev/null; then
     exit 1
   fi
 fi
-exec open "$app" --env "PIMSIANG_MODEL_DIR=$PIMSIANG_MODEL_DIR"
+if [ -n "${PIMSIANG_MODEL_DIR:-}" ]; then
+  exec open "$app" --env "PIMSIANG_MODEL_DIR=$PIMSIANG_MODEL_DIR"
+fi
+exec open "$app"

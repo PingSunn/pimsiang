@@ -4,7 +4,7 @@ use app::model_chip::ModelChip;
 use app::model_download::{self, ModelStatus};
 use app::preferences::Preferences;
 use engine::{LanguageMode, RecognitionMode};
-use platform::{PillPlacement, PillPosition, TriggerKey};
+use platform::{PillPlacement, PillPosition, ShowInDock, TriggerKey};
 use platform_macos::PlacementEnd;
 use platform_macos::login_item::{self, LoginItem};
 use winit::dpi::LogicalSize;
@@ -16,7 +16,7 @@ use crate::egui_surface::Surface;
 use crate::theme::{self, Icon, Variant};
 
 const WIDTH: f64 = 780.0;
-const HEIGHT: f64 = 760.0;
+const HEIGHT: f64 = 860.0;
 const SIDEBAR_WIDTH: f32 = 220.0;
 
 pub enum Outcome {
@@ -87,6 +87,10 @@ impl SettingsWindow {
 
     pub fn focus(&self) {
         self.surface.focus();
+    }
+
+    pub fn popup_open(&self) -> bool {
+        self.surface.popup_open()
     }
 
     pub fn show_model(&mut self, model: ModelChip) {
@@ -413,6 +417,7 @@ fn general(
     });
     precision(ui, inputs, preferences, actions);
     pill_position(ui, inputs, preferences, actions);
+    show_in_dock(ui, language, preferences);
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing.y = theme::SPACE_2;
         theme::section_label(ui, language.settings_system_group());
@@ -525,6 +530,29 @@ fn precision(
         if build.keeps_working {
             theme::description(ui, language.settings_precision_keeps_working());
         }
+    });
+}
+
+fn show_in_dock(ui: &mut egui::Ui, language: Language, preferences: &mut Preferences) {
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = theme::SPACE_2;
+        theme::section_label(ui, language.settings_dock_group());
+        let options = [
+            (
+                ShowInDock::Always,
+                vec![theme::Part::Text(language.settings_dock_always())],
+            ),
+            (
+                ShowInDock::WhileWindowOpen,
+                vec![theme::Part::Text(language.settings_dock_while_open())],
+            ),
+            (
+                ShowInDock::Never,
+                vec![theme::Part::Text(language.settings_dock_never())],
+            ),
+        ];
+        theme::segmented(ui, &mut preferences.show_in_dock, &options);
+        theme::description(ui, language.settings_dock_help());
     });
 }
 

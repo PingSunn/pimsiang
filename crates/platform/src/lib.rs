@@ -1,4 +1,5 @@
 pub mod clipboard;
+pub mod dock;
 pub mod fake;
 pub mod focus;
 pub mod pill_layout;
@@ -298,6 +299,7 @@ pub enum PlatformError {
     Copy(String),
 }
 
+pub use dock::{DockState, ShowInDock, dock_visible};
 pub use focus::Focus;
 pub use pill_layout::{PillPlacement, PillPosition};
 

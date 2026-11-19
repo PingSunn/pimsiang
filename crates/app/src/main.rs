@@ -5,6 +5,8 @@ mod history_window;
 #[cfg(target_os = "macos")]
 mod logging;
 #[cfg(target_os = "macos")]
+mod main_menu;
+#[cfg(target_os = "macos")]
 mod onboarding_window;
 #[cfg(target_os = "macos")]
 mod settings_window;
@@ -27,6 +29,7 @@ mod macos {
     use std::time::{Duration, Instant};
 
     use anyhow::{Context, Result};
+    use app::app_menu::AppMenuAction;
     use app::controller::{Config, Controller, Input, PermissionCommand};
     use app::history_view;
     use app::history_view::Page;
@@ -43,13 +46,16 @@ mod macos {
     use clap::Parser;
     use engine::{LanguageMode, ModelFiles, OnnxEngine, Precision, RecognitionMode};
     use objc2::MainThreadMarker;
-    use platform::{MicrophoneMenu, PermissionReport, PillPosition, PillState, Sound, Status};
+    use platform::{
+        DockState, MicrophoneMenu, PermissionReport, PillPosition, PillState, Sound, Status,
+    };
     use platform_macos::login_item::{self, LoginItem};
     use platform_macos::{
-        MacPlatform, PillArt, PillEvent, PillLayout, PillPanel, PlacementEnd, copy_text, play_sound,
+        MacPlatform, PillArt, PillEvent, PillLayout, PillPanel, PlacementEnd, copy_text, dock,
+        play_sound,
     };
     use store::{HistoryService, Settings};
-    use tray_icon::menu::MenuEvent;
+    use tray_icon::menu::{Menu, MenuEvent};
     use winit::application::ApplicationHandler;
     use winit::event::{StartCause, WindowEvent};
     use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
@@ -60,6 +66,7 @@ mod macos {
 
     use crate::history_window::{HistoryWindow, Outcome as HistoryOutcome};
     use crate::logging;
+    use crate::main_menu;
     use crate::onboarding_window::{OnboardingWindow, Outcome};
     use crate::settings_window::{Build, Outcome as SettingsOutcome, SettingsWindow};
     use crate::tray::{MenuAction, MenuBar, open_folder};
@@ -101,13 +108,44 @@ mod macos {
         HistoryChanged,
         Menu(MenuEvent),
         PasteLastShortcut,
+        DockReopen,
         Fatal(String),
+    }
+
+    trait ManagedWindow {
+        fn id(&self) -> WindowId;
+        fn focus(&self);
+    }
+
+    macro_rules! managed_window {
+        ($($window:ty),*) => {$(
+            impl ManagedWindow for $window {
+                fn id(&self) -> WindowId {
+                    <$window>::id(self)
+                }
+
+                fn focus(&self) {
+                    <$window>::focus(self)
+                }
+            }
+        )*};
+    }
+
+    managed_window!(OnboardingWindow, SettingsWindow, HistoryWindow);
+
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum WindowKind {
+        Setup,
+        Settings,
+        History,
     }
 
     struct App {
         log_dir: PathBuf,
         settings_path: Option<PathBuf>,
         menu_bar: Option<MenuBar>,
+        main_menu: Option<Menu>,
+        key_window: Option<WindowKind>,
         pill: Option<PillPanel>,
         paste_shortcut: Option<PasteLastShortcut>,
         failure: Option<String>,
@@ -131,37 +169,148 @@ mod macos {
         language_overridden: bool,
         mode_overridden: bool,
         settings_window: Option<SettingsWindow>,
+        dock: DockState,
+        recent_window: Option<WindowKind>,
     }
 
     impl App {
+        fn any_window_open(&self) -> bool {
+            self.setup.is_some() || self.history_window.is_some() || self.settings_window.is_some()
+        }
+
+        fn sync_dock(&mut self) {
+            if let Some(visible) = self
+                .dock
+                .update(self.preferences.show_in_dock, self.any_window_open())
+            {
+                dock::set_visible(visible);
+            }
+        }
+
+        fn window(&self, kind: WindowKind) -> Option<&dyn ManagedWindow> {
+            match kind {
+                WindowKind::Setup => self.setup.as_ref().map(|w| w as &dyn ManagedWindow),
+                WindowKind::Settings => self
+                    .settings_window
+                    .as_ref()
+                    .map(|w| w as &dyn ManagedWindow),
+                WindowKind::History => self
+                    .history_window
+                    .as_ref()
+                    .map(|w| w as &dyn ManagedWindow),
+            }
+        }
+
+        fn is_open(&self, kind: WindowKind) -> bool {
+            self.window(kind).is_some()
+        }
+
+        fn kind_of(&self, id: WindowId) -> Option<WindowKind> {
+            [WindowKind::Setup, WindowKind::Settings, WindowKind::History]
+                .into_iter()
+                .find(|kind| self.window(*kind).is_some_and(|window| window.id() == id))
+        }
+
+        fn close_window(&mut self, kind: WindowKind) {
+            match kind {
+                WindowKind::Setup => {
+                    self.setup = None;
+                    self.close_setup_at = None;
+                }
+                WindowKind::Settings => {
+                    self.end_placement(PlacementEnd::Escape);
+                    self.settings_window = None;
+                }
+                WindowKind::History => self.history_window = None,
+            }
+        }
+
+        fn settings_popup_open(&self) -> bool {
+            self.settings_window
+                .as_ref()
+                .is_some_and(|window| window.popup_open())
+        }
+
+        fn setup_needed(&self) -> bool {
+            self.report.is_some_and(|report| !report.all_granted())
+                || self.model != ModelStatus::Ready
+        }
+
+        fn on_app_menu(&mut self, event_loop: &ActiveEventLoop, action: AppMenuAction) {
+            let key_window = self.key_window.filter(|kind| self.is_open(*kind));
+            match action {
+                AppMenuAction::Settings => self.open_settings(event_loop),
+                AppMenuAction::Quit => event_loop.exit(),
+                AppMenuAction::CloseWindow => {
+                    if let Some(kind) = key_window
+                        && !(kind == WindowKind::Settings && self.settings_popup_open())
+                    {
+                        self.close_window(kind);
+                    }
+                }
+                AppMenuAction::Edit(command) => {
+                    if key_window == Some(WindowKind::History)
+                        && let Some(window) = self.history_window.as_mut()
+                    {
+                        window.edit(command);
+                    }
+                }
+            }
+        }
+
+        fn raise(&mut self, kind: WindowKind) {
+            self.recent_window = Some(kind);
+            self.sync_dock();
+            dock::activate();
+            if let Some(window) = self.window(kind) {
+                window.focus();
+            }
+        }
+
+        fn on_dock_reopen(&mut self, event_loop: &ActiveEventLoop) {
+            let recent = self.recent_window.filter(|kind| self.is_open(*kind));
+            let open = [WindowKind::Settings, WindowKind::History, WindowKind::Setup]
+                .into_iter()
+                .find(|kind| self.is_open(*kind));
+            match recent.or(open) {
+                Some(kind) => self.raise(kind),
+                None if self.setup_needed() => self.open_setup(event_loop),
+                None => self.open_settings(event_loop),
+            }
+        }
+
         fn open_setup(&mut self, event_loop: &ActiveEventLoop) {
-            if let Some(setup) = &self.setup {
-                setup.focus();
-                return;
+            if self.setup.is_none() {
+                match OnboardingWindow::open(event_loop, self.language.window_title()) {
+                    Ok(setup) => self.setup = Some(setup),
+                    Err(error) => {
+                        tracing::error!(%error, "cannot open the setup window");
+                        return;
+                    }
+                }
             }
-            match OnboardingWindow::open(event_loop, self.language.window_title()) {
-                Ok(setup) => self.setup = Some(setup),
-                Err(error) => tracing::error!(%error, "cannot open the setup window"),
-            }
+            self.raise(WindowKind::Setup);
         }
 
         fn open_history(&mut self, event_loop: &ActiveEventLoop) {
-            if let Some(window) = &self.history_window {
-                window.focus();
-                return;
-            }
-            match HistoryWindow::open(event_loop, self.language, self.history.is_none()) {
-                Ok(window) => {
-                    self.history_window = Some(window);
-                    self.refresh_history();
+            if self.history_window.is_none() {
+                match HistoryWindow::open(event_loop, self.language, self.history.is_none()) {
+                    Ok(window) => {
+                        self.history_window = Some(window);
+                        self.refresh_history();
+                    }
+                    Err(error) => {
+                        tracing::error!(%error, "cannot open the History window");
+                        return;
+                    }
                 }
-                Err(error) => tracing::error!(%error, "cannot open the History window"),
             }
+            self.raise(WindowKind::History);
         }
 
         fn open_settings(&mut self, event_loop: &ActiveEventLoop) {
-            if let Some(window) = &self.settings_window {
-                window.focus();
+            if self.settings_window.is_some() {
+                self.raise(WindowKind::Settings);
                 return;
             }
             match SettingsWindow::open(
@@ -173,7 +322,10 @@ mod macos {
                 self.model_chip(),
                 self.build_note(),
             ) {
-                Ok(window) => self.settings_window = Some(window),
+                Ok(window) => {
+                    self.settings_window = Some(window);
+                    self.raise(WindowKind::Settings);
+                }
                 Err(error) => tracing::error!(%error, "cannot open the settings window"),
             }
         }
@@ -271,10 +423,7 @@ mod macos {
             };
             match window.handle(event) {
                 SettingsOutcome::Idle => {}
-                SettingsOutcome::Close => {
-                    self.end_placement(PlacementEnd::Escape);
-                    self.settings_window = None;
-                }
+                SettingsOutcome::Close => self.close_window(WindowKind::Settings),
                 SettingsOutcome::PlacePill => self.begin_placement(),
                 SettingsOutcome::EndPlacement(end) => self.end_placement(end),
                 SettingsOutcome::OpenLoginItems => login_item::open_login_items_settings(),
@@ -315,6 +464,11 @@ mod macos {
             self.preferences = changed;
             if changed.precision != previous.precision {
                 self.want_build(changed.precision);
+            }
+            if changed.show_in_dock != previous.show_in_dock
+                && let Some(kind) = self.recent_window.filter(|kind| self.is_open(*kind))
+            {
+                self.raise(kind);
             }
             if let Some(menu_bar) = &self.menu_bar
                 && let Err(error) = menu_bar.show_trigger_key(changed.trigger_key)
@@ -389,7 +543,7 @@ mod macos {
             };
             match window.handle(event) {
                 HistoryOutcome::Idle => {}
-                HistoryOutcome::Close => self.history_window = None,
+                HistoryOutcome::Close => self.close_window(WindowKind::History),
                 HistoryOutcome::Refresh => self.refresh_history(),
                 HistoryOutcome::Copy(text) => {
                     if let Err(error) = copy_text(&text) {
@@ -624,6 +778,10 @@ mod macos {
                         event_loop.exit();
                     }
                 }
+                match main_menu::install(self.language) {
+                    Ok(main_menu) => self.main_menu = Some(main_menu),
+                    Err(error) => tracing::warn!(%error, "cannot install the app menu"),
+                }
                 match PasteLastShortcut::register() {
                     Ok(shortcut) => self.paste_shortcut = Some(shortcut),
                     Err(error) => tracing::warn!(%error, "the paste-last shortcut is unavailable"),
@@ -643,9 +801,20 @@ mod macos {
                 Some(at) => event_loop.set_control_flow(ControlFlow::WaitUntil(at)),
                 None => event_loop.set_control_flow(ControlFlow::Wait),
             }
+            self.sync_dock();
         }
 
         fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
+            if let WindowEvent::Focused(focused) = &event
+                && let Some(kind) = self.kind_of(id)
+            {
+                if *focused {
+                    self.key_window = Some(kind);
+                    self.recent_window = Some(kind);
+                } else if self.key_window == Some(kind) {
+                    self.key_window = None;
+                }
+            }
             if self
                 .history_window
                 .as_ref()
@@ -668,10 +837,7 @@ mod macos {
             };
             match setup.handle(&event, &view) {
                 Outcome::Idle => {}
-                Outcome::Close => {
-                    self.setup = None;
-                    self.close_setup_at = None;
-                }
+                Outcome::Close => self.close_window(WindowKind::Setup),
                 Outcome::RetryModel => match self.custom_model.clone() {
                     Some(files) => self.check_custom_model(&files),
                     None => self.retry_build(),
@@ -741,7 +907,12 @@ mod macos {
                     }
                 }
                 UserEvent::PasteLastShortcut => self.paste_last(event_loop),
+                UserEvent::DockReopen => self.on_dock_reopen(event_loop),
                 UserEvent::Menu(event) => {
+                    if let Some(action) = app::app_menu::action_for(event.id.as_ref()) {
+                        self.on_app_menu(event_loop, action);
+                        return;
+                    }
                     let action = self.menu_bar.as_ref().and_then(|bar| bar.action(&event.id));
                     match action {
                         Some(MenuAction::Microphone(choice)) => self.choose_microphone(choice),
@@ -813,6 +984,10 @@ mod macos {
             .build()
             .context("creating the event loop")?;
         let proxy = event_loop.create_proxy();
+        let reopen_proxy = proxy.clone();
+        dock::on_reopen(move || {
+            let _ = reopen_proxy.send_event(UserEvent::DockReopen);
+        });
         let menu_proxy = proxy.clone();
         MenuEvent::set_event_handler(Some(move |event| {
             let _ = menu_proxy.send_event(UserEvent::Menu(event));
@@ -898,6 +1073,8 @@ mod macos {
             log_dir,
             settings_path: settings_path(),
             menu_bar: None,
+            main_menu: None,
+            key_window: None,
             pill: None,
             paste_shortcut: None,
             failure: None,
@@ -921,6 +1098,8 @@ mod macos {
             language_overridden,
             mode_overridden,
             settings_window: None,
+            dock: DockState::default(),
+            recent_window: None,
         };
         if let Some((switcher, commands)) = managed.take() {
             app.switcher = Some(switcher);

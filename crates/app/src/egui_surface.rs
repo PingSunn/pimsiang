@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
@@ -24,6 +25,7 @@ pub struct Surface {
     context: egui::Context,
     input: egui_winit::State,
     painter: Painter,
+    refocus: Cell<bool>,
 }
 
 impl Surface {
@@ -73,6 +75,7 @@ impl Surface {
             context,
             input,
             painter,
+            refocus: Cell::new(false),
         })
     }
 
@@ -81,6 +84,10 @@ impl Surface {
     }
 
     pub fn focus(&self) {
+        if self.window.is_minimized() == Some(true) {
+            self.window.set_minimized(false);
+            self.refocus.set(true);
+        }
         self.window.focus_window();
     }
 
@@ -97,7 +104,22 @@ impl Surface {
         }
     }
 
+    pub fn inject(&mut self, events: Vec<egui::Event>) {
+        if events.is_empty() {
+            return;
+        }
+        self.input.egui_input_mut().events.extend(events);
+        self.window.request_redraw();
+    }
+
+    pub fn popup_open(&self) -> bool {
+        egui::Popup::is_any_open(&self.context)
+    }
+
     pub fn forward(&mut self, event: &WindowEvent) {
+        if matches!(event, WindowEvent::Occluded(false)) && self.refocus.take() {
+            self.window.focus_window();
+        }
         let response = self.input.on_window_event(&self.window, event);
         if response.repaint {
             self.window.request_redraw();
@@ -107,6 +129,13 @@ impl Surface {
     pub fn frame(&mut self, show: impl FnMut(&mut egui::Ui)) -> bool {
         let raw_input = self.input.take_egui_input(&self.window);
         let output = self.context.run_ui(raw_input, show);
+        for command in &output.platform_output.commands {
+            if let egui::OutputCommand::CopyText(text) = command
+                && let Err(error) = platform_macos::copy_text(text)
+            {
+                tracing::warn!(%error, "cannot copy to the clipboard");
+            }
+        }
         self.input
             .handle_platform_output(&self.window, output.platform_output);
         let primitives = self

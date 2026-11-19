@@ -1,5 +1,5 @@
 use engine::{LanguageMode, RecognitionMode};
-use platform::{PillPlacement, PillPosition, TriggerKey};
+use platform::{PillPlacement, PillPosition, ShowInDock, TriggerKey};
 use store::{Precision, Settings};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -14,6 +14,7 @@ pub struct Preferences {
     pub pill_placement: PillPlacement,
     pub pill_position: PillPosition,
     pub precision: Precision,
+    pub show_in_dock: ShowInDock,
 }
 
 impl Default for Preferences {
@@ -55,6 +56,11 @@ impl Preferences {
                 .and_then(PillPosition::parse)
                 .unwrap_or_default(),
             precision: settings.precision(),
+            show_in_dock: settings
+                .show_in_dock
+                .as_deref()
+                .and_then(ShowInDock::from_name)
+                .unwrap_or_default(),
         }
     }
 
@@ -78,5 +84,6 @@ impl Preferences {
         settings.pill_placement = Some(self.pill_placement.name().to_owned());
         settings.pill_position = Some(self.pill_position.text());
         settings.precision = Some(self.precision.name().to_owned());
+        settings.show_in_dock = Some(self.show_in_dock.name().to_owned());
     }
 }

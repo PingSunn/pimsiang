@@ -6,6 +6,7 @@ use std::sync::{Arc, LazyLock, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
+pub mod dock;
 mod focus;
 pub mod login_item;
 mod pasteboard;
@@ -76,6 +77,10 @@ pub fn copy_text(text: &str) -> Result<(), PlatformError> {
         .put_text(&mut pasteboard, text, false)
         .map(|_| ())
         .map_err(PlatformError::Copy)
+}
+
+pub fn read_text() -> Option<String> {
+    pasteboard::GeneralPasteboard::new().read_text()
 }
 
 impl Platform for MacPlatform {

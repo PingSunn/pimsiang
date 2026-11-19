@@ -1,13 +1,15 @@
+use app::app_menu::EditCommand;
 use app::history_view::Page;
 use app::i18n::Language;
 use app::model_chip::ModelChip;
 use app::model_download::ModelStatus;
 use app::preferences::Preferences;
+use egui::accesskit::Toggled;
 use egui::{Id, Key, Modifiers, Role};
 use egui_kittest::Harness;
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 use engine::RecognitionMode;
-use platform::PillPlacement;
+use platform::{PillPlacement, ShowInDock};
 use platform_macos::login_item::LoginItem;
 use store::{Entry, Kind};
 
@@ -149,6 +151,42 @@ fn command_w_closes_history() {
     assert!(harness.state().closed);
 }
 
+fn run_edit(harness: &mut Harness<'static, HistoryFixture>, command: EditCommand, text: &str) {
+    for event in command.events(Some(text)) {
+        harness.event(event);
+    }
+    harness.run();
+}
+
+#[test]
+fn the_paste_menu_item_puts_thai_text_in_the_history_search_box() {
+    let mut harness = history(fixture());
+    run_edit(&mut harness, EditCommand::Paste, "สวัสดีครับ");
+    assert_eq!(harness.state().query, "สวัสดีครับ");
+}
+
+#[test]
+fn the_cut_menu_item_removes_the_selection_and_select_all_selects_it() {
+    let mut harness = history(HistoryFixture {
+        query: "สวัสดี".to_owned(),
+        ..fixture()
+    });
+    run_edit(&mut harness, EditCommand::SelectAll, "");
+    run_edit(&mut harness, EditCommand::Cut, "");
+    assert_eq!(harness.state().query, "");
+}
+
+#[test]
+fn the_undo_and_redo_menu_items_step_through_the_search_box_edits() {
+    let mut harness = history(fixture());
+    run_edit(&mut harness, EditCommand::Paste, "abc");
+    harness.step();
+    run_edit(&mut harness, EditCommand::Undo, "");
+    assert_eq!(harness.state().query, "");
+    run_edit(&mut harness, EditCommand::Redo, "");
+    assert_eq!(harness.state().query, "abc");
+}
+
 #[test]
 fn clearing_the_search_with_escape_refreshes_the_list() {
     let mut harness = history(HistoryFixture {
@@ -173,7 +211,7 @@ struct SettingsFixture {
 
 fn settings(fixture: SettingsFixture) -> Harness<'static, SettingsFixture> {
     let mut harness = Harness::builder()
-        .with_size(egui::vec2(780.0, 760.0))
+        .with_size(egui::vec2(780.0, 870.0))
         .with_context_setup(|context| {
             context.set_fonts(egui_surface::fonts());
             theme::apply(context);
@@ -377,6 +415,34 @@ fn a_failed_download_shows_the_error_and_retry_asks_for_another_attempt() {
     harness.get_by_label("Try again").click();
     harness.run();
     assert!(harness.state().actions.retry_model);
+}
+
+#[test]
+fn show_in_dock_reflects_the_preference_and_choosing_updates_it() {
+    let mut fixture = settings_fixture();
+    fixture.preferences.show_in_dock = ShowInDock::Always;
+    let mut harness = settings(fixture);
+    let selected = |harness: &Harness<'_, SettingsFixture>, label: &str| {
+        harness
+            .get_by_role_and_label(Role::RadioButton, label)
+            .accesskit_node()
+            .toggled()
+    };
+    assert_eq!(selected(&harness, "Always"), Some(Toggled::True));
+    assert_eq!(selected(&harness, "Never"), Some(Toggled::False));
+    harness
+        .get_by_role_and_label(Role::RadioButton, "Never")
+        .click();
+    harness.run();
+    assert_eq!(harness.state().preferences.show_in_dock, ShowInDock::Never);
+    harness
+        .get_by_role_and_label(Role::RadioButton, "While a window is open")
+        .click();
+    harness.run();
+    assert_eq!(
+        harness.state().preferences.show_in_dock,
+        ShowInDock::WhileWindowOpen
+    );
 }
 
 #[test]

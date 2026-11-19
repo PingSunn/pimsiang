@@ -1,3 +1,4 @@
+pub mod app_menu;
 pub mod controller;
 pub mod history_view;
 pub mod i18n;

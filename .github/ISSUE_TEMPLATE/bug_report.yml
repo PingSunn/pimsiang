@@ -1,0 +1,53 @@
+name: Bug report
+description: Something in PimSiang does not work as expected
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open Notes
+        2. Hold Right Option and say ...
+        3. ...
+  - type: input
+    id: version
+    attributes:
+      label: PimSiang version
+      description: Shown in the menu bar menu, or run `brew info --cask pimsiang`.
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and Mac model
+      placeholder: macOS 15.1, MacBook Air M2
+    validations:
+      required: true
+  - type: dropdown
+    id: precision
+    attributes:
+      label: Model precision (Settings, General)
+      options:
+        - Light
+        - Accurate
+        - Not sure
+  - type: input
+    id: app
+    attributes:
+      label: App you were typing into
+      placeholder: Safari, Notes, LINE, ...
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Menu bar, Open log folder, or `~/Library/Logs/PimSiang`. Remove anything private before pasting.
+      render: text

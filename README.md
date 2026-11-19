@@ -26,17 +26,20 @@
   <a href="#install">Install</a> · <a href="#usage">Usage</a> · <a href="#privacy">Privacy</a> · <a href="README.th.md">ภาษาไทย</a>
 </p>
 
-<!--
-Screenshots: add the files below, then remove this comment.
+<p align="center">
+  <img src="docs/screenshots/pill.png" alt="The Pill while listening, writing, keeping a Note, and asking for the microphone" width="560">
+</p>
 
 <p align="center">
-  <img src="docs/screenshots/pill.gif" alt="The Pill showing Thai text while speaking" width="640">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/history-dark.png">
+    <img src="docs/screenshots/history-light.png" alt="History window" width="49%">
+  </picture>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/settings-dark.png">
+    <img src="docs/screenshots/settings-light.png" alt="Settings window" width="49%">
+  </picture>
 </p>
-<p align="center">
-  <img src="docs/screenshots/history.png" alt="History window" width="49%">
-  <img src="docs/screenshots/settings.png" alt="Settings window" width="49%">
-</p>
--->
 
 Hold a key, speak Thai, release, and the text is typed into the app you are working in. While you speak, a small Pill at the top of the screen shows the words as they are recognised. Apple Silicon, macOS 14 (Sonoma) or newer.
 

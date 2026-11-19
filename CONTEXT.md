@@ -95,5 +95,5 @@ How a Model weighs the speech it hears: Standard for speech meant to be written 
 _Avoid_: Mode (alone), speaking style
 
 **Precision**:
-Which build of a Model's weights the Engine runs: Accurate (full size, the default) or Light (smaller and faster, slightly less accurate).
+Which build of a Model's weights the Engine runs: Light (smaller, the default) or Accurate (full size, uses more memory).
 _Avoid_: Quality, model size, int8/fp32 (as user-facing names)

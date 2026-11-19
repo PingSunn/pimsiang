@@ -11,7 +11,7 @@ use crate::{EngineError, LanguageMode, Recognizer, SileroVad, StreamingEngine, U
 
 const ENCODER_WIDTH: usize = 1024;
 const STATE_SIZE: usize = 2 * 640;
-const MAX_SYMBOLS_PER_FRAME: usize = 10;
+const MAX_SYMBOLS_PER_FRAME: usize = 2;
 
 pub type OnnxEngine = StreamingEngine<OnnxRecognizer, SileroVad>;
 

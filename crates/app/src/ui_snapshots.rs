@@ -244,7 +244,7 @@ fn settings_snapshots() {
         )
     }));
     settings(general(SettingsCase {
-        precision: store::Precision::Light,
+        precision: store::Precision::Accurate,
         build: Some(Build {
             status: ModelStatus::Downloading {
                 done: 1_070_000_000,
@@ -257,7 +257,7 @@ fn settings_snapshots() {
             Section::General,
             LoginItem::Disabled,
             None,
-            ModelChip::Downloading { percent: 41 },
+            ModelChip::Ready,
         )
     }));
     settings(general(SettingsCase {

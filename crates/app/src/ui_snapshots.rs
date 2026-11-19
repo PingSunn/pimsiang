@@ -98,7 +98,7 @@ fn setup(name: &str, bundled: bool, report: PermissionReport, model: ModelStatus
                 &report,
                 bundled,
                 &model,
-                model_download::download_bytes(engine::Precision::Fp32),
+                model_download::download_bytes(engine::Precision::Int8),
             );
             onboarding_window::show(ui, &view, &mut None, &mut false, &mut false);
         },
@@ -115,8 +115,8 @@ fn setup_snapshots() {
         true,
         report(Granted, Denied, NotDetermined),
         ModelStatus::Downloading {
-            done: 1_070_000_000,
-            total: 2_606_098_275,
+            done: 410_000_000,
+            total: 994_516_953,
         },
     );
     setup(
@@ -209,7 +209,7 @@ fn settings_snapshots() {
         error,
         model,
         build: None,
-        precision: store::Precision::Accurate,
+        precision: store::Precision::Light,
         height: 560.0,
         placement: PillPlacement::Floating,
         position: PillPosition::default(),

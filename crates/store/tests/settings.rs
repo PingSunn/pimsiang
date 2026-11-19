@@ -336,11 +336,11 @@ fn the_recognition_mode_is_stored_under_openthai_mode() {
 }
 
 #[test]
-fn the_precision_defaults_to_accurate_and_round_trips() {
+fn the_precision_defaults_to_light_and_round_trips() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("settings");
     assert_eq!(Settings::load(&path).precision, None);
-    assert_eq!(Settings::load(&path).precision(), Precision::Accurate);
+    assert_eq!(Settings::load(&path).precision(), Precision::Light);
 
     Settings::update(&path, |settings| {
         settings.precision = Some(Precision::Light.name().to_owned());
@@ -353,12 +353,12 @@ fn the_precision_defaults_to_accurate_and_round_trips() {
 }
 
 #[test]
-fn an_unknown_precision_falls_back_to_accurate() {
+fn an_unknown_precision_falls_back_to_light() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("settings");
     std::fs::write(&path, "precision=turbo\n").unwrap();
 
-    assert_eq!(Settings::load(&path).precision(), Precision::Accurate);
+    assert_eq!(Settings::load(&path).precision(), Precision::Light);
     assert_eq!(Precision::from_name("accurate"), Some(Precision::Accurate));
     assert_eq!(Precision::from_name("fp32"), None);
 }

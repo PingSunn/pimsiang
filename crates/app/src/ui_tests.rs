@@ -305,16 +305,8 @@ fn choosing_a_recognition_mode_changes_the_saved_preference() {
 }
 
 #[test]
-fn choosing_a_precision_changes_the_saved_preference_and_accurate_is_the_default() {
+fn choosing_a_precision_changes_the_saved_preference_and_light_is_the_default() {
     let mut harness = settings(settings_fixture());
-    assert_eq!(
-        harness.state().preferences.precision,
-        store::Precision::Accurate
-    );
-    harness
-        .get_by_role_and_label(Role::RadioButton, "Light")
-        .click();
-    harness.run();
     assert_eq!(
         harness.state().preferences.precision,
         store::Precision::Light
@@ -326,6 +318,14 @@ fn choosing_a_precision_changes_the_saved_preference_and_accurate_is_the_default
     assert_eq!(
         harness.state().preferences.precision,
         store::Precision::Accurate
+    );
+    harness
+        .get_by_role_and_label(Role::RadioButton, "Light")
+        .click();
+    harness.run();
+    assert_eq!(
+        harness.state().preferences.precision,
+        store::Precision::Light
     );
 }
 

@@ -47,8 +47,8 @@ const KEYS: [&str; 15] = [
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Precision {
-    #[default]
     Accurate,
+    #[default]
     Light,
 }
 

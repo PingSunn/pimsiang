@@ -15,7 +15,7 @@ fn an_empty_settings_file_gives_the_defaults() {
     assert!(preferences.unload_when_idle);
     assert_eq!(preferences.pill_placement, PillPlacement::Floating);
     assert_eq!(preferences.pill_position, PillPosition { x: 0.5, y: 0.12 });
-    assert_eq!(preferences.precision, Precision::Accurate);
+    assert_eq!(preferences.precision, Precision::Light);
 }
 
 #[test]
@@ -149,7 +149,7 @@ fn a_recognition_mode_override_is_not_written_to_the_settings() {
 }
 
 #[test]
-fn an_unknown_precision_gives_accurate() {
+fn an_unknown_precision_gives_light() {
     let settings = Settings {
         precision: Some("int8".to_owned()),
         ..Settings::default()
@@ -157,6 +157,6 @@ fn an_unknown_precision_gives_accurate() {
 
     assert_eq!(
         Preferences::from_settings(&settings).precision,
-        Precision::Accurate
+        Precision::Light
     );
 }

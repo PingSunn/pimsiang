@@ -922,6 +922,35 @@ pub fn status_chip(ui: &mut Ui, tone: ChipTone, text: &str) {
     );
 }
 
+pub fn sidebar_link(ui: &mut Ui, text: &str) -> egui::Response {
+    let colors = colors(ui);
+    let width = ui.available_width();
+    let (rect, response) = ui.allocate_exact_size(vec2(width, 22.0), Sense::click());
+    response.widget_info(|| WidgetInfo::labeled(Role::Link, true, text));
+    let hovered = response.hovered() || response.has_focus();
+    let color = if hovered {
+        colors.accent_text
+    } else {
+        colors.muted_foreground
+    };
+    let galley = egui::WidgetText::from(RichText::new(text).size(11.0).color(color)).into_galley(
+        ui,
+        Some(egui::TextWrapMode::Truncate),
+        width,
+        egui::TextStyle::Small,
+    );
+    let origin = pos2(rect.left() + 10.0, rect.center().y - galley.size().y / 2.0);
+    let underline = galley.size().x;
+    ui.painter().galley(origin, galley, color);
+    if hovered {
+        let y = rect.center().y + 7.0;
+        ui.painter()
+            .hline(origin.x..=origin.x + underline, y, Stroke::new(1.0, color));
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    response
+}
+
 pub fn sidebar_brand(ui: &mut Ui, version: &str) {
     let muted = colors(ui).muted_foreground;
     ui.horizontal(|ui| {

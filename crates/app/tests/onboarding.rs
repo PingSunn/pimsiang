@@ -346,3 +346,11 @@ fn every_chip_text_exists_in_both_languages() {
         "พร้อมใช้ · โมเดล OpenThai"
     );
 }
+
+#[test]
+fn the_powered_by_credit_exists_in_both_languages() {
+    assert_eq!(Language::English.powered_by(), "Powered by OpenThai ASR");
+    assert_eq!(Language::Thai.powered_by(), "ขับเคลื่อนด้วย OpenThai ASR");
+    assert!(has_thai(Language::Thai.powered_by()));
+    assert!(!has_thai(Language::English.powered_by()));
+}

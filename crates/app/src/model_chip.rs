@@ -1,6 +1,7 @@
 use crate::model_download::ModelStatus;
 
 pub const MODEL_NAME: &str = "OpenThai";
+pub const POWERED_BY_URL: &str = "https://openthai.ai/openthai2p0-asr-streaming?ref=powered-by";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ModelChip {

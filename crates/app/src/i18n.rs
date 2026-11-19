@@ -1103,6 +1103,10 @@ impl Language {
         }
     }
 
+    pub fn powered_by(self) -> &'static str {
+        self.pick("Powered by OpenThai ASR", "ขับเคลื่อนด้วย OpenThai ASR")
+    }
+
     pub fn model_done_badge(self) -> &'static str {
         self.pick("Ready", "พร้อมแล้ว")
     }

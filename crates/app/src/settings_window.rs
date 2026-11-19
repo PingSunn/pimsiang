@@ -16,7 +16,7 @@ use crate::egui_surface::Surface;
 use crate::theme::{self, Icon, Variant};
 
 const WIDTH: f64 = 780.0;
-const HEIGHT: f64 = 860.0;
+const HEIGHT: f64 = 600.0;
 const SIDEBAR_WIDTH: f32 = 220.0;
 
 pub enum Outcome {

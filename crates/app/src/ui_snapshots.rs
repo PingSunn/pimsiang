@@ -215,7 +215,7 @@ fn settings_snapshots() {
         model,
         build: None,
         precision: store::Precision::Light,
-        height: 560.0,
+        height: 600.0,
         placement: PillPlacement::Floating,
         position: PillPosition::default(),
         placing: false,
@@ -225,8 +225,15 @@ fn settings_snapshots() {
         height: 1080.0,
         ..case
     };
-    settings(general(case(
+    settings(case(
         "settings-general",
+        Section::General,
+        LoginItem::Disabled,
+        None,
+        ModelChip::Ready,
+    ));
+    settings(general(case(
+        "settings-general-tall",
         Section::General,
         LoginItem::Disabled,
         None,

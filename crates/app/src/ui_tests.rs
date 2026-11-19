@@ -211,7 +211,7 @@ struct SettingsFixture {
 
 fn settings(fixture: SettingsFixture) -> Harness<'static, SettingsFixture> {
     let mut harness = Harness::builder()
-        .with_size(egui::vec2(780.0, 870.0))
+        .with_size(egui::vec2(780.0, 600.0))
         .with_context_setup(|context| {
             context.set_fonts(egui_surface::fonts());
             theme::apply(context);
@@ -301,12 +301,20 @@ fn choosing_notch_or_floating_changes_the_saved_placement() {
     let mut harness = settings(settings_fixture());
     harness
         .get_by_role_and_label(Role::RadioButton, "Notch")
+        .scroll_to_me();
+    harness.run();
+    harness
+        .get_by_role_and_label(Role::RadioButton, "Notch")
         .click();
     harness.run();
     assert_eq!(
         harness.state().preferences.pill_placement,
         PillPlacement::Notch
     );
+    harness
+        .get_by_role_and_label(Role::RadioButton, "Floating")
+        .scroll_to_me();
+    harness.run();
     harness
         .get_by_role_and_label(Role::RadioButton, "Floating")
         .click();
@@ -412,6 +420,8 @@ fn a_failed_download_shows_the_error_and_retry_asks_for_another_attempt() {
     });
     let mut harness = settings(fixture);
     harness.get_by_label("Download failed: the server answered 500");
+    harness.get_by_label("Try again").scroll_to_me();
+    harness.run();
     harness.get_by_label("Try again").click();
     harness.run();
     assert!(harness.state().actions.retry_model);
@@ -432,9 +442,17 @@ fn show_in_dock_reflects_the_preference_and_choosing_updates_it() {
     assert_eq!(selected(&harness, "Never"), Some(Toggled::False));
     harness
         .get_by_role_and_label(Role::RadioButton, "Never")
+        .scroll_to_me();
+    harness.run();
+    harness
+        .get_by_role_and_label(Role::RadioButton, "Never")
         .click();
     harness.run();
     assert_eq!(harness.state().preferences.show_in_dock, ShowInDock::Never);
+    harness
+        .get_by_role_and_label(Role::RadioButton, "While a window is open")
+        .scroll_to_me();
+    harness.run();
     harness
         .get_by_role_and_label(Role::RadioButton, "While a window is open")
         .click();
@@ -448,6 +466,8 @@ fn show_in_dock_reflects_the_preference_and_choosing_updates_it() {
 #[test]
 fn the_position_button_starts_placement_for_a_floating_pill() {
     let mut harness = settings(settings_fixture());
+    harness.get_by_label("Position…").scroll_to_me();
+    harness.run();
     harness.get_by_label("Position…").click();
     harness.run();
     assert!(harness.state().actions.place_pill);
@@ -458,6 +478,8 @@ fn the_position_button_is_disabled_for_the_notch() {
     let mut fixture = settings_fixture();
     fixture.preferences.pill_placement = PillPlacement::Notch;
     let mut harness = settings(fixture);
+    harness.get_by_label("Position…").scroll_to_me();
+    harness.run();
     harness.get_by_label("Position…").click();
     harness.run();
     assert!(!harness.state().actions.place_pill);
@@ -468,6 +490,8 @@ fn while_placing_done_ends_placement_and_escape_does_not_close_the_window() {
     let mut fixture = settings_fixture();
     fixture.placing = true;
     let mut harness = settings(fixture);
+    harness.get_by_label("Done").scroll_to_me();
+    harness.run();
     harness.get_by_label("Done").click();
     harness.run();
     assert!(harness.state().actions.done_placement);

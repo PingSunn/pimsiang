@@ -1,5 +1,7 @@
 # PimSiang (พิมพ์เสียง)
 
+<a href="https://openthai.ai/openthai2p0-asr-streaming?ref=powered-by" target="_blank" rel="noopener"><img src="https://openthai.ai/img/badges/powered-by-openthai-asr.svg?v=2" alt="Powered by OpenThai ASR" height="32"></a>
+
 Thai dictation for macOS. Hold a key, speak Thai, release, and the text is typed into the app you are working in. The speech recognition runs on your Mac.
 
 Apple Silicon, macOS 14 (Sonoma) or newer. [ภาษาไทย](README.th.md)
@@ -32,7 +34,7 @@ PimSiang asks for three permissions and shows where to grant each on first launc
 
 ## First launch: Model download
 
-The speech Model is about 1 GB and is downloaded on first launch from Hugging Face (the Silero voice-activity file from GitHub), verified by checksum and stored in `~/Library/Application Support/PimSiang`. Dictation is available once the download finishes.
+The speech Model is about 1 GB and is downloaded on first launch from Hugging Face (the Silero voice-activity file from GitHub), verified by checksum and stored in `~/Library/Application Support/PimSiang`. Dictation is available once the download finishes. Choosing Accurate under Settings, General, downloads the full-size Model (about 2.6 GB, more memory) in the background and switches to it when it is ready.
 
 ## Usage
 

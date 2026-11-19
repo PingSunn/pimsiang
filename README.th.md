@@ -1,5 +1,7 @@
 # PimSiang (พิมพ์เสียง)
 
+<a href="https://openthai.ai/openthai2p0-asr-streaming?ref=powered-by" target="_blank" rel="noopener"><img src="https://openthai.ai/img/badges/powered-by-openthai-asr.svg?v=2" alt="Powered by OpenThai ASR" height="32"></a>
+
 โปรแกรมพิมพ์ด้วยเสียงภาษาไทยสำหรับ macOS กดปุ่มค้างไว้ พูดภาษาไทย แล้วปล่อย ข้อความจะถูกพิมพ์ลงในแอปที่คุณกำลังใช้อยู่ การรู้จำเสียงทำงานบนเครื่อง Mac ของคุณเอง
 
 รองรับ Apple Silicon และ macOS 14 (Sonoma) ขึ้นไป [English](README.md)
@@ -32,7 +34,7 @@ PimSiang ขอสิทธิ์สามอย่าง และจะบอ�
 
 ## เปิดครั้งแรก: ดาวน์โหลด Model
 
-Model รู้จำเสียงมีขนาดประมาณ 1 GB ดาวน์โหลดตอนเปิดครั้งแรกจาก Hugging Face (ไฟล์ตรวจจับเสียงพูด Silero จาก GitHub) ตรวจด้วย checksum และเก็บไว้ใน `~/Library/Application Support/PimSiang` เริ่มพิมพ์ด้วยเสียงได้เมื่อดาวน์โหลดเสร็จ
+Model รู้จำเสียงมีขนาดประมาณ 1 GB ดาวน์โหลดตอนเปิดครั้งแรกจาก Hugging Face (ไฟล์ตรวจจับเสียงพูด Silero จาก GitHub) ตรวจด้วย checksum และเก็บไว้ใน `~/Library/Application Support/PimSiang` เริ่มพิมพ์ด้วยเสียงได้เมื่อดาวน์โหลดเสร็จ ถ้าเลือก "แม่นยำ" ใน Settings › ทั่วไป แอปจะดาวน์โหลด Model ขนาดเต็ม (ประมาณ 2.6 GB และใช้หน่วยความจำมากกว่า) ไว้เบื้องหลัง แล้วสลับไปใช้เมื่อพร้อม
 
 ## วิธีใช้
 

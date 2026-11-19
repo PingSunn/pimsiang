@@ -269,6 +269,14 @@ pub fn open_folder(path: &PathBuf) -> Result<()> {
     Ok(())
 }
 
+pub fn open_url(url: &str) -> Result<()> {
+    std::process::Command::new("open")
+        .arg(url)
+        .spawn()
+        .with_context(|| format!("opening {url}"))?;
+    Ok(())
+}
+
 fn icon_for(status: Status, warning: bool) -> Result<Icon> {
     let bytes = if warning {
         GLYPH_ATTENTION

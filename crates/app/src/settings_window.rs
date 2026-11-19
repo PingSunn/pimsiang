@@ -28,6 +28,7 @@ pub enum Outcome {
     PlacePill,
     EndPlacement(PlacementEnd),
     RetryModel,
+    OpenPoweredBy,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -175,6 +176,8 @@ impl SettingsWindow {
             Outcome::OpenLoginItems
         } else if actions.retry_model {
             Outcome::RetryModel
+        } else if actions.open_powered_by {
+            Outcome::OpenPoweredBy
         } else if actions.open_history {
             Outcome::OpenHistory
         } else if actions.place_pill {
@@ -255,6 +258,7 @@ pub(crate) struct Actions {
     pub(crate) open_login_items: bool,
     pub(crate) open_history: bool,
     pub(crate) retry_model: bool,
+    pub(crate) open_powered_by: bool,
     pub(crate) place_pill: bool,
     pub(crate) done_placement: bool,
     pub(crate) escape_placement: bool,
@@ -297,6 +301,9 @@ pub(crate) fn show(
                 }
             }
             ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
+                if theme::sidebar_link(ui, language.powered_by()).clicked() {
+                    actions.open_powered_by = true;
+                }
                 let (tone, text) = chip(language, inputs.model);
                 theme::status_chip(ui, tone, &text);
             });

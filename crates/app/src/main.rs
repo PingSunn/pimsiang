@@ -34,7 +34,7 @@ mod macos {
     use app::history_view;
     use app::history_view::Page;
     use app::i18n::Language;
-    use app::model_chip::{ModelChip, model_chip};
+    use app::model_chip::{ModelChip, POWERED_BY_URL, model_chip};
     use app::model_download::{self, Manifest, ModelStatus};
     use app::model_switch::{self, Command, Switcher};
     use app::onboarding;
@@ -69,7 +69,7 @@ mod macos {
     use crate::main_menu;
     use crate::onboarding_window::{OnboardingWindow, Outcome};
     use crate::settings_window::{Build, Outcome as SettingsOutcome, SettingsWindow};
-    use crate::tray::{MenuAction, MenuBar, open_folder};
+    use crate::tray::{MenuAction, MenuBar, open_folder, open_url};
 
     #[derive(Parser)]
     #[command(about = "PimSiang: hold the trigger key and speak Thai")]
@@ -429,6 +429,11 @@ mod macos {
                 SettingsOutcome::OpenLoginItems => login_item::open_login_items_settings(),
                 SettingsOutcome::OpenHistory => self.open_history(event_loop),
                 SettingsOutcome::RetryModel => self.retry_build(),
+                SettingsOutcome::OpenPoweredBy => {
+                    if let Err(error) = open_url(POWERED_BY_URL) {
+                        tracing::warn!(%error, "cannot open the OpenThai page");
+                    }
+                }
                 SettingsOutcome::Changed(changed) => {
                     if changed.pill_placement != platform::PillPlacement::Floating {
                         self.end_placement(PlacementEnd::Escape);

@@ -268,6 +268,17 @@ fn choosing_a_sidebar_section_switches_the_content() {
 }
 
 #[test]
+fn the_powered_by_credit_is_shown_and_opens_the_openthai_page() {
+    let mut harness = settings(settings_fixture());
+    assert!(!harness.state().actions.open_powered_by);
+    harness
+        .get_by_role_and_label(Role::Link, "Powered by OpenThai ASR")
+        .click();
+    harness.run();
+    assert!(harness.state().actions.open_powered_by);
+}
+
+#[test]
 fn a_switch_shows_and_changes_the_saved_preference() {
     let mut fixture = settings_fixture();
     fixture.section = Section::SoundsClipboard;
